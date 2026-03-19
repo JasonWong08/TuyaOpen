@@ -38,6 +38,7 @@ Standard flow:
 
 - `tos.py config choice` and `tos.py config menu` are interactive TTY flows. Avoid them in non-interactive cloud runs.
 - Prefer editing `app_default.config` directly for deterministic builds.
+- To build for LINUX/Ubuntu (the only target runnable natively on Cloud), set `CONFIG_BOARD_CHOICE_UBUNTU=y` in the project's `app_default.config`. Most example defaults target T5AI; override before building.
 - To avoid prompt blocks from platform commit checks, create:
 
 ```bash
