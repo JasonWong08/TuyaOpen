@@ -1,0 +1,1018 @@
+min_ever=28259   largest_block=27648 [0m
+[0;36;49m[01-01 00:0bot.c:52] Free heap size:40955[0m
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2810,len:0x15a0
+load:0x403c8700,len:0x4
+load:0x403c8704,len:0xd20
+load:0x403cb700,len:0x2ee4
+entry 0x403c8928
+I (27) boot: ESP-IDF v5.4-dirty 2nd stage bootloader
+I (27) boot: compile time Mar 17 2026 14:53:29
+I (27) boot: Multicore bootloader
+I (27) boot: chip revision: v0.2
+I (30) boot: efuse block revision: v1.3
+I (34) boot.esp32s3: Boot SPI Speed : 80MHz
+I (38) boot.esp32s3: SPI Mode       : DIO
+I (41) boot.esp32s3: SPI Flash Size : 16MB
+I (45) boot: Enabling RNG early entropy source...
+I (50) boot: Partition Table:
+I (52) boot: ## Label            Usage          Type ST Offset   Length
+I (59) boot:  0 nvs              WiFi data        01 02 00009000 00004000
+I (65) boot:  1 otadata          OTA data         01 00 0000d000 00002000
+I (72) boot:  2 phy_init         RF data          01 01 0000f000 00001000
+I (78) boot:  3 ota_0            OTA app          00 10 00010000 00760000
+I (85) boot:  4 ota_1            OTA app          00 11 00770000 00760000
+I (91) boot:  5 model            Unknown data     01 82 00ed0000 000f0000
+I (98) boot:  6 tuya             Unknown data     01 aa 00fc0000 0003c000
+I (104) boot:  7 factory_nvs      WiFi data        01 02 00ffc000 00004000
+I (111) boot: End of partition table
+I (114) esp_image: segment 0: paddr=00010020 vaddr=3c170020 size=16a738h (1484600) map
+I (384) esp_image: segment 1: paddr=0017a760 vaddr=3fc9fb00 size=058b8h ( 22712) load
+I (388) esp_image: segment 2: paddr=00180020 vaddr=42000020 size=16fc0ch (1506316) map
+I (654) esp_image: segment 3: paddr=002efc34 vaddr=3fca53b8 size=0255ch (  9564) load
+I (656) esp_image: segment 4: paddr=002f2198 vaddr=40374000 size=1bac0h (113344) load
+I (683) esp_image: segment 5: paddr=0030dc60 vaddr=600fe100 size=0001ch (    28) load
+I (694) boot: Loaded app from partition at offset 0x10000
+I (694) boot: Disabling RNG early entropy source...
+I (704) octal_psram: vendor id    : 0x0d (AP)
+I (704) octal_psram: dev id       : 0x02 (generation 3)
+I (705) octal_psram: density      : 0x03 (64 Mbit)
+I (707) octal_psram: good-die     : 0x01 (Pass)
+I (711) octal_psram: Latency      : 0x01 (Fixed)
+I (715) octal_psram: VCC          : 0x01 (3V)
+I (719) octal_psram: SRF          : 0x01 (Fast Refresh)
+I (724) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+I (729) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (734) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (739) octal_psram: DriveStrength: 0x00 (1/1)
+I (744) MSPI Timing: PSRAM timing tuning index: 4
+I (747) esp_psram: Found 8MB PSRAM device
+I (751) esp_psram: Speed: 80MHz
+I (754) cpu_start: Multicore app
+I (769) cpu_start: Pro cpu start user code
+I (769) cpu_start: cpu freq: 160000000 Hz
+I (769) app_init: Application information:
+I (769) app_init: Project name:     tuya_open_sdk
+I (773) app_init: App version:      v1.1.0-100-gf5ce809
+I (778) app_init: Compile time:     Mar 17 2026 14:53:24
+I (783) app_init: ELF file SHA256:  c38fb89c1...
+I (788) app_init: ESP-IDF:          v5.4-dirty
+I (792) efuse_init: Min chip rev:     v0.0
+I (796) efuse_init: Max chip rev:     v0.99
+I (800) efuse_init: Chip rev:         v0.2
+I (803) heap_init: Initializing. RAM available for dynamic allocation:
+I (810) heap_init: At 3FCAA9F8 len 0003ED18 (251 KiB): RAM
+I (815) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (820) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (825) heap_init: At 600FE11C len 00001ECC (7 KiB): RTCRAM
+I (831) esp_psram: Adding pool of 8178K of PSRAM memory to heap allocator
+I (837) spi_flash: detected chip: boya
+I (840) spi_flash: flash io: dio
+I (844) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (850) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (856) coexist: coex firmware version: 49a8cdc
+I (860) coexist: coexist rom version e7ae62f
+I (865) main_task: Started on CPU0
+I (875) esp_psram: Reserving pool of 48K of internal memory for DMA/internal allocations
+I (875) main_task: Calling app_main()
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:319] Application information:[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:320] Project name:        your_chat_bot[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:321] App version:         1.0.1[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:322] Compile time:        Mar 17 2026[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:323] TuyaOpen version:    [0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:324] TuyaOpen commit-id:  2240c01ea7f87609f025e16053222d3803304c98[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:325] Platform chip:       esp32s3[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:326] Platform board:      DNESP32S3_BOX[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_main.c:327] Platform commit-id:  f5ce809e89f5f8ba61758e2675fd31fa6d474737[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_thread.c:245] Thread:sys_timer Exec Start. Set to Running Stat[0m
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:sys_timer,stackDepth:4096,totalstackDepth:4096,priority:5[0m
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:wq_system,stackDepth:6144,totalstackDepth:10240,priority:3[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_thread.c:245] Thread:wq_system Exec Start. Set to Running Stat[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_thread.c:245] Thread:wq_highpri Exec Start. Set to Running Stat[0m
+[0;36;49I (1035) uart: queue free spaces: 10
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:cli,stackDepth:3072,totalstackDepth:22528,priority:2[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_thread.c:245] Thread:cli Exec Start. Set to Running Stat[0m
+[0;32;49m[01-01 00:00:00 ty D][reset_netcfg.c:50] reset count is 0[0m
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:tuya_app_main,stackDepth:4096,totalstackDepth:19456,priority:4[0m
+[0;32;49m[01-01 00:00:00 ty D][reset_netcfg.c:62] reset count write 1[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_kv.c:202] key:rst_cnt, len 1[0m
+I (1085) main_task: Returned from app_main()
+****************************************
+______                 ____
+/_  __/_ ____ _____ _  / __ \___  ___ ___
+/ / / // / // / _ `/ / /_/ / _ \/ -_) _ \
+/_/  \_,_/\_, /\_,_/  \____/ .__/\__/_//_/
+/___/            /_/
+***********************[0;32;49m*[01-01 00:00*:00 ty D][re*set_netcfg.*c:105] start* reset cnt *clear timer!*!!!![0m
+[0;32;49m[01-01 00:00:00 ty D][tal_kv.c:270] lfs key not found: UUID_TUYAOPEN[0m
+[0;31;49m[01-01 00:00:00 ty E][tuya_authorize.c:129] Authorization read failure.[0m
+[0;33;49m[01-01 00:00:00 ty W][tuya_main.c:346] Replace the TUYA_OPENSDK_UUID and TUYA_OPENSDK_AUTHKEY contents, otherwise the demo cannot work.
+Visit https://platform.tuya.com/purchase/index?type=6 to get the open-sdk uuid and authkey.[0m
+[0;36;49m[01-01 00:00:00 ty I][tuya_iot.c:560] tuya_iot_init[0m
+[0;34;49m[01-01 00:00:00 ty N][tuya_tls.c:436] tuya_tls_init ok![0m
+[0;32;49m[01-01 00:00:00 ty D][tal_kv.c:270] lfs key not found: region[0m
+[0;31;49m[01-01 00:00:00 ty E][tuya_endpoint.c:74] tal_kv_get region fail:0xfffffffe[0m
+[0;36;49m[01-01 00:00:00 ty I][tuya_endpoint.c:272] endpoint_mgr.region:[0m
+[0;36;49m[01-01 00:00:00 ty I][tuya_endpoint.c:273] endpoint_mgr.regist_key:[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_kv.c:270] lfs key not found: uuid683dda876825d1b7[0m
+[0;33;49m[01-01 00:00:00 ty W][tuya_iot.c:152] activate config not found:-2[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:0[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:1[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:2[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:3[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:4[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:5[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:6[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:134] add new node,type:7[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:62] init watchdog, interval: 60[0m
+E (1295) task_wdt: esp_task_wdt_init(515): TWDT already initialized
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:204] update type:7,period:1431655[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_health.c:495] watch_dog_interval:60, monitor_detect_interval:600[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_thread.c:245] Thread:health_monitor Exec Start. Set to Running Stat[0m
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:health_monitor,stackDepth:2048,totalstackDepth:24576,priority:5[0m
+[0;32;49m[01-01 00:00:00 ty D][netmgr.c:253] netmgr [wifi] register start[0m
+[0;32;49m[01-01 00:00:00 ty D][netmgr.c:259] netmgr [wifi] is the first connection[0m
+I (1355) pp: pp rom version: e7ae62f
+I (1355) net80211: net80211 rom version: e7ae62f
+I (1365) wifi:wifi driver task: 3fcc84dc, prio:23, stack:6656, core=0
+**********
+tuya> I (1385) wifi:wifi firmware version: 48ea317a7
+I (1385) wifi:wifi certification version: v7.0
+I (1385) wifi:config NVS flash: enabled
+I (1385) wifi:config nano formatting: disabled
+I (1385) wifi:Init data frame dynamic rx buffer num: 32
+I (1395) wifi:Init static rx mgmt buffer num: 5
+I (1395) wifi:Init management short buffer num: 32
+I (1405) wifi:Init static tx buffer num: 16
+I (1405) wifi:Init tx cache buffer num: 32
+I (1405) wifi:Init static tx FG buffer num: 2
+I (1415) wifi:Init static rx buffer size: 1600
+I (1415) wifi:Init static rx buffer num: 10
+I (1415) wifi:Init dynamic rx buffer num: 32
+I (1425) wifi_init: rx ba win: 6
+I (1425) wifi_init: accept mbox: 6
+I (1425) wifi_init: tcpip mbox: 32
+I (1435) wifi_init: udp mbox: 6
+I (1435) wifi_init: tcp mbox: 6
+I (1435) wifi_init: tcp tx win: 5760
+I (1445) wifi_init: tcp rx win: 5760
+I (1445) wifi_init: tcp mss: 1440
+I (1445) wifi_init: WiFi/LWIP prefer SPIRAM
+I (1455) wifi_init: WiFi IRAM OP enabled
+I (1455) wifi_init: WiFi RX IRAM OP enabled
+I (1475) wifi:(2.4G)set country: cc=CN  schan=1 nchan=13 policy=1
+I (1475) BLE_INIT: BT controller compile version [d752dea]
+I (1475) BLE_INIT: Bluetooth MAC: fc:01:2c:cf:c6:2a
+I (1485) phy_init: phy_version 680,a6008b2,Jun  4 2024,16:41:10
+[0;32;49m[01-01 00:00:00 ty D][tuya_ble_mbuf.c:248] DYNA INIT 280,264,8,16[0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_ble_mbuf.c:248] DYNA INIT 292,276,8,16[0m
+[0;32;49m[01-01 00:00:00 ty D][tal_thread.c:245] Thread:host_main_threa Exec Start. Set to Running Stat[0m
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:host_main_thread_hdl,stackDepth:4096,totalstackDepth:28672,priority:9[0m
+[0;32;49m[01-01 00:00:00 ty D][ble_hs.c:551] ble host stage 2 start
+[0m
+[0;32;49m[01-01 00:00:00 ty D][ble_hs_startup.c:316] BLE HCI Version = 9[0m
+[0;36;49m[01-01 00:00:00 ty I][ble_hs_startup.c:145] le acl buf sz = 251,max buf = 12
+[0m
+[0;36;49m[01-01 00:00:00 ty I][ble_hs_hci.c:114] acl buf sz = 251, max pkt = 12, avail pkt = 12
+[0m
+[0;36;49m[01-01 00:00:00 ty I][ble_hs.c:433] ble_hs_timer reset:100 [0m
+[0;36;49m[01-01 00:00:00 ty I][tkl_bluetooth.c:465] Stack sync[0m
+[0;36;49m[01-01 00:00:00 ty I][tkl_bluetooth.c:452] Init/Deinit Event[0m
+[0;34;49m[01-01 00:00:00 ty N][ble_mgr.c:1128] tuya ble init success finish[0m
+[0;36;49m[01-01 00:00:00 ty I][ble_gap.c:2248] GAP init: stop adv[0m
+[0;32;49m[01-01 00:00:00 ty D][netmgr.c:383] netmgr conn wifi set 6[0m
+[0;36;49m[01-01 00:00:00 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;32;49m[01-01 00:00:00 ty D][tuya_main.c:379] tuya_iot_init success[0m
+[0;34;49m25) i2c.ma00e00 th N pblt gap c:2 09]nStait Ali[0,please initializ[it34;r9m
+01-01 00:0I 0063y NX[9bl5_mgL9c:5 6]C le adv rpinteia0zem
+uccessfully
+[0;32;49m[01-01 00:00:00 ty D][DNESP32S3-BOX.c:202] Speaker control level: 0x0020[0m
+[0;32;49m[01-01 00:00:00 ty D][DNESP32S3-BOX.c:205] ES8311 codec is enabled[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_manage_mode.c:84] ai chat mode register mode 0 success[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_manage_mode.c:84] ai chat mode register mode 1 success[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_manage_mode.c:84] ai chat mode register mode 2 success[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_manage_mode.c:84] ai chat mode register mode 3 success[0m
+[0;36;49m[01-01 00:00:00 ty I][tal_thread.c:226] thread_create name:ai_ui,stackDepth:4096,totalstackDepth:32768,priority:3[0m
+[0;36;49m[01-01(07:50 0pit: G]Ib[4_]s cnp9t]n:l1_ sutpueE_:x1|O0eDrain: 0[ ;u2l4p:[11 0ul0d:w0:00|ty Dr[0al_thread.c:245] Thread:ai_ui Exec Start. Set to Running Stat[0m
+I (1935) esp32_lvgl: LVGL display added successfully
+I (1935) LVGL: Starting LVGL task
+I (1945) LVGL: Starting LVGL task
+[0;32;49m[01-01 00:00:00 ty D][ai_ui_manage.c:224] ai chat ui init success[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_chat_main.c:108] read ai_toy config: {"volume": 41, "chat_mode":2}[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_audio_input.c:323] sample 16000, databits 16, channel 1[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_audio_input.c:226] recorder vad mode 0[0m
+[0;32;49m[01-01 00:00:00 ty D][ai_audio_input.c:227] recorder total ms 16001, slice ms 80, vad active 200 ms, vad off timeout 1000[0m
+I (1985) tdd_audio_8311_codec: I2C bus handle retrieved successfully
+I (1995) tdd_audio_8311_codec: Duplex channels created
+I (2005) ES8311: Work in Slave mode
+I (2005) tdd_audio_8311_codec: Es8311AudioCodec initialized
+E (2005) i2s_common: i2s_channel_disable(1187): the channel has not been enabled yet
+I (2005) I2S_IF: channel mode 0 bits:16/16 channel:2 mask:1
+I (2015) I2S_IF: STD Mode 0 bits:16/16 channel:2 sample_rate:16000 mask:1
+E (2025) i2s_common: i2s_channel_disable(1187): the channel has not been enabled yet
+I (2025) I2S_IF: channel mode 0 bits:16/16 channel:2 mask:1
+I (2035) I2S_IF: STD Mode 1 bits:16/16 channel:2 sample_rate:16000 mask:1
+I (2055) Adev_Codec: Open codec device OK
+I (2055) I2S_IF: channel mode 0 bits:16/16 channel:2 mask:1
+I (2055) I2S_IF: STD Mode 1 bits:16/16 channel:2 sample_rate:16000 mask:1
+I (2065) Adev_Codec: Open codec device OK
+[0;34;49m[01-01 00:00:01 ty N][tdd_audio_8311_codec.c:351] I2S 8311 channels created[0m
+[0;32;49m[01-01 00:00:01 ty D][tdd_audio_8311_codec.c:356] I2S 8311 data buffer len: 320[0m
+I (2075) MODEL_LOADER: The storage free size is 21632 KB
+I (2085) MODEL_LOADER: The partition size is 960 KB
+I (2085) MODEL_LOADER: Successfully load srmodels
+I (2095) audio_afe: wakenet model in flash: wn9_nihaoxiaozhi_tts
+I (2095) AFE_CONFIG: Set WakeNet Model: wn9_nihaoxiaozhi_tts
+W (2105) AFE_CONFIG: Noise Supression may reduce the accuracy of speech recognition. It is not recommended to turn it on.
+MC Quantized wakenet9: wakenet9l_tts1h8_你好小智_3_0.631_0.635, tigger:v4, mode:0, p:0, (Dec 16 2025 14:45:55)
+I (2175) AFE: AFE Version: (1MIC_V251128)
+I (2175) AFE: Input PCM Config: total 1 channels(1 microphone, 0 playback), sample rate:16000
+I (2185) AFE: AFE Pipeline: [input] ->  -> |NS(WebRTC)| -> |VAD(WebRTC)| -> |WakeNet(wn9_nihaoxiaozhi_tts,)| -> [output]
+I (2195) audio_afe: Process unit size: 320
+I (2195) audio_afe: AFE initialized successfully
+[0;32;49m[01-01 00:00:01 ty D][tdd_audio_8311_codec.c:378] I2S 8311 read task args: 0x3c2fa5a8[0m
+[0;36;49m[01-01 00:00:01 ty I][tal_thread.c:226] thread_create name:esp32_i2s_8311_read,stackDepth:3072,totalstackDepth:35840,priority:4[0m
+[0;32;49m[01-01 00:00:01 ty D][tal_thread.c:245] Thread:esp32_i2s_8311_ Exec Start. Set to Running Stat[0m
+[0;34;49m[01-01 00:00:01 ty N][ai_audio_input.c:243] audio input -> start! mode is 0, task is 0x0[0m
+[0;36;49m[01-01 00:00:01 ty I][tal_thread.c:226] thread_create name:record_task,stackDepth:2560,totalstackDepth:38400,priority:0[0m
+[0;36;49m[01-01 00:00:01 ty I][tal_thread.c:226] thread_create name:ai_player,stackDepth:5120,totalstackDepth:43520,priority:4[0m
+[0;32;49m[01-01 00:00:01 ty D][tal_thread.c:245] Thread:ai_player Exec Start. Set to Running Stat[0m
+[0;32;49m[01-01 00:00:01 ty D][ai_audio_player.c:501] audio player -> set volume 41[0m
+[0;36;49m[01-01 00:00:01 ty I][tal_thread.c:226] thread_create name:ai_chat_mode,stackDepth:3072,totalstackDepth:46592,priority:0[0m
+[0;36;49m[01-01 00:00:01 ty I][tal_thread.c:226] thread_create name:button_scan,stackDepth:4096,totalstackDepth:50688,priority:4[0m
+[0;32;49m[01-01 00:00:01 ty D][tal_thread.c:245] Thread:button_scan Exec Start. Set to Running Stat[0m
+[0;32;49m[01-01 00:00:01 ty D][tdl_button_manage.c:1002] button_scan task stack size:4096[0m
+[0;32;49m[01-01 00:00:01 ty D][tdl_button_manage.c:690] tdl_button_create succ[0m
+[0;32;49m[01-01 00:00:01 ty D][ai_chat_main.c:441] ai chat mode init mode 2 success[0m
+I (2335) wifi:Set ps type: 1, coexist: 0
+[0;32;49m[01-01 00:00:01 ty D][reset_netcfg.c:50] reset count is 1[0m
+[0;32;49m[01-01 00:00:01 ty D][tuya_iot.c:869] STATE_START[0m
+[0;36;49m[01-01 00:00:01 ty I][tuya_iot.c:889] Activation data read fail, go activation mode...[0m
+[0;32;49m[01-01 00:00:01 ty D][tuya_main.c:155] Tuya Event ID:1(TUYA_EVENT_BIND_START)[0m
+[0;36;49m[01-01 00:00:01 ty I][tuya_main.c:156] Device Free heap 49763[0m
+[0;36;49m[01-01 00:00:01 ty I][tuya_main.c:160] Device Bind Start![0m
+[0;34;49m[01-01 00:00:01 ty N][ai_audio_player.c:473] audio player -> play alert type=2[0m
+[0;34;49m[01-01 00:00:01 ty N][ai_audio_player.c:355] audio player -> player tts mem data len 13760[0m
+[0;32;49m[01-01 00:00:01 ty D][svc_ai_player.c:492] ai player FG cmd START[0m
+[0;32;49m[01-01 00:00:01 ty D][svc_ai_player.c:105] start player FG value=null[0m
+[0;32;49m[01-01 00:00:01 ty D][ai_audio_player.c:156] audio player -> player tts event: 1[0m
+[0;32;49m[01-01 00:00:01 ty D][netcfg.c:279] netcfg module start type:0x1[0m
+[0;32;49m[01-01 00:00:01 ty D][ai_audio_player.c:177] audio player -> playing start event[0m
+[0;32;49m[01-01 00:00:01 ty D][netcfg.c:279] netcfg module start type:0x2[0m
+[0;32;49m[01-01 00:00:01 ty D][ap_netcfg.c:856] ap cfg start:1[0m
+[0;32;49m[01-01 00:00:01 ty D][deco e2_5p) ci5i]moDe :as_ftzP ( c:102:cf:c6:29)
+I (2465) wifi:Total power save buffer number: 8
+I (2465) wifi:Init max length of beacon: 752/752
+I (2465) wifi:Init max length of beacon: 752/752
+I (2475) esp_netif_lwip: DHCP server started on interface WIFI_AP_DEF with IP: 192.168.4.1
+[0;32;49m[01-01 00:00:01 ty D][tal_thread.c:245] Thread:ai_chat_mode Exec Start. Set to Running Stat[0m
+[0;32;49m[01-01 00:00:01 ty D][ap_netcfg.c:844] start ap success:SmartLife-C629[0m
+[0;32;49m[01-01 00:00:01 ty D][ap_netcfg.c:879] ap netcfg server ip:192.168.176.1[0m
+[0;34;49m[01-01 00:00:01 ty N][ap_netcfg.c:886] tuya ap using tls + psk[0m
+[0;36;49m[01-01 00:00:01 ty I][tal_thread.c:226] thread_create name:ap_cfg_task,stackDepth:4096,totalstackDepth:54784,priority:3[0m
+[0;32;49m[01-01 00:00:01 ty D][netcfg.c:52] start 0x1 ret:0[0m
+[0;32;49m[01-01 00:00:01 ty D][tal_thread.c:245] Thread:ap_cfg_task Exec Start. Set to Running Stat[0m
+[0;32;49m[01-01 00:00:01 ty D][ble_netcfg.c:135] bt netcfg start[0m
+[0;32;49m[01-01 00:00:01 ty D][ap_netcfg.c:687] start TCP ap thread[0m
+[0;36;49m[01-01 00:00:01 ty I][ble_gap.c:2248] GAP init: stop adv[0m
+[0;32;49m[01-01 00:00:01 ty D][ap_netcfg.c:317] ap try bind port:6668[0m
+[0;36;49m[01-01 00:00:01 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;34;49m[01-01 00:00:01 ty N][ble_gap.c:2509] Start Adv[0m
+[0;32;49m[01-01 00:00:01 ty D][ap_netcfg.c:703] Waiting for a remote connection[0m
+[0;34;49m[01-01 00:00:01 ty N][ble_mgr.c:366] ble adv updated 0[0m
+[0;32;49m[01-01 00:00:01 ty D][netcfg.c:52] start 0x2 ret:0[0m
+[0;32;49m[01-01 00:00:01 ty D][tal_thread.c:245] Thread:record_task Exec Start. Set to Running Stat[0m
+[0;36;49m[01-01 00:00:01 ty I][ble_hs.c:393] ble_hs_timer_exp:[0m
+[0;34;49m[01-01 00:00:04 ty N][svc_ai_player.c:244] ai player FG eof[0m
+[0;32;49m[01-01 00:00:04 ty D][svc_ai_player.c:133] stop player FG[0m
+[0;32;49m[01-01 00:00:04 ty D][svc_ai_playlist.c:52] playlist player state 0 index 0 count 0 loop 0 single 0[0m
+[0;32;49m[01-01 00:00:04 ty D][ai_audio_player.c:156] audio player -> player tts event: 0[0m
+[0;32;49m[01-01 00:00:04 ty D][ai_audio_player.c:163] audio player -> stop event[0m
+[0;32;49m[01-01 00:00:05 ty D][reset_netcfg.c:62] reset count write 0[0m
+[0;32;49m[01-01 00:00:05 ty D][tal_kv.c:202] key:rst_cnt, len 1[0m
+[0;32;49m[01-01 00:00:05 ty D][reset_netcfg.c:69] reset cnt clear![0m
+[0;36;49m[01-01 00:00:09 ty I][tuya_main.c:299] Heap: free=33443   min_ever=28223   largest_block=27648 [0m
+[0;36;49m[01-01 00:00:11 ty I][app_chat_bot.c:52] Free heap size:40947[0m
+[0;36;49m[01-01 00:00:19 ty I][tuya_main.c:299] Heap: free=33443   min_ever=28223   largest_block=27648 [0m
+[0;36;49m[01-01 00:00:21 ty I][app_chat_bot.c:52] Free heap size:40947[0m
+[0;36;49m[01-01 00:00:29 ty I][tuya_main.c:299] Heap: free=33443   min_ever=28223   largest_block=27648 [0m
+[0;36;49m[01-01 00:00:31 ty I][app_chat_bot.c:52] Free heap size:40947[0m
+[0;36;49m[01-01 00:00:32 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;36;49m[01-01 00:00:32 ty I][tkl_bluetooth.c:146] BLE_GAP_EVENT_CONNECT(0x00), handle = 0x01, Role(1)
+[0m
+[0;32;49m[01-01 00:00:32 ty D][ble_hs_hci_evt.c:152] evt code null:20[0m
+[0;34;49m[01-01 00:00:32 ty N][ble_mgr.c:951] Ble Connected[0m
+[0;36;49m[01-01 00:00:32 ty I][ble_hs.c:393] ble_hs_timer_exp:[0m
+[0;32;49m[01-01 00:00:33 ty D][ble_att_svr.c:1936] debug rc = 0[0m
+[0;36;49m[01-01 00:00:33 ty I][tkl_bluetooth.c:181] BLE_GAP_EVENT_CONN_UPDATE_REQ[0m
+[0;34;49m[01-01 00:00:34 ty N][tkl_bluetooth.c:177] BLE_GAP_EVENT_CONN_UPDATE,0x6,0x0,0x1f4[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:216] BLE_GAP_EVENT_SUBSCRIBE[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:181] BLE_GAP_EVENT_CONN_UPDATE_REQ[0m
+[0;34;49m[01-01 00:00:34 ty N][tkl_bluetooth.c:177] BLE_GAP_EVENT_CONN_UPDATE,0x28,0x0,0x1f4[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:190] mtu update event; conn_handle=0x0001 mtu=246, channel id = 4
+[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:3, no:1, pack_len:33, total_len:33[0m
+[0;34;49m[01-01 00:00:34 ty N][ble_mgr.c:316] ble sn:1 recv sn 0[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:984] ble recv req type 0x0000[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_trsmitr.c:110] ble sub packet lenth set:243[0m
+[0;34;49m[01-01 00:00:34 ty N][ble_mgr.c:823] ble dev info: state:0, pkg_len:243[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:200] send notify ok[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:600] ble resp finish. len:161, rt:0x0[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:3, no:1, pack_len:113, total_len:113[0m
+[0;34;49m[01-01 00:00:34 ty N][ble_mgr.c:316] ble sn:2 recv sn 1[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:984] ble recv req type 0x0001[0m
+[0;34;49m[01-01 00:00:34 ty N][ble_mgr.c:712] Ble is paired[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:200] send notify ok[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:600] ble resp finish. len:33, rt:0x0[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:731] ble send netstat 0[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:200] send notify ok[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:600] ble resp finish. len:33, rt:0x0[0m
+[0;36;49m[01-01 00:00:34 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:1, no:1, pack_len:239, total_len:239[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:271] ble receive multi-packet...[0m
+[0;36;49m[01-01 00:00:34 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:2, no:2, pack_len:242, total_len:481[0m
+[0;36;49m[01-01 00:00:34 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:271] ble receive multi-packet...[0m
+[0;36;49m[01-01 00:00:34 ty I][ble_hs.c:433] ble_hs_timer reset:0 [0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:2, no:3, pack_len:242, total_len:723[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:271] ble receive multi-packet...[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:2, no:4, pack_len:242, total_len:965[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:271] ble receive multi-packet...[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:226] ble recv sub_pkg desc:3, no:5, pack_len:28, total_len:993[0m
+[0;34;49m[01-01 00:00:34 ty N][ble_mgr.c:316] ble sn:3 recv sn 2[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:984] ble recv req type 0x801b[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_channel.c:266] first downlink subpacket, totalLen:980[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_channel.c:297] rece downlink subpacket, curSubpacketNo:0, curSubpacketLen:954, receivedLen:954, totalLen:980[0m
+[0;36;49m[01-01 00:00:34 ty I][tkl_bluetooth.c:200] send notify ok[0m
+[0;36;49m[01-01 00:00:34 ty I][ble_hs.c:393] ble_hs_timer_exp:[0m
+[0;32;49m[01-01 00:00:34 ty D][ble_mgr.c:600] ble resp finish. len:49, rt:0x0[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_mgr.c:226] ble recv sub_pkg desc:3, no:1, pack_len:65, total_len:65[0m
+[0;34;49m[01-01 00:00:35 ty N][ble_mgr.c:316] ble sn:4 recv sn 3[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_mgr.c:984] ble recv req type 0x801b[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_channel.c:297] rece downlink subpacket, curSubpacketNo:1, curSubpacketLen:26, receivedLen:980, totalLen:980[0m
+[0;36;49m[01-01 00:00:35 ty I][tkl_bluetooth.c:200] send notify ok[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_mgr.c:600] ble resp finish. len:49, rt:0x0[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_channel.c:105] ble channel type:1[0m
+[0;34;49m[01-01 00:00:35 ty N][ble_netcfg.c:68] cfg ssid:CAT-2.4G, passwd:qwertyuiop, token:AYtxq4M6vs4jqH[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_kv.c:202] key:netinfo, len 33[0m
+[0;32;49m[01-01 00:00:35 ty D][netcfg.c:353] netcfg module stop type:0x2[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_netcfg.c:159] bt netcfg stop[0m
+[0;32;49m[01-01 00:00:35 ty D][netcfg.c:353] netcfg module stop type:0x1[0m
+I (36265) wifi:mode : sta (fc:01:2c:cf:c6:28)
+I (36275) wifi:enable tsf
+E (36275) TKL_WIFI: tkl_w[0_3v;n9_[a1dl1r0 :al: 5st_ if[_ponnecfg ca9l4d rptc=g sto0:)[0m
+[0;36;49m[01-01 00:00:35 ty I][tuya_iot.c:912] token: txq4M6vs[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_kv.c:202] key:rcs.active, len 612[0m
+[0;36;49m[01-01 00:00:35 ty I][tuya_iot.c:913] region: AY[0m
+[0;32;49m[01-01 00:00:35 ty D][netconn_wifi.c:70] wifi connnet CAT-2.4G[0m
+[0;36;49m[01-01 00:00:35 ty I][tuya_iot.c:914] regist_key: 4jqH[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_kv.c:202] key:region, len 2[0m
+I (36325) wifi:flush txq
+I (36325) wifi:stop sw txq
+I (36325) wifi:lmac stop hw txq
+I (36325) wifi:mode : sta (fc:01:2c:cf:c6:28)
+I (36335) wifi:enable tsf
+I (36355) wifi:Set ps type: 1, coexist: 1
+[0;36;49m[01-01 00:00:35 ty I][tkl_bluetooth.c:200] send notify ok[0m
+[0;32;49m[01-01 00:00:35 ty D][ble_mgr.c:600] ble resp finish. len:49, rt:0x0[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_kv.c:202] key:regist_key, len 4[0m
+[0;32;49m[01-01 00:00:35 ty D][tuya_main.c:155] Tuya Event ID:2(TUYA_EVENT_BIND_TOKEN_ON)[0m
+[0;36;49m[01-01 00:00:35 ty I][tuya_main.c:156] Device Free heap 42355[0m
+[0;32;49m[01-01 00:00:35 ty D][tuya_tls.c:819] TUYA_TLS Disconnect ENTER[0m
+[0;32;49m[01-01 00:00:35 ty D][tuya_tls.c:844] TUYA_TLS Disconnect Success[0m
+[0;32;49m[01-01 00:00:35 ty D][tuya_tls.c:511] tuya_tls_connect_destroy.[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:308] Del Thrd:ap_cfg_task[0m
+[0;32;49m[01-01 00:00:35 ty D][ap_netcfg.c:802] ap thread exit[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:261] Thread:ap_cfg_task Exec Finish. Set to Del Stat[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:125] del list not empty...deleting 0x3c35e948, next 0x3c2e4044[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:132] Final Free Thread:ap_cfg_task, is_self:1[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:136] delay to delete thread self[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:147] finally delete thread self[0m
+[0;32;49m[01-01 00:00:35 ty D][tal_thread.c:103] real delete thread:0x3fcba2c0[0m
+I (39745) wifi:new:<1,1>, old:<1,0>, ap:<255,255>, sta:<1,1>, prof:6, snd_ch_cfg:0x0
+I (39755) wifi:state: init -> auth (0xb0)
+I (39755) wifi:state: auth -> assoc (0x0)
+I (39765) wifi:state: assoc -> run (0x10)
+I (39985) wifi:connected with CAT-2.4G, aid = 5, channel 1, 40U, bssid = 5c:de:34:53:1b:df
+I (39985) wifi:security: WPA2-PSK, phy: bgn, rssi: -58
+I (39995) wifi:pm start, type: 1
+I (39995) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+I (40005) wifi:set rx beacon pti, rx_bcn_pti: 14, bcn_timeout: 25000, mt_pti: 14, mt_time: 10000
+I (40055) wifi:AP's beacon interval = 102400 us, DTIM period = 1
+I (40145) wifi:<ba-add>idx:0 (ifx:0, 5c:de:34:53:1b:df), tid:0, ssn:3, winSize:64
+[0;36;49m[01-01 00:00:39 ty I][tuya_main.c:299] Heap: free=40851   min_ever=28223   largest_block=27648 [0m
+[0;32;49m[01-01 00:00:40 ty D][netconn_wifi.c:135] wifi connected in stat 1[0m
+[0;32;49m[01-01 00:00:40 ty D][netmgr.c:213] netmgr conn status changed [link_down] --> [link_up][0m
+I (41475) esp_netif_handlers: sta ip: 192.168.2.128, mask: 255.255.255.0, gw: 192.168.2.1
+[0;32;49m[01-01 00:00:40 ty D][iotdns.c:187] out post data len:115, data:{"config":[{"key":"httpsSelfUrl","need_ca":true},{"key":"mqttsSelfUrl","need_ca":true}],"region":"AY","env":"4jqH"}[0m
+[0;32;49m[01-01 00:00:40 ty D][iotdns.c:201] http request send![0m
+[0;32;49m[01-01 00:00:40 ty D][tuya_tls.c:590] TUYA_TLS Begin Connect h6-ay.iot-dns.com:443[0m
+[0;32;49m[01-01 00:00:40 ty D][tuya_tls.c:341] mbedtls authmode: MBEDTLS_SSL_VERIFY_REQUIRED[0m
+[0;32;49m[01-01 00:00:40 ty D][tuya_tls.c:354] load root ca cert.[0m
+[0;32;49m[01-01 00:00:41 ty D][tuya_tls.c:661] socket fd is set. set to inner send/recv to handshake[0m
+[0;36;49m[01-01 00:00:41 ty I][app_chat_bot.c:52] Free heap size:47595[0m
+[0;32;49m[01-01 00:00:42 ty D][tuya_tls.c:323] mbedtls_cert_pkey_free.[0m
+[0;32;49m[01-01 00:00:42 ty D][tuya_tls.c:702] handshake finish for h6-ay.iot-dns.com. set send/recv to user set[0m
+[0;32;49m[01-01 00:00:42 ty D][tuya_tls.c:708] TUYA_TLS Success Connect h6-ay.iot-dns.com:443 Suit:TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256[0m
+[0;32;49m[01-01 00:00:42 ty D][http_client_wrapper.c:119] tls connencted![0m
+[0;32;49m[01-01 00:00:42 ty D][http_client_wrapper.c:147] http request send![0m
+[0;32;49m[01-01 00:00:42 ty D][http_client_wrapper.c:40] HTTP header add key=Content-Type[0m
+[0;32;49m[01-01 00:00:42 ty D][http_client_wrapper.c:51] Sending HTTP POST request to h6-ay.iot-dns.com[0m
+[0;32;49m[01-01 00:00:43 ty D][tls_transporter.c:122] tls transporter close socket fd:54[0m
+[0;32;49m[01-01 00:00:43 ty D][tcp_transporter.c:200] tcp transporter close socket fd:54[0m
+[0;32;49m[01-01 00:00:43 ty D][tls_transporter.c:130] tls transporter close tls handler:0x3c379be8[0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:819] TUYA_TLS Disconnect ENTER[0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:844] TUYA_TLS Disconnect Success[0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:511] tuya_tls_connect_destroy.[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:56] httpsSelfUrl:https://a2.tuyacn.com/d.json[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:57] mqttsSelfUrl:m2.tuyacn.com:8883[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:63] endport->atop.host = "a2.tuyacn.com"[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:64] endport->atop.port = 443[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:65] endport->atop.path = "/d.json"[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:70] endport->mqtt.host = "m2.tuyacn.com"[0m
+[0;32;49m[01-01 00:00:43 ty D][iotdns.c:71] endport->mqtt.port = 8883[0m
+[0;32;49m[01-01 00:00:43 ty D][atop_service.c:210] POST JSON:{"token":"txq4M6vs","softVer":"1.0.1","productKey":"znw8prbujidtzavd","protocolVer":"2.3","baselineVer":"40.07","options": "{\"otaChannel\":0, \"isFK\":false}","devId":"6cfd204bde09b7da7fynib","devAttribute":2048,"cadVer":"1.0.3","cdVer":"1.0.0","t":43}[0m
+[0;32;49m[01-01 00:00:43 ty D][atop_base.c:417] TUYA_HTTPS_ATOP_URL: /d.json?[0m
+[0;32;49m[01-01 00:00:43 ty D][atop_base.c:434] request url len:117: /d.json?a=thing.device.opensdk.active&et=3&t=43&uuid=uuid683dda876825d1b7&v=1.0&sign=704826068af997a1919f10de7b6e5382[0m
+[0;32;49m[01-01 00:00:43 ty D][atop_base.c:448] atop_request_data_encode[0m
+[0;32;49m[01-01 00:00:43 ty D][atop_base.c:457] out post data len:567, data:data=376232356263333435353239688A18943DD650B434A6B2B371A729541DE0C9499CEDD397416FC829169860FBFEEE626CE98FA97F4127232CCB97BE303EB74933C9B029653B6662FCA685CE6AC7295D9F00B54DB70B1D58707745738B278BA6F9D4664FB30AE6A03CC156736A5A1A94ACF18249226456976743ED43154306E0C1DF63B43F26223987D3D427743E3DBEAAE0DBE60F6FD88F51E372885F0D5D52E4141C55ECF4D220E27A8B4355EB56692B89157B7AA21B1779718320C2E4DD7F957E855888808A9D170A820520572D9E3AE9AD1F65E53836F775C77209443A9DFCE26F1F16B7362032BDA3FEB1C86944B1E427091C4DEEE2D3A5BDD96161A5B49BC75B62756CBDC2CDE8FEBD7D7C667FCA45536278DDBE6AFD46[0m
+[0;32;49m[01-01 00:00:43 ty D][atop_base.c:469] http request send![0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:590] TUYA_TLS Begin Connect a2.tuyacn.com:443[0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:341] mbedtls authmode: MBEDTLS_SSL_VERIFY_REQUIRED[0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:354] load root ca cert.[0m
+[0;32;49m[01-01 00:00:43 ty D][tuya_tls.c:661] socket fd is set. set to inner send/recv to handshake[0m
+[0;32;49m[01-01 00:00:44 ty D][tuya_tls.c:323] mbedtls_cert_pkey_free.[0m
+[0;32;49m[01-01 00:00:44 ty D][tuya_tls.c:702] handshake finish for a2.tuyacn.com. set send/recv to user set[0m
+[0;32;49m[01-01 00:00:44 ty D][tuya_tls.c:708] TUYA_TLS Success Connect a2.tuyacn.com:443 Suit:TLS-ECDHE-RSA-WITH-AES-128-GCM-SHA256[0m
+[0;32;49m[01-01 00:00:44 ty D][http_client_wrapper.c:119] tls connencted![0m
+[0;32;49m[01-01 00:00:44 ty D][http_client_wrapper.c:147] http request send![0m
+[0;32;49m[01-01 00:00:44 ty D][http_client_wrapper.c:40] HTTP header add key=User-Agent[0m
+[0;32;49m[01-01 00:00:44 ty D][http_client_wrapper.c:40] HTTP header add key=Content-Type[0m
+[0;32;49m[01-01 00:00:44 ty D][http_client_wrapper.c:51] Sending HTTP POST request to a2.tuyacn.com[0m
+[0;32;49m[01-01 00:00:46 ty D][tls_transporter.c:122] tls transporter close socket fd:54[0m
+[0;32;49m[01-01 00:00:46 ty D][tcp_transporter.c:200] tcp transporter close socket fd:54[0m
+[0;32;49m[01-01 00:00:46 ty D][tls_transporter.c:130] tls transporter close tls handler:0x3c379be8[0m
+[0;32;49m[01-01 00:00:46 ty D][tuya_tls.c:819] TUYA_TLS Disconnect ENTER[0m
+[0;32;49m[01-01 00:00:46 ty D][tuya_tls.c:844] TUYA_TLS Disconnect Success[0m
+[0;32;49m[01-01 00:00:46 ty D][tuya_tls.c:511] tuya_tls_connect_destroy.[0m
+[0;32;49m[01-01 00:00:46 ty D][atop_base.c:267] result:
+{"result":{"capability":1025,"devId":"6cfd204bde09b7da7fynib","dstIntervals":[],"localKey":"KpV=*UY:c@<_-3Fd","resetFactory":false,"schema":"[{\"mode\":\"rw\",\"property\":{\"type\":\"bool\"},\"id\":1,\"type\":\"obj\"},{\"mode\":\"ro\",\"property\":{\"min\":0,\"max\":100,\"scale\":0,\"step\":1,\"type\":\"value\"},\"id\":2,\"type\":\"obj\"},{\"mode\":\"rw\",\"property\":{\"min\":0,\"max\":100,\"scale\":0,\"step\":1,\"type\":\"value\"},\"id\":3,\"type\":\"obj\"},{\"mode\":\"ro\",\"property\":{\"range\":[\"none\",\"charging\",\"charge_done\"],\"type\":\"enum\"},\"id\":5,\"type\":\"obj\"}]","schemaId":"e1mwfu2w","secKey":"YEZ`^#HS<q]ABj{=","stdTimeZone":"+08:00","timeZone":"+08:00"},"t":1773741138,"success":true}[0m
+[0;32;49m[01-01 00:00:46 ty D][tuya_main.c:155] Tuya Event ID:12(TUYA_EVENT_TIMESTAMP_SYNC)[0m
+[0;36;49m[01-01 00:00:46 ty I][tuya_main.c:156] Device Free heap 47883[0m
+[0;36;49m[01-01 00:00:46 ty I][tuya_main.c:214] Sync timestamp:1773741138[0m
+[0;32;49m[03-17 09:52:18 ty D][tal_kv.c:202] key:e1mwfu2w, len 363[0m
+[0;32;49m[03-17 09:52:18 ty D][tuya_iot.c:203] result len 214 :{"capability":1025,"devId":"6cfd204bde09b7da7fynib","dstIntervals":[],"localKey":"KpV=*UY:c@<_-3Fd","resetFactory":false,"schemaId":"e1mwfu2w","secKey":"YEZ`^#HS<q]ABj{=","stdTimeZone":"+08:00","timeZone":"+08:00"}[0m
+[0;32;49m[03-17 09:52:18 ty D][tal_kv.c:202] key:uuid683dda876825d1b7, len 214[0m
+[0;32;49m[03-17 17:52:18 ty D][dp_schema.c:1625] devid 6cfd204bde09b7da7fynib, schema_json [{"mode":"rw","property":{"type":"bool"},"id":1,"type":"obj"},{"mode":"ro","property":{"min":0,"max":100,"scale":0,"step":1,"type":"value"},"id":2,"type":"obj"},{"mode":"rw","property":{"min":0,"max":100,"scale":0,"step":1,"type":"value"},"id":3,"type":"obj"},{"mode":"ro","property":{"range":["none","charging","charge_done"],"type":"enum"},"id":5,"type":"obj"}][0m
+[0;32;49m[03-17 17:52:18 ty D][dp_schema.c:1666] create dp_schema Success [0m
+[0;32;49m[03-17 17:52:18 ty D][tal_kv.c:202] key:endpoint.cert, len 2002[0m
+[0;32;49m[03-17 17:52:18 ty D][tal_kv.c:202] key:endpoint.domain, len 113[0m
+[0;32;49m[03-17 17:52:18 ty D][tuya_main.c:155] Tuya Event ID:3(TUYA_EVENT_ACTIVATE_SUCCESSED)[0m
+[0;36;49m[03-17 17:52:18 ty I][tuya_main.c:156] Device Free heap 47707[0m
+[0;32;49m[03-17 17:52:18 ty D][tuya_main.c:155] Tuya Event ID:14(TUYA_EVENT_BINDED_NOTIFY)[0m
+[0;36;49m[03-17 17:52:18 ty I][tuya_main.c:156] Device Free heap 47707[0m
+[0;32;49m[03-17 17:52:18 ty D][tuya_iot.c:1367] [{\"otaChannel\":0,\"protocolVer\":\"2.3\",\"baselineVer\":\"40.07\",\"softVer\":\"1.0.1\"}][0m
+[0;32;49m[03-17 17:52:18 ty D][tuya_iot.c:1383] The verison unchanged, dont need sync.[0m
+[0;36;49m[03-17 17:52:18 ty I][mqtt_service.c:456] tuya_mqtt_start...[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:590] TUYA_TLS Begin Connect m2.tuyacn.com:8883[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:341] mbedtls authmode: MBEDTLS_SSL_VERIFY_REQUIRED[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:354] load root ca cert.[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:661] socket fd is set. set to inner send/recv to handshake[0m
+[0;32;49m[03-17 17:52:19 ty D][netmgr.c:117] Start LAN initialization[0m
+[0;36;49m[03-17 17:52:19 ty I][tal_thread.c:226] thread_create name:lan_sock_loop,stackDepth:4096,totalstackDepth:58880,priority:3[0m
+[0;32;49m[03-17 17:52:19 ty D][tal_thread.c:245] Thread:lan_sock_loop Exec Start. Set to Running Stat[0m
+[0;32;49m[03-17 17:52:19 ty D][lan_sock.c:333] init sock loop success[0m
+[0;32;49m[03-17 17:52:19 ty D][lan_sock.c:363] reg post queue 55[0m
+[0;32;49m[03-17 17:52:19 ty D][lan_sock.c:363] reg post queue 56[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_lan.c:1353] lan init success[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:323] mbedtls_cert_pkey_free.[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:702] handshake finish for m2.tuyacn.com. set send/recv to user set[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_tls.c:708] TUYA_TLS Success Connect m2.tuyacn.com:8883 Suit:TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA256[0m
+[0;36;49m[03-17 17:52:19 ty I][mqtt_service.c:298] mqtt client connected![0m
+[0;32;49m[03-17 17:52:19 ty D][mqtt_service.c:302] SUBSCRIBE sent for topic smart/device/in/6cfd204bde09b7da7fynib to broker.[0m
+[0;32;49m[03-17 17:52:19 ty D][tuya_main.c:155] Tuya Event ID:4(TUYA_EVENT_MQTT_CONNECTED)[0m
+[0;36;49m[03-17 17:52:19 ty I][tuya_main.c:156] Device Free heap 41211[0m
+[0;36;49m[03-17 17:52:19 ty I][tuya_main.c:186] Device MQTT Connected![0m
+[0;32;49m[03-17 17:52:19 ty D][mqc_app.c:64] register mq protocol:9000[0m
+[0;32;49m[03-17 17:52:19 ty D][tal_thread.c:245] Thread:ai_client Exec Start. Set to Running Stat[0m
+[0;34;49m[03-17 17:52:19 ty N][tuya_ai_client.c:98] ***** ai client state 0 -> 1 *****[0m
+[0;36;49m[03-17 17:52:19 ty I][tal_thread.c:226] thread_create name:ai_client,stackDepth:4096,totalstackDepth:62976,priority:4[0m
+[0;34;49m[03-17 17:52:19 ty N][tuya_ai_protocol.c:342] ai proto init success, sl:4[0m
+[0;34;49m[03-17 17:52:19 ty N][tuya_ai_client.c:571] ai client init success, version:1[0m
+[0;32;49m[03-17 17:52:19 ty D][tal_thread.c:245] Thread:ai_agent_input Exec Start. Set to Running Stat[0m
+[0;36;49m[03-17 17:52:19 ty I][tal_thread.c:226] thread_create name:ai_agent_input,stackDepth:4608,totalstackDepth:67584,priority:4[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_ai_input.c:459] ai input init success[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:245] Thread:ai_agent_output Exec Start. Set to Running Stat[0m
+[0;36;49m[03-17 17:52:20 ty I][tal_thread.c:226] thread_create name:ai_agent_output,stackDepth:4096,totalstackDepth:71680,priority:4[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_ai_output.c:230] ai output init success[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_agent.c:1073] ai agent init[0m
+[0;36;49m[03-17 17:52:20 ty I][tuya_ai_monitor.c:943] AI monitor initialized, port=5055, max_clients=3, inital sid=3891360197[0m
+[0;36;49m[03-17 17:52:20 ty I][tuya_ai_monitor.c:873] AI monitor started, listening on port 5055[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_chat_main.c:108] read ai_toy config: {"volume": 41, "chat_mode":2}[0m
+[0;34;49m[03-17 17:52:20 ty N][ai_audio_input.c:355] audio input -> wakeup mode set from 0 to 1![0m
+[0;34;49m[03-17 17:52:20 ty N][ai_audio_input.c:272] audio input -> stop! mode is 0, task is 0x3c35dd50[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:308] Del Thrd:record_task[0m
+[0;34;49m[03-17 17:52:20 ty N][ai_audio_input.c:243] audio input -> start! mode is 1, task is 0x0[0m
+[0;36;49m[03-17 17:52:20 ty I][ble_gap.c:5121] ble_gap_terminate:
+[0m
+[0;36;49m[03-17 17:52:20 ty I][ble_gap.c:5097] GAP procedure initiated: terminate connection; conn_handle=1 hci_reason=13
+[0m
+[0;36;49m[03-17 17:52:20 ty I][tal_thread.c:226] thread_create name:record_task,stackDepth:2560,totalstackDepth:74240,priority:0[0m
+[0;32;49m[03-17 17:52:20 ty D][ble_mgr.c:409] ble monitor check iot is connected, stop adv![0m
+[0;32;49m[03-17 17:52:20 ty D][ai_audio_input.c:259] need human voice detect, start __record_task[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mode_wakeup.c:157] mode wakeup state change form INIT to IDLE[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 33[0m
+[0;36;49m[03-17 17:52:20 ty I][tkl_bluetooth.c:216] BLE_GAP_EVENT_SUBSCRIBE[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_ai_agent.c:1483] mcp cb set[0m
+[0;34;49m[03-17 17:52:20 ty N][tkl_bluetooth.c:158] BLE_GAP_EVENT_DISCONNECT(0x216)
+[0m
+[0;36;49m[03-17 17:52:20 ty I][ai_mcp_server.c:817] Added tool: device_info_get[0m
+[0;34;49m[03-17 17:52:20 ty N][ble_mgr.c:965] Ble Disonnected[0m
+[0;36;49m[03-17 17:52:20 ty I][ai_mcp_server.c:817] Added tool: device_audio_volume_set[0m
+[0;36;49m[03-17 17:52:20 ty I][ai_mcp_server.c:817] Added tool: device_audio_mode_set[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mcp_tools.c:223] MCP Server initialized successfully[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_main.c:141] DP upload volume:41[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_iot_dp.c:240] dp report: devid 6cfd204bde09b7da7fynib, dps 0x3fcbd2c0, dpscnt 1, flags 0[0m
+[0;32;49m[03-17 17:52:20 ty D][dp_schema.c:552] dp<3> check. need_update:1 pv_stat:0 trig_t:0 type:0 force_send:0 prop_tp:1[0m
+[0;32;49m[03-17 17:52:20 ty D][dp_schema.c:570] dp<3> value: 0, new: 41[0m
+[0;32;49m[03-17 17:52:20 ty D][dp_schema.c:1009] dp rept out: {"3":41}[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_iot_dp.c:311] mqtt channel report[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:261] Thread:record_task Exec Finish. Set to Del Stat[0m
+[0;36;49m[03-17 17:52:20 ty I][tuya_iot.c:1020] Tuya MQTT connected.[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:125] del list not empty...deleting 0x3c35dd7c, next 0x3c2e4044[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:128] Thread:record_task is still running..[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_client_wrapper.c:58] MQTT_PACKET_TYPE_SUBACK id:1[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_service.c:334] Subscribe successed ID:1[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_client_wrapper.c:58] MQTT_PACKET_TYPE_SUBACK id:2[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_service.c:334] Subscribe successed ID:2[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_client_wrapper.c:58] MQTT_PACKET_TYPE_SUBACK id:3[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_service.c:334] Subscribe successed ID:3[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:125] del list not empty...deleting 0x3c35dd7c, next 0x3c2e4044[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:132] Final Free Thread:record_task, is_self:1[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:136] delay to delete thread self[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:147] finally delete thread self[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:103] real delete thread:0x3fceae0c[0m
+[0;32;49m[03-17 17:52:20 ty D][tal_thread.c:245] Thread:record_task Exec Start. Set to Running Stat[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_service.c:326] recv message TopicName:smart/device/in/6cfd204bde09b7da7fynib, payload len:616[0m
+[0;32;49m[03-17 17:52:20 ty D][mqc_app.c:44] mqc app handler protocol:9000[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_client.c:218] connect refresh success,expire:1773744741 current:1773741140 next 3591 s[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_client.c:98] ***** ai client state 1 -> 2 *****[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_protocol.c:2234] connect to host :106.15.176.160, port: 8884[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_client.c:98] ***** ai client state 2 -> 3 *****[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 277, sequence 2[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_client.c:98] ***** ai client state 3 -> 4 *****[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 169, sequence 3[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_client.c:98] ***** ai client state 4 -> 5 *****[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_client_wrapper.c:72] MQTT_PACKET_TYPE_PUBACK id:5[0m
+[0;32;49m[03-17 17:52:20 ty D][mqtt_service.c:341] PUBACK ID:5[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_protocol.c:2088] connection id:0f2c4ead-46c9-460f-8655-ff85358c375f[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_protocol.c:2072] auth success[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_client.c:98] ***** ai client state 5 -> 6 *****[0m
+[0;34;49m[03-17 17:52:20 ty N][tuya_ai_biz.c:1206] ai biz init success[0m
+[0;34;49m[03-17 17:52:20 ty N][ai_mode_wakeup.c:257] connected to server[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mode_wakeup.c:259] mode wakeup state change form IDLE to IDLE[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 32[0m
+[0;34;49m[03-17 17:52:20 ty N][ai_audio_player.c:473] audio player -> play alert type=3[0m
+[0;34;49m[03-17 17:52:20 ty N][ai_audio_player.c:355] audio player -> player tts mem data len 12896[0m
+[0;32;49m[03-17 17:52:20 ty D][svc_ai_player.c:492] ai player FG cmd START[0m
+[0;32;49m[03-17 17:52:20 ty D][svc_ai_player.c:105] start player FG value=null[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_audio_player.c:156] audio player -> player tts event: 1[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_audio_player.c:177] audio player -> playing start event[0m
+[0;32;49m[03-17 17:52:20 ty D][tuya_ai_agent.c:760] ai session new[0m
+[0;32;49m[03-17 17:52:20 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 21[0m
+[0;32;49m[03-17 17:52:20 ty D][decoder_mp3.c:56] ID3 tag_size = 34[0m
+[0;32;49m[03-17 17:52:20 ty D][matop_service.c:417] atop request: {"id":1,"a":"tuya.device.upgrade.silent.get","t":1773741140,"data":{"subId":null,"t":1773741140},"v":"4.4"}[0m
+[0;32;49m[03-17 17:52:21 ty D][lan_sock.c:136] reg lan sock 55,read:0x42029488[0m
+[0;32;49m[03-17 17:52:21 ty D][mqtt_service.c:326] recv message TopicName:smart/device/in/6cfd204bde09b7da7fynib, payload len:433[0m
+[0;32;49m[03-17 17:52:21 ty D][mqc_app.c:44] mqc app handler protocol:9000[0m
+[0;32;49m[03-17 17:52:21 ty D][tuya_ai_agent.c:846] session attrs: {"tts.order.supports":[{"format":"mp3","container":"","sampleRate":16000,"bitDepth":16,"channels":1,"bitRate":64000}],"deviceMcp":{"supportCustomMCP":true}}[0m
+[0;32;49m[03-17 17:52:21 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 393, sequence 4[0m
+[0;32;49m[03-17 17:52:21 ty D][mqtt_service.c:326] recv message TopicName:rpc/rsp/6cfd204bde09b7da7fynib, payload len:110[0m
+[0;32;49m[03-17 17:52:21 ty D][tuya_ai_agent.c:914] create session success, 245bb318-916e-470e-96d7-f09b-a6a806c0[0m
+[0;32;49m[03-17 17:52:21 ty D][tuya_main.c:155] Tuya Event ID:12(TUYA_EVENT_TIMESTAMP_SYNC)[0m
+[0;36;49m[03-17 17:52:21 ty I][tuya_main.c:156] Device Free heap 23015[0m
+[0;36;49m[03-17 17:52:21 ty I][tuya_main.c:214] Sync timestamp:1773741142[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1000, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:245bb318-916e-470e-96d7-f09b-a6a806c0[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_agent.c:1489] mcp data: {"id":"1773741142","jsonrpc":"2.0","method":"initialize","params":{"capabilities":{"elicitation":{}},"clientInfo":{"name":"omniClient","version":"1.0.0"},"protocolVersion":"2025-06-18"}}[0m
+[0;32;49m[03-17 17:52:22 ty D][ai_mcp_server.c:856] MCP Reply: {"jsonrpc":"2.0","id":"1773741142","result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"Tuya MCP Server","version":"1.0"}}}[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 329, sequence 5[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_event.c:57] send event rt:0, type:1000[0m
+[0;36;49m[03-17 17:52:22 ty I][tuya_main.c:299] Heap: free=15511   min_ever=8163    largest_block=11264 [0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_monitor.c:653] Server socket created, fd=58[0m
+[0;32;49m[03-17 17:52:22 ty D][lan_sock.c:363] reg post queue 58[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_monitor.c:839] Server socket created successfully, stopped timer[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1000, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1773741142[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_agent.c:1489] mcp data: {"jsonrpc":"2.0","id":"1773741142","method":"notifications/initialized"}[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1000, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:245bb3[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_agent.c:1489] mcp data: {"jsonrpc":"2.0","id":"245bb3","method":"tools/list"}									[0m
+[0;32;49m[03-17 17:52:22 ty D][ai_mcp_server.c:856] MCP Reply: {"jsonrpc":"2.0","id":"245bb3","result":{"tools":[{"name":"device_audio_mode_set","description":"Sets the device's chat mode.\nParameters:\n- mode (integer): The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free).\nResponse:\n- Returns true if the mode was set successfully.","inputSchema":{"type":"object","properties":{"mode":{"type":"integer","minimum":0,"maximum":3,"description":"The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free)"}},"required":["mode"]}},{"name":"device_audio_volume_set","description":"Sets the device's volume level.\nParameters:\n- volume (int): The volume level to set (0-100).\nResponse:\n- Returns true if the volume was set successfully.","inputSchema":{"type":"object","properties":{"volume":{"type":"integer","minimum":0,"maximum":100,"description":"The volume level to set (0-100)."}},"required":["volume"]}},{"name":"device_info_get","description":"Get device information such as model, serial number, and firmware ve[0m
+[0;32;49m[03-17 17:52:22 ty D][lan_sock.c:136] reg lan sock 56,read:0x4202a120[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 1177, sequence 6[0m
+[0;32;49m[03-17 17:52:22 ty D][tuya_ai_event.c:57] send event rt:0, type:1000[0m
+[0;32;49m[03-17 17:52:23 ty D][lan_sock.c:136] reg lan sock 58,read:0x420256f8[0m
+[0;36;49m[03-17 17:52:23 ty I][app_chat_bot.c:52] Free heap size:22903[0m
+[0;32;49m[03-17 17:52:23 ty D][tuya_lan.c:1087] new session connect. nums:1 cfd:59 ip:0xc0a8027e[0m
+[0;32;49m[03-17 17:52:23 ty D][lan_sock.c:363] reg post queue 59[0m
+[0;32;49m[03-17 17:52:23 ty D][lan_sock.c:136] reg lan sock 59,read:0x42029854[0m
+[0;32;49m[03-17 17:52:23 ty D][tuya_lan.c:742] Process Data. FD:59, Num:12101, Type:3, Len:16[0m
+[0;32;49m[03-17 17:52:23 ty D][tuya_lan.c:742] Process Data. FD:59, Num:12102, Type:5, Len:32[0m
+[0;32;49m[03-17 17:52:24 ty D][tuya_lan.c:742] Process Data. FD:59, Num:12103, Type:16, Len:2[0m
+[0;32;49m[03-17 17:52:24 ty D][tuya_lan.c:871] dpobj str {"dps":{"1":false,"2":0,"3":41,"5":"none"},"devId":"6cfd204bde09b7da7fynib"}[0m
+[0;32;49m[03-17 17:52:24 ty D][tuya_lan.c:879] Send Query To App:{"dps":{"1":false,"2":0,"3":41,"5":"none"},"devId":"6cfd204bde09b7da7fynib"}[0m
+[0;34;49m[03-17 17:52:24 ty N][svc_ai_player.c:244] ai player FG eof[0m
+[0;32;49m[03-17 17:52:24 ty D][svc_ai_player.c:133] stop player FG[0m
+[0;32;49m[03-17 17:52:24 ty D][svc_ai_playlist.c:52] playlist player state 0 index 0 count 0 loop 0 single 0[0m
+[0;32;49m[03-17 17:52:24 ty D][ai_audio_player.c:156] audio player -> player tts event: 0[0m
+[0;32;49m[03-17 17:52:24 ty D][ai_audio_player.c:163] audio player -> stop event[0m
+[0;32;49m[03-17 17:52:24 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 31[0m
+[0;32;49m[03-17 17:52:24 ty D][ai_mode_wakeup.c:240] mode wakeup state change form IDLE to IDLE[0m
+[0;36;49m[03-17 17:52:32 ty I][tuya_main.c:299] Heap: free=15287   min_ever=8163    largest_block=11264 [0m
+[0;36;49m[03-17 17:52:33 ty I][app_chat_bot.c:52] Free heap size:22791[0m
+[0;36;49m[03-17 17:52:42 ty I][tuya_main.c:299] Heap: free=15287   min_ever=8163    largest_block=11264 [0m
+[0;36;49m[03-17 17:52:43 ty I][app_chat_bot.c:52] Free heap size:22791[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_chat_main.c:254] ai chat button event: 0[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_chat_main.c:254] ai chat button event: 1[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_chat_main.c:254] ai chat button event: 2[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_audio_player.c:439] audio player -> stop all player[0m
+[0;34;49m[03-17 17:52:44 ty N][ai_audio_input.c:371] audio input -> reset ringbuf![0m
+[0;34;49m[03-17 17:52:44 ty N][ai_audio_input.c:379] audio input -> vad stop![0m
+[0;34;49m[03-17 17:52:44 ty N][ai_audio_input.c:382] audio input -> vad start![0m
+[0;32;49m[03-17 17:52:44 ty D][tuya_ai_agent.c:1418] [upload event] type:4[0m
+[0;31;49m[03-17 17:52:44 ty E][tuya_ai_event.c:38] event or session id was null[0m
+[0;34;49m[03-17 17:52:44 ty N][ai_audio_player.c:473] audio player -> play alert type=12[0m
+[0;34;49m[03-17 17:52:44 ty N][ai_audio_player.c:355] audio player -> player tts mem data len 4257[0m
+[0;32;49m[03-17 17:52:44 ty D][svc_ai_player.c:492] ai player FG cmd START[0m
+[0;32;49m[03-17 17:52:44 ty D][svc_ai_player.c:105] start player FG value=null[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_audio_player.c:156] audio player -> player tts event: 1[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_audio_player.c:177] audio player -> playing start event[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 21[0m
+[0;32;49m[03-17 17:52:44 ty D][ai_mode_wakeup.c:295] mode wakeup state change form IDLE to LISTEN[0m
+[0;32;49m[03-17 17:52:44 ty D][decoder_mp3.c:56] ID3 tag_size = 35[0m
+[0;34;49m[03-17 17:52:44 ty N][ai_audio_input.c:402] audio input -> mode is 1, wakeup set to 1, vad flag is 0![0m
+[0;32;49m[03-17 17:52:44 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;32;49m[03-17 17:52:45 ty D][ai_audio_input.c:167] audio input -> wakup flag is 1, auto vad set from 0 to 2![0m
+[0;32;49m[03-17 17:52:45 ty D][ai_audio_input.c:138] audio input -> vad stat change to flag 2[0m
+[0;32;49m[03-17 17:52:45 ty D][ai_mode_wakeup.c:270] [====ai_wakeup] vad: [2][0m
+[0;32;49m[03-17 17:52:45 ty D][tuya_ai_input.c:288] ai input stop, state:4[0m
+[0;32;49m[03-17 17:52:45 ty D][tuya_ai_input.c:344] recv queue state 4[0m
+[0;32;49m[03-17 17:52:45 ty D][tuya_ai_agent.c:1418] [upload event] type:2[0m
+[0;31;49m[03-17 17:52:45 ty E][tuya_ai_event.c:38] event or session id was null[0m
+[0;34;49m[03-17 17:52:45 ty N][svc_ai_player.c:244] ai player FG eof[0m
+[0;32;49m[03-17 17:52:45 ty D][svc_ai_player.c:133] stop player FG[0m
+[0;32;49m[03-17 17:52:45 ty D][svc_ai_playlist.c:52] playlist player state 0 index 0 count 0 loop 0 single 0[0m
+[0;32;49m[03-17 17:52:45 ty D][ai_audio_player.c:156] audio player -> player tts event: 0[0m
+[0;32;49m[03-17 17:52:45 ty D][ai_audio_player.c:163] audio player -> stop event[0m
+[0;32;49m[03-17 17:52:46 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 31[0m
+[0;32;49m[03-17 17:52:46 ty D][ai_mode_wakeup.c:240] mode wakeup state change form LISTEN to LISTEN[0m
+[0;32;49m[03-17 17:52:46 ty D][ai_audio_input.c:167] audio input -> wakup flag is 1, auto vad set from 2 to 1![0m
+[0;32;49m[03-17 17:52:46 ty D][ai_audio_input.c:138] audio input -> vad stat change to flag 1[0m
+[0;32;49m[03-17 17:52:46 ty D][ai_mode_wakeup.c:270] [====ai_wakeup] vad: [1][0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1443] set scode:[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_input.c:264] ai input start, state:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_input.c:344] recv queue state 1[0m
+[0;34;49m[03-17 17:52:46 ty N][tuya_ai_agent.c:623] set session active, scode:, sid:245bb318-916e-470e-96d7-f09b-a6a806c0[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1418] [upload event] type:0[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 249, sequence 7[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_event.c:57] send event rt:0, type:0[0m
+[0;34;49m[03-17 17:52:46 ty N][tuya_ai_event.c:88] event id is 1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_input.c:375] start lazy queue sync[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:0, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 1, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5273, sequence 8[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 9[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 10[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 11[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 12[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 13[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 14[0m
+[0;32;49m[03-17 17:52:46 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 15[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 16[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 17[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 18[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 19[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 20[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 21[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 22[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 23[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 24[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:47 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 25[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 26[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 27[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 28[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 29[0m
+[0;32;49m[03-17 17:52:48 ty D][ai_audio_input.c:167] audio input -> wakup flag is 1, auto vad set from 1 to 2![0m
+[0;32;49m[03-17 17:52:48 ty D][ai_audio_input.c:138] audio input -> vad stat change to flag 2[0m
+[0;32;49m[03-17 17:52:48 ty D][ai_mode_wakeup.c:270] [====ai_wakeup] vad: [2][0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_input.c:288] ai input stop, state:4[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_input.c:344] recv queue state 4[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:0 flag 3, total_len:0, id:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 105, sequence 30[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1418] [upload event] type:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 185, sequence 31[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_event.c:57] send event rt:0, type:1[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:1418] [upload event] type:2[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 185, sequence 32[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_event.c:57] send event rt:0, type:2[0m
+[0;32;49m[03-17 17:52:48 ty D][tuya_ai_agent.c:416] ASR text: 查一下你的音量大小。[0m
+[0;34;49m[03-17 17:52:48 ty N][ai_skill.c:106] text -> ASR result: 查一下你的音量大小。[0m
+[0;32;49m[03-17 17:52:48 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 1[0m
+[0;32;49m[03-17 17:52:48 ty D][ai_mode_wakeup.c:227] mode wakeup state change form LISTEN to THINK[0m
+[0;34;49m[03-17 17:52:48 ty N][ai_audio_input.c:402] audio input -> mode is 1, wakeup set to 0, vad flag is 2![0m
+[0;32;49m[03-17 17:52:48 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;34;49m[03-17 17:52:49 ty N][ai_skill.c:178] json-str {"content":"正在检查音量设置。","reasoningContent":"","appendMode":"append","timeIndex":2700,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:52:49 ty N][ai_skill.c:203] text -> NLG eof: 0, content: 正在检查音量设置。, time: 1010324808[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 11[0m
+[0;34;49m[03-17 17:52:49 ty N][ai_skill.c:65] text -> skill code: emo[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 15[0m
+[0;34;49m[03-17 17:52:49 ty N][ai_chat_ui.c:103] emoji: 😐, name: NEUTRAL[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_agent.c:100] ai agent -> audio codec type: 109[0m
+[0;32;49m[03-17 17:52:49 ty D][tuya_ai_output.c:265] [output] start. status:0[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_agent.c:59] ai agent -> recv event type: 0[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_audio_player.c:378] audio player -> tts stream start[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 4[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:231] mode wakeup state change form THINK to SPEAK[0m
+[0;32;49m[03-17 17:52:49 ty D][svc_ai_player.c:492] ai player FG cmd START[0m
+[0;32;49m[03-17 17:52:49 ty D][svc_ai_player.c:105] start player FG value=null[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_audio_player.c:156] audio player -> player tts event: 1[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_audio_player.c:177] audio player -> playing start event[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 21[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 5[0m
+[0;32;49m[03-17 17:52:49 ty D][decoder_mp3.c:56] ID3 tag_size = 35[0m
+[0;32;49m[03-17 17:52:49 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;32;49m[03-17 17:52:50 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1000, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:52:50 ty D][tuya_ai_agent.c:1489] mcp data: {"jsonrpc":"2.0","id":"call_uvxm1xwd1c8ojhlu866qu223","method":"tools/call","params":{"name":"device_audio_volume_set","arguments":{"volume":0.0}}}[0m
+[0;32;49m[03-17 17:52:50 ty D][ai_mcp_tools.c:101] __set_volume enter[0m
+[0;32;49m[03-17 17:52:50 ty D][ai_audio_player.c:501] audio player -> set volume 0[0m
+[0;32;49m[03-17 17:52:50 ty D][ai_mcp_tools.c:114] set volume to 0[0m
+[0;32;49m[03-17 17:52:50 ty D][ai_mcp_tools.c:119] __set_volume exit[0m
+[0;32;49m[03-17 17:52:50 ty D][ai_mcp_server.c:856] MCP Reply: {"jsonrpc":"2.0","id":"call_uvxm1xwd1c8ojhlu866qu223","result":{"content":[{"type":"text","text":"true"}],"isError":false}}[0m
+[0;32;49m[03-17 17:52:50 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 297, sequence 33[0m
+[0;32;49m[03-17 17:52:50 ty D][tuya_ai_event.c:57] send event rt:0, type:1000[0m
+[0;36;49m[03-17 17:52:52 ty I][tuya_main.c:299] Heap: free=14971   min_ever=8163    largest_block=11264 [0m
+[0;34;49m[03-17 17:52:52 ty N][ai_skill.c:178] json-str {"content":" 已经成功查询到设备当前音量大小啦，","reasoningContent":"","appendMode":"append","timeIndex":4700,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:52:52 ty N][ai_skill.c:203] text -> NLG eof: 0, content:  已经成功查询到设备当前音量大小啦，, time: 1010324808[0m
+[0;32;49m[03-17 17:52:52 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 12[0m
+[0;36;49m[03-17 17:52:53 ty I][app_chat_bot.c:52] Free heap size:22475[0m
+[0;34;49m[03-17 17:52:54 ty N][ai_skill.c:178] json-str {"content":"音量已经设置为 0。要是你还有其他需求，","reasoningContent":"","appendMode":"append","timeIndex":5400,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:52:54 ty N][ai_skill.c:203] text -> NLG eof: 0, content: 音量已经设置为 0。要是你还有其他需求，, time: 1010324808[0m
+[0;32;49m[03-17 17:52:54 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 12[0m
+[0;31;49m[03-17 17:52:59 ty E][lan_sock.c:233] socket err:-100, sock:59, idx:3[0m
+[0;32;49m[03-17 17:52:59 ty D][tuya_lan.c:902] socket fault, errno:-100[0m
+[0;32;49m[03-17 17:52:59 ty D][tuya_lan.c:183] set socket fault 59[0m
+[0;31;49m[03-17 17:52:59 ty E][tuya_lan.c:928] net recv err fd:59,errno:104[0m
+[0;32;49m[03-17 17:52:59 ty D][tuya_lan.c:183] set socket fault 59[0m
+[0;32;49m[03-17 17:52:59 ty D][tuya_lan.c:247] i:0,time:1773741179,time:1773741174,fault:1[0m
+[0;32;49m[03-17 17:52:59 ty D][lan_sock.c:388] unreg post queue 59[0m
+[0;31;49m[03-17 17:52:59 ty E][lan_sock.c:233] socket err:104, sock:59, idx:3[0m
+[0;32;49m[03-17 17:52:59 ty D][lan_sock.c:158] unreg lan sock 59 and close it[0m
+[0;34;49m[03-17 17:52:59 ty N][ai_skill.c:178] json-str {"content":"随时跟我说哟。","reasoningContent":"","appendMode":"append","timeIndex":1950,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:52:59 ty N][ai_skill.c:203] text -> NLG eof: 0, content: 随时跟我说哟。, time: 1010324948[0m
+[0;32;49m[03-17 17:52:59 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 12[0m
+[0;34;49m[03-17 17:53:01 ty N][ai_skill.c:178] json-str {"content":"","reasoningContent":"","appendMode":"append","finish":true,"tags":[]}[0m
+[0;34;49m[03-17 17:53:01 ty N][ai_skill.c:203] text -> NLG eof: 1, content: , time: 1010324972[0m
+[0;32;49m[03-17 17:53:01 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 13[0m
+[0;32;49m[03-17 17:53:01 ty D][tuya_ai_output.c:373] [output] stop. force:0 status:1[0m
+[0;32;49m[03-17 17:53:01 ty D][tuya_ai_output.c:156] [output] stop done[0m
+[0;32;49m[03-17 17:53:01 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:53:01 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:53:01 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:2, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:53:01 ty D][ai_agent.c:59] ai agent -> recv event type: 2[0m
+[0;32;49m[03-17 17:53:01 ty D][ai_audio_player.c:393] audio player -> tts stream stop[0m
+[0;32;49m[03-17 17:53:01 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 7[0m
+[0;36;49m[03-17 17:53:02 ty I][tuya_main.c:299] Heap: free=14995   min_ever=8163    largest_block=11264 [0m
+[0;34;49m[03-17 17:53:02 ty N][svc_ai_player.c:244] ai player FG eof[0m
+[0;32;49m[03-17 17:53:02 ty D][svc_ai_player.c:133] stop player FG[0m
+[0;32;49m[03-17 17:53:02 ty D][svc_ai_playlist.c:52] playlist player state 0 index 0 count 0 loop 0 single 0[0m
+[0;32;49m[03-17 17:53:02 ty D][ai_audio_player.c:156] audio player -> player tts event: 0[0m
+[0;32;49m[03-17 17:53:02 ty D][ai_audio_player.c:163] audio player -> stop event[0m
+[0;32;49m[03-17 17:53:02 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 31[0m
+[0;32;49m[03-17 17:53:02 ty D][ai_mode_wakeup.c:240] mode wakeup state change form SPEAK to IDLE[0m
+[0;32;49m[03-17 17:53:02 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;36;49m[03-17 17:53:03 ty I][app_chat_bot.c:52] Free heap size:22499[0m
+[0;32;49m[03-17 17:53:08 ty D][ai_chat_main.c:254] ai chat button event: 0[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_chat_main.c:254] ai chat button event: 1[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_chat_main.c:254] ai chat button event: 2[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_audio_player.c:439] audio player -> stop all player[0m
+[0;34;49m[03-17 17:53:09 ty N][ai_audio_input.c:371] audio input -> reset ringbuf![0m
+[0;34;49m[03-17 17:53:09 ty N][ai_audio_input.c:379] audio input -> vad stop![0m
+[0;34;49m[03-17 17:53:09 ty N][ai_audio_input.c:382] audio input -> vad start![0m
+[0;32;49m[03-17 17:53:09 ty D][tuya_ai_agent.c:1418] [upload event] type:4[0m
+[0;32;49m[03-17 17:53:09 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 169, sequence 34[0m
+[0;32;49m[03-17 17:53:09 ty D][tuya_ai_event.c:57] send event rt:0, type:4[0m
+[0;34;49m[03-17 17:53:09 ty N][ai_audio_player.c:473] audio player -> play alert type=12[0m
+[0;34;49m[03-17 17:53:09 ty N][ai_audio_player.c:355] audio player -> player tts mem data len 4257[0m
+[0;32;49m[03-17 17:53:09 ty D][svc_ai_player.c:492] ai player FG cmd START[0m
+[0;32;49m[03-17 17:53:09 ty D][svc_ai_player.c:105] start player FG value=null[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_audio_player.c:156] audio player -> player tts event: 1[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_audio_player.c:177] audio player -> playing start event[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_mode_wakeup.c:295] mode wakeup state change form IDLE to LISTEN[0m
+[0;32;49m[03-17 17:53:09 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 21[0m
+[0;32;49m[03-17 17:53:09 ty D][decoder_mp3.c:56] ID3 tag_size = 35[0m
+[0;34;49m[03-17 17:53:09 ty N][ai_audio_input.c:402] audio input -> mode is 1, wakeup set to 1, vad flag is 2![0m
+[0;32;49m[03-17 17:53:09 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;34;49m[03-17 17:53:10 ty N][svc_ai_player.c:244] ai player FG eof[0m
+[0;32;49m[03-17 17:53:10 ty D][svc_ai_player.c:133] stop player FG[0m
+[0;32;49m[03-17 17:53:10 ty D][svc_ai_playlist.c:52] playlist player state 0 index 0 count 0 loop 0 single 0[0m
+[0;32;49m[03-17 17:53:10 ty D][ai_audio_player.c:156] audio player -> player tts event: 0[0m
+[0;32;49m[03-17 17:53:10 ty D][ai_audio_player.c:163] audio player -> stop event[0m
+[0;32;49m[03-17 17:53:10 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 31[0m
+[0;32;49m[03-17 17:53:10 ty D][ai_mode_wakeup.c:240] mode wakeup state change form LISTEN to LISTEN[0m
+[0;32;49m[03-17 17:53:11 ty D][ai_audio_input.c:167] audio input -> wakup flag is 1, auto vad set from 2 to 1![0m
+[0;32;49m[03-17 17:53:11 ty D][ai_audio_input.c:138] audio input -> vad stat change to flag 1[0m
+[0;32;49m[03-17 17:53:11 ty D][ai_mode_wakeup.c:270] [====ai_wakeup] vad: [1][0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1443] set scode:[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_input.c:264] ai input start, state:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_input.c:344] recv queue state 1[0m
+[0;34;49m[03-17 17:53:11 ty N][tuya_ai_agent.c:623] set session active, scode:, sid:245bb318-916e-470e-96d7-f09b-a6a806c0[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1418] [upload event] type:0[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 249, sequence 35[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_event.c:57] send event rt:0, type:0[0m
+[0;34;49m[03-17 17:53:11 ty N][tuya_ai_event.c:88] event id is ddb28fc3-3767-4986-8251[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_input.c:375] start lazy queue sync[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:0, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:ddb28fc3-3767-4986-8251[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 1, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5273, sequence 36[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 37[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 38[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 39[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 40[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 41[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 42[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:11 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 43[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 44[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 45[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 46[0m
+[0;36;49m[03-17 17:53:12 ty I][tuya_main.c:299] Heap: free=14875   min_ever=8163    largest_block=11264 [0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 47[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 48[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 49[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 50[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:4, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:53:12 ty D][ai_agent.c:59] ai agent -> recv event type: 4[0m
+[0;32;49m[03-17 17:53:12 ty D][ai_audio_player.c:439] audio player -> stop all player[0m
+[0;32;49m[03-17 17:53:12 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 18[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 51[0m
+[0;32;49m[03-17 17:53:12 ty D][mqtt_service.c:326] recv message TopicName:smart/device/in/6cfd204bde09b7da7fynib, payload len:244[0m
+[0;32;49m[03-17 17:53:12 ty D][mqc_app.c:44] mqc app handler protocol:9000[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:4, sid:(null), eid:1cda4284-c142-4190-b6a9[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:147] Interrupt event ignored, last:1773741192915, cur:1773741192915[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 52[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:12 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 53[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 54[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 55[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 56[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:5120 flag 2, total_len:5120, id:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 5225, sequence 57[0m
+[0;32;49m[03-17 17:53:13 ty D][ai_audio_input.c:167] audio input -> wakup flag is 1, auto vad set from 1 to 2![0m
+[0;32;49m[03-17 17:53:13 ty D][ai_audio_input.c:138] audio input -> vad stat change to flag 2[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:2560 flag 2, total_len:2560, id:1[0m
+[0;32;49m[03-17 17:53:13 ty D][ai_mode_wakeup.c:270] [====ai_wakeup] vad: [2][0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_input.c:288] ai input stop, state:4[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 2665, sequence 58[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_input.c:344] recv queue state 4[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1280] [ptype 31 upload stream] len:0 flag 3, total_len:0, id:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 105, sequence 59[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1418] [upload event] type:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 185, sequence 60[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_event.c:57] send event rt:0, type:1[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:1418] [upload event] type:2[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_protocol.c:2789] send success, total bytes sent: 185, sequence 61[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_event.c:57] send event rt:0, type:2[0m
+[0;36;49m[03-17 17:53:13 ty I][app_chat_bot.c:52] Free heap size:22379[0m
+[0;32;49m[03-17 17:53:13 ty D][tuya_ai_agent.c:416] ASR text: 把音量设置为二十六。[0m
+[0;34;49m[03-17 17:53:13 ty N][ai_skill.c:106] text -> ASR result: 把音量设置为二十六。[0m
+[0;32;49m[03-17 17:53:13 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 1[0m
+[0;32;49m[03-17 17:53:13 ty D][ai_mode_wakeup.c:227] mode wakeup state change form LISTEN to THINK[0m
+[0;34;49m[03-17 17:53:13 ty N][ai_audio_input.c:402] audio input -> mode is 1, wakeup set to 0, vad flag is 2![0m
+[0;32;49m[03-17 17:53:13 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;34;49m[03-17 17:53:13 ty N][ai_skill.c:65] text -> skill code: emo[0m
+[0;32;49m[03-17 17:53:13 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 15[0m
+[0;34;49m[03-17 17:53:13 ty N][ai_chat_ui.c:103] emoji: 😐, name: NEUTRAL[0m
+[0;34;49m[03-17 17:53:14 ty N][ai_skill.c:178] json-str {"content":"正在调整音量到二十六。","reasoningContent":"","appendMode":"append","timeIndex":3200,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:53:14 ty N][ai_skill.c:203] text -> NLG eof: 0, content: 正在调整音量到二十六。, time: 1010324808[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 11[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_agent.c:100] ai agent -> audio codec type: 109[0m
+[0;32;49m[03-17 17:53:14 ty D][tuya_ai_output.c:265] [output] start. status:0[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_agent.c:59] ai agent -> recv event type: 0[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_audio_player.c:378] audio player -> tts stream start[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 4[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_mode_wakeup.c:231] mode wakeup state change form THINK to SPEAK[0m
+[0;32;49m[03-17 17:53:14 ty D][svc_ai_player.c:492] ai player FG cmd START[0m
+[0;32;49m[03-17 17:53:14 ty D][svc_ai_player.c:105] start player FG value=null[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_audio_player.c:156] audio player -> player tts event: 1[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_audio_player.c:177] audio player -> playing start event[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 21[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 5[0m
+[0;32;49m[03-17 17:53:14 ty D][decoder_mp3.c:56] ID3 tag_size = 35[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;32;49m[03-17 17:53:14 ty D][mqtt_service.c:326] recv message TopicName:smart/device/in/6cfd204bde09b7da7fynib, payload len:207[0m
+[0;32;49m[03-17 17:53:14 ty D][tuya_main.c:155] Tuya Event ID:8(TUYA_EVENT_DP_RECEIVE_OBJ)[0m
+[0;36;49m[03-17 17:53:14 ty I][tuya_main.c:156] Device Free heap 22379[0m
+[0;32;49m[03-17 17:53:14 ty D][tuya_main.c:228] SOC Rev DP Cmd t1:1 t2:0 CNT:1[0m
+[0;32;49m[03-17 17:53:14 ty D][tuya_main.c:230] devid.6cfd204bde09b7da7fynib[0m
+[0;32;49m[03-17 17:53:14 ty D][tuya_main.c:108] idx:0 dpid:3 type:1 ts:1773741194[0m
+[0;32;49m[03-17 17:53:14 ty D][tuya_main.c:113] volume:26[0m
+[0;32;49m[03-17 17:53:14 ty D][ai_audio_player.c:501] audio player -> set volume 26[0m
+[0;32;49m[03-17 17:53:14 ty D][tal_kv.c:202] key:ty_ai_chat_par, len 29[0m
+[0;32;49m[03-17 17:53:15 ty D][ai_chat_main.c:84] save chat mode config: {"volume": 26, "chat_mode":2}[0m
+[0;32;49m[03-17 17:53:15 ty D][tuya_iot_dp.c:240] dp report: devid 6cfd204bde09b7da7fynib, dps 0x3c37bc94, dpscnt 1, flags 0[0m
+[0;32;49m[03-17 17:53:15 ty D][dp_schema.c:552] dp<3> check. need_update:1 pv_stat:1 trig_t:0 type:0 force_send:0 prop_tp:1[0m
+[0;32;49m[03-17 17:53:15 ty D][dp_schema.c:570] dp<3> value: 41, new: 26[0m
+[0;32;49m[03-17 17:53:15 ty D][dp_schema.c:1009] dp rept out: {"3":26}[0m
+[0;32;49m[03-17 17:53:15 ty D][tuya_iot_dp.c:311] mqtt channel report[0m
+[0;32;49m[03-17 17:53:15 ty D][mqtt_client_wrapper.c:72] MQTT_PACKET_TYPE_PUBACK id:8[0m
+[0;32;49m[03-17 17:53:15 ty D][mqtt_service.c:341] PUBACK ID:8[0m
+[0;34;49m[03-17 17:53:16 ty N][ai_skill.c:65] text -> skill code: smart_home[0m
+[0;34;49m[03-17 17:53:16 ty N][ai_skill.c:87] skill smart_home not handled[0m
+[0;32;49m[03-17 17:53:16 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 17[0m
+[0;34;49m[03-17 17:53:16 ty N][ai_skill.c:178] json-str {"content":" 音量已经成功设置为二十六啦！","reasoningContent":"","appendMode":"append","timeIndex":3750,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:53:16 ty N][ai_skill.c:203] text -> NLG eof: 0, content:  音量已经成功设置为二十六啦！, time: 1010497796[0m
+[0;32;49m[03-17 17:53:16 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 12[0m
+[0;34;49m[03-17 17:53:19 ty N][ai_skill.c:178] json-str {"content":"要是你还有别的指令或者想玩侦探游戏，","reasoningContent":"","appendMode":"append","timeIndex":4700,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:53:19 ty N][ai_skill.c:203] text -> NLG eof: 0, content: 要是你还有别的指令或者想玩侦探游戏，, time: 1010497796[0m
+[0;32;49m[03-17 17:53:19 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 12[0m
+[0;36;49m[03-17 17:53:22 ty I][tuya_main.c:299] Heap: free=14875   min_ever=7807    largest_block=11264 [0m
+[0;34;49m[03-17 17:53:22 ty N][ai_skill.c:178] json-str {"content":"都可以跟我讲讲哦。","reasoningContent":"","appendMode":"append","timeIndex":2450,"finish":false,"tags":[]}[0m
+[0;34;49m[03-17 17:53:22 ty N][ai_skill.c:203] text -> NLG eof: 0, content: 都可以跟我讲讲哦。, time: 1010497932[0m
+[0;32;49m[03-17 17:53:23 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 12[0m
+[0;36;49m[03-17 17:53:23 ty I][app_chat_bot.c:52] Free heap size:22379[0m
+[0;34;49m[03-17 17:53:24 ty N][ai_skill.c:178] json-str {"content":"","reasoningContent":"","appendMode":"append","finish":true,"tags":[]}[0m
+[0;34;49m[03-17 17:53:24 ty N][ai_skill.c:203] text -> NLG eof: 1, content: , time: 1010497892[0m
+[0;32;49m[03-17 17:53:24 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 13[0m
+[0;32;49m[03-17 17:53:25 ty D][tuya_ai_output.c:373] [output] stop. force:0 status:1[0m
+[0;32;49m[03-17 17:53:25 ty D][tuya_ai_output.c:156] [output] stop done[0m
+[0;32;49m[03-17 17:53:25 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:ddb28fc3-3767-4986-8251[0m
+[0;32;49m[03-17 17:53:25 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:1, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:ddb28fc3-3767-4986-8251[0m
+[0;32;49m[03-17 17:53:25 ty D][tuya_ai_agent.c:136] [====ai event cb====] type:2, sid:245bb318-916e-470e-96d7-f09b-a6a806c0, eid:ddb28fc3-3767-4986-8251[0m
+[0;32;49m[03-17 17:53:25 ty D][ai_agent.c:59] ai agent -> recv event type: 2[0m
+[0;32;49m[03-17 17:53:25 ty D][ai_audio_player.c:393] audio player -> tts stream stop[0m
+[0;32;49m[03-17 17:53:25 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 7[0m
+[0;34;49m[03-17 17:53:26 ty N][svc_ai_player.c:244] ai player FG eof[0m
+[0;32;49m[03-17 17:53:26 ty D][svc_ai_player.c:133] stop player FG[0m
+[0;32;49m[03-17 17:53:26 ty D][svc_ai_playlist.c:52] playlist player state 0 index 0 count 0 loop 0 single 0[0m
+[0;32;49m[03-17 17:53:26 ty D][ai_audio_player.c:156] audio player -> player tts event: 0[0m
+[0;32;49m[03-17 17:53:26 ty D][ai_audio_player.c:163] audio player -> stop event[0m
+[0;32;49m[03-17 17:53:26 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 31[0m
+[0;32;49m[03-17 17:53:26 ty D][ai_mode_wakeup.c:240] mode wakeup state change form SPEAK to IDLE[0m
+[0;32;49m[03-17 17:53:26 ty D][ai_mode_wakeup.c:217] [====ai_wakeup] event type: 34[0m
+[0;32;49m[03-17 17:53:29 ty D][tuya_lan.c:1087] new session connect. nums:1 cfd:59 ip:0xc0a8027e[0m
+[0;32;49m[03-17 17:53:29 ty D][lan_sock.c:363] reg post queue 59[0m
+[0;32;49m[03-17 17:53:29 ty D][lan_sock.c:136] reg lan sock 59,read:0x42029854[0m
+[0;32;49m[03-17 17:53:29 ty D][tuya_lan.c:742] Process Data. FD:59, Num:12101, Type:3, Len:16[0m
+[0;32;49m[03-17 17:53:29 ty D][tuya_lan.c:742] Process Data. FD:59, Num:12102, Type:5, Len:32[0m
+[0;32;49m[03-17 17:53:29 ty D][tuya_lan.c:742] Process Data. FD:59, Num:12103, Type:16, Len:2[0m
+[0;32;49m[03-17 17:53:29 ty D][tuya_lan.c:871] dpobj str {"dps":{"1":false,"2":0,"3":26,"5":"none"},"devId":"6cfd204bde09b7da7fynib"}[0m
+[0;32;49m[03-17 17:53:29 ty D][tuya_lan.c:879] Send Query To App:{"dps":{"1":false,"2":0,"3":26,"5":"none"},"devId":"6cfd204bde09b7da7fynib"}[0m
+[0;36;49m[03-17 17:53:32 ty I][tuya_main.c:299] Heap: free=14763   min_ever=7807    largest_block=11264 [0m
+[0;36;49m[03-17 17:53:33 ty I][app_chat_bot.c:52] Free heap size:22267[0m
+[0;36;49m[03-17 17:53:42 ty I][tuya_main.c:299] Heap: free=14763   min_ever=7807    largest_block=11264 [0m
+[0;36;49m[03-17 17:53:43 ty I][app_chat_bot.c:52] Free heap size:22267[0m
+[0;36;49m[03-17 17:53:52 ty I][tuya_main.c:299] Heap: free=14763   min_ever=7807    largest_block=11264 [0m
+[0;36;49m[03-17 17:53:53 ty I][app_chat_bot.c:52] Free heap size:22267[0m

@@ -1,0 +1,13 @@
+menu "configure app (petoi_esp32c3_cube)"
+
+config TUYA_PRODUCT_ID
+    string "product ID of project"
+    default "xlq6xkhdgvx0d0rl"
+
+config ENABLE_BATTERY
+    bool "enable the battery module"
+    default n
+
+rsource "../ai_components/Kconfig"
+
+endmenu
