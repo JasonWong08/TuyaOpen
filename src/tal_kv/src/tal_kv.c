@@ -160,11 +160,29 @@ int tal_kv_init(tal_kv_cfg_t *kv_cfg)
     lfs_cfg.prog = user_provided_block_device_prog;
     lfs_cfg.erase = user_provided_block_device_erase;
     lfs_cfg.sync = user_provided_block_device_sync;
-    lfs_cfg.read_size = info.partition[0].block_size;
-    lfs_cfg.prog_size = info.partition[0].block_size;
-    lfs_cfg.block_size = info.partition[0].block_size;
-    lfs_cfg.block_count = info.partition[0].size / info.partition[0].block_size;
-    lfs_cfg.cache_size = info.partition[0].block_size;
+
+    /* Geometry: block_size / block_count must match on-disk superblock.
+     * read_size / prog_size / cache_size are runtime tuning only (divisors of block_size).
+     * Defaulting cache_size == block_size (often 4096) makes every lfs_file_open malloc(4 KiB);
+     * on no-PSRAM ESP32-C3 with fragmented heap, total free can be >4 KiB while malloc(4096)
+     * still fails. Use 1 KiB cache + 256 B read/prog to cut per-open RAM and mount-time
+     * rcache/pcache (2 * cache_size). */
+    {
+        const uint32_t blk = info.partition[0].block_size;
+
+        lfs_cfg.block_size = blk;
+        lfs_cfg.block_count = info.partition[0].size / blk;
+
+        if (blk >= 4096 && (blk % 1024u) == 0u) {
+            lfs_cfg.read_size = 256;
+            lfs_cfg.prog_size = 256;
+            lfs_cfg.cache_size = 1024;
+        } else {
+            lfs_cfg.read_size = blk;
+            lfs_cfg.prog_size = blk;
+            lfs_cfg.cache_size = blk;
+        }
+    }
     lfs_cfg.lookahead_size = lfs_cfg.block_count / 8 + (8 - (lfs_cfg.block_count / 8));
     lfs_cfg.block_cycles = 500;
 

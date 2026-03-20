@@ -104,3 +104,26 @@ set(CONFIG_AI_WRITE_SOCKET_BUF_SIZE "4096")
 
 - `AI_PLAYER_DECODEBUF_SIZE=2048` 是 Opus 解码最小可用值；若出现解码失败可适当增大
 - `AI_INPUT_RINGBUF_SIZE=8192` 和 `AI_OUTPUT_RINGBUF_SIZE=8192` 在低带宽场景下可能出现缓冲区不足，如遇卡顿可适当增大（需权衡内存）
+
+## 关联：`lfs open` / `malloc failed:0x1000`（LittleFS 文件缓存）
+
+在无 PSRAM、且 MP3 `ctx`/LVGL 等已占用大量内部 RAM 时，可能出现：
+
+- `[Phase-4 done] Heap` 约 **4 KB+**，但紧接着 **`lfs_file_rawopencfg` → `malloc(0x1000)` 失败**
+- 日志里 **`free` 略大于 4096**（例如 `0x10bc`）仍失败 → **堆碎片化**，没有连续 **4 KB** 块
+
+原因：`tal_kv_init` 曾将 **`lfs_cfg.cache_size == block_size`（常为 4096）**，每次 `lfs_file_open` 会为文件缓存 **`malloc(cache_size)`**。
+
+**修复**（`src/tal_kv/src/tal_kv.c`）：当 `block_size >= 4096` 且为 1024 的倍数时，使用 **`read_size/prog_size = 256`**、**`cache_size = 1024`**（仍为 `block_size` 的约数，**不改变盘上 superblock 的 block_size**）。这样单次打开文件约 **1 KB** 堆，且 **`lfs_mount` 时 rcache/pcache 从 `2×4KB` 降为 `2×1KB`**，Phase-1 起就多出约 **6 KB** 可用堆。
+
+## 关联：`ap_netcfg_init` / `malloc failed:0x10e4`
+
+`ap_netcfg_t` 内含 **`recv_buf[4096]`**，整体约 **4.3 KiB**。绑定时再 `tal_malloc(sizeof(ap_netcfg_t))` 易因碎片失败，日志表现为 **`netcfg type 0x1 is not regist`**（AP 配网未挂上），手机端若优先走 AP 会报错；**BLE 配网（0x2）仍可成功**。
+
+**修复**（`src/tuya_cloud_service/netcfg/ap_netcfg.c`）：使用 **BSS 静态单例** `s_ap_netcfg_storage`，不再为 AP 模块申请整块堆内存。
+
+在无 PSRAM 的 **ESP32-C3** 上，即使 AP 模块已不 `malloc`，**启动 SoftAP** 仍可能因 WiFi 内部分配失败而 **在 `ieee80211_hostap_attach` 崩溃**（见 `docs/issue_runtime_esp32c3_softap_ble_coexist_crash.md`）。**PETOI** 工程改为 **仅 BLE 配网**，不再启用 `NETCFG_TUYA_WIFI_AP`。
+
+## 关联：PETOI 屏亮无图 / 全黑
+
+ST7789 公共驱动 **`lcd_st7789_spi.c`** 曾把 **`DISPLAY_BACKLIGHT_OUTPUT_INVERT`（背光极性）误传给 `esp_lcd_panel_invert_color`**。PETOI 在 **`board_display_init`** 中补 **`tkl_gpio` 打开背光**（`DISPLAY_BACKLIGHT_PIN`），并在 **`board_config.h`** 定义 **`DISPLAY_ST7789_COLOR_INVERT`** 与背光极性解耦。

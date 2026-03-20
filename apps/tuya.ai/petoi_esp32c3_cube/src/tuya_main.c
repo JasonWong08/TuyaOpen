@@ -156,7 +156,17 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         }
 
         #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
+        /* On ESP32-C3 (no PSRAM) bind-time heap is very tight (~9-10KB).
+         * Starting TTS alert here can consume almost all remaining heap and
+         * starve BLE netcfg + first LVGL text render. */
+        {
+            int bind_heap = tal_system_get_free_heap_size();
+            if (bind_heap >= 16384) {
+                ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
+            } else {
+                PR_WARN("skip bind alert due low heap: %d", bind_heap);
+            }
+        }
         #endif
 
         break;
@@ -350,8 +360,9 @@ void user_main(void)
 #endif
     netmgr_init(type);
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
-    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG,
-                    &(netcfg_args_t){.type = NETCFG_TUYA_BLE | NETCFG_TUYA_WIFI_AP});
+    /* ESP32-C3 无 PSRAM：BLE + SoftAP 并存时 WiFi 易分配不到 event beacon 缓冲
+     *（日志: alloc eb len=752 fail → ieee80211_hostap_attach 崩溃）。仅使用 BLE 配网即可。 */
+    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_BLE});
 #endif
 
     PR_INFO("[Phase-2 done] Heap after cloud/net init: %d", tal_system_get_free_heap_size());

@@ -94,10 +94,26 @@ int lcd_st7789_spi_init(void)
     panel_config.data_endian = LCD_RGB_DATA_ENDIAN_BIG,
     esp_lcd_new_panel_st7789(lcd_config.panel_io, &panel_config, &lcd_config.panel);
 
+#if defined(DISPLAY_ST7789_X_GAP) || defined(DISPLAY_ST7789_Y_GAP)
+#ifndef DISPLAY_ST7789_X_GAP
+#define DISPLAY_ST7789_X_GAP 0
+#endif
+#ifndef DISPLAY_ST7789_Y_GAP
+#define DISPLAY_ST7789_Y_GAP 0
+#endif
+    if (DISPLAY_ST7789_X_GAP != 0 || DISPLAY_ST7789_Y_GAP != 0) {
+        esp_lcd_panel_set_gap(lcd_config.panel, DISPLAY_ST7789_X_GAP, DISPLAY_ST7789_Y_GAP);
+    }
+#endif
+
     esp_lcd_panel_reset(lcd_config.panel);
 
     esp_lcd_panel_init(lcd_config.panel);
-    esp_lcd_panel_invert_color(lcd_config.panel, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
+#ifndef DISPLAY_ST7789_COLOR_INVERT
+/* Backward compat: old boards passed DISPLAY_BACKLIGHT_OUTPUT_INVERT here by mistake. */
+#define DISPLAY_ST7789_COLOR_INVERT DISPLAY_BACKLIGHT_OUTPUT_INVERT
+#endif
+    esp_lcd_panel_invert_color(lcd_config.panel, DISPLAY_ST7789_COLOR_INVERT);
     esp_lcd_panel_swap_xy(lcd_config.panel, DISPLAY_SWAP_XY);
     esp_lcd_panel_mirror(lcd_config.panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 

@@ -112,6 +112,7 @@ if(ENABLE_AI_UI_ICON_FONT)
     choice 
         prompt "choose emo font type"
         default FONT_EMOJI_SIZE_32 if(ENABLE_AI_CHAT_GUI_WECHAT)
+        default FONT_EMOJI_SIZE_32 if(ENABLE_AI_CHAT_GUI_CHATBOT && BOARD_CHOICE_PETOI_ESP32C3_CUBE)
         default FONT_EMOJI_SIZE_64 if(ENABLE_AI_CHAT_GUI_CHATBOT)
         default FONT_EMO_AWESOME   if(ENABLE_AI_CHAT_GUI_OLED)
 

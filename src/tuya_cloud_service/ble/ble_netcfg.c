@@ -116,6 +116,12 @@ __exit:
     resp[3] = FRM_DATA_TRANS_SUBCMD_BT_NETCFG;
     resp[4] = result; // result code: 0x00 - success, other - fail
     tuya_ble_send(FRM_UPLINK_TRANSPARENT_REQ, 0, resp, 5);
+
+    /* After credentials are acknowledged, release BLE connection to reduce
+     * coexist pressure during STA association on ESP32-C3 (no PSRAM). */
+    if (result == 0) {
+        tuya_ble_disconnect_current();
+    }
 }
 
 /**

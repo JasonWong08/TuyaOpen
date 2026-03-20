@@ -297,7 +297,7 @@ static OPERATE_RET __ai_chat_mode_open_button(void)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    tdl_button_set_task_stack_size(4096);
+    tdl_button_set_task_stack_size(2048);
 
     TDL_BUTTON_CFG_T button_cfg = {.long_start_valid_time = 400,
                                    .long_keep_timer = 0,
@@ -432,7 +432,7 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
 
     THREAD_CFG_T thrd_cfg = {
         .priority = THREAD_PRIO_5,
-        .stackDepth = 3* 1024,
+        .stackDepth = 2 * 1024,
         .thrdname = "ai_chat_mode",
         #ifdef ENABLE_EXT_RAM
         .psram_mode = 1,

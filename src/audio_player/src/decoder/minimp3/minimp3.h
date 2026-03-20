@@ -242,6 +242,17 @@ typedef struct {
     float grbuf[2][576], scf[40], syn[18 + 15][2 * 32];
     uint8_t ist_pos[2][39];
 } mp3dec_scratch_t;
+
+/*
+ * Per-frame scratch (~16 KB). Default: heap alloc inside mp3dec_decode_frame().
+ * Define MINIMP3_USE_STATIC_SCRATCH before MINIMP3_IMPLEMENTATION to use one
+ * file-static buffer — avoids malloc failure on no-PSRAM MCUs. Not re-entrant:
+ * do not call mp3dec_decode_frame() concurrently from multiple threads.
+ */
+#ifdef MINIMP3_USE_STATIC_SCRATCH
+static mp3dec_scratch_t g_mp3dec_frame_scratch;
+#endif
+
 #pragma pack()
 static void bs_init(bs_t *bs, const uint8_t *data, int bytes)
 {
@@ -1894,21 +1905,26 @@ int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, mp3d_s
         get_bits(bs_frame, 16);
     }
 
-    mp3dec_scratch_t *scratch = NULL;
-    scratch = (mp3dec_scratch_t *)MP3_MALLOC(sizeof(mp3dec_scratch_t));
+#ifdef MINIMP3_USE_STATIC_SCRATCH
+    mp3dec_scratch_t *scratch = &g_mp3dec_frame_scratch;
+#else
+    mp3dec_scratch_t *scratch = (mp3dec_scratch_t *)MP3_MALLOC(sizeof(mp3dec_scratch_t));
     if (scratch == NULL) {
         return 0;
     }
+#endif
     memset(scratch, 0, sizeof(mp3dec_scratch_t));
 
     if (info->layer == 3) {
         int main_data_begin = L3_read_side_info(bs_frame, scratch->gr_info, hdr);
         if (main_data_begin < 0 || bs_frame->pos > bs_frame->limit) {
             mp3dec_init(dec);
+#ifndef MINIMP3_USE_STATIC_SCRATCH
             if (scratch) {
                 MP3_FREE(scratch);
                 scratch = NULL;
             }
+#endif
             return 0;
         }
         success = L3_restore_reservoir(dec, bs_frame, scratch, main_data_begin);
@@ -1929,8 +1945,10 @@ int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, mp3d_s
         // L12_scale_info sci[1];
         L12_scale_info *sci = (L12_scale_info *)MP3_MALLOC(sizeof(L12_scale_info));
         if (sci == NULL) {
+#ifndef MINIMP3_USE_STATIC_SCRATCH
             MP3_FREE(scratch);
             scratch = NULL;
+#endif
             return 0;
         }
         memset(sci, 0, sizeof(L12_scale_info));
@@ -1953,10 +1971,12 @@ int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, mp3d_s
                     sci = NULL;
                 }
 
+#ifndef MINIMP3_USE_STATIC_SCRATCH
                 if (scratch) {
                     MP3_FREE(scratch);
                     scratch = NULL;
                 }
+#endif
                 return 0;
             }
         }
@@ -1968,10 +1988,12 @@ int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, mp3d_s
 #endif /* MINIMP3_ONLY_MP3 */
     }
 
+#ifndef MINIMP3_USE_STATIC_SCRATCH
     if (scratch) {
         MP3_FREE(scratch);
         scratch = NULL;
     }
+#endif
 
     return success *  hdr_frame_samples(dec->header);
 }

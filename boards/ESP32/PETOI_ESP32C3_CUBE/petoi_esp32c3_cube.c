@@ -11,7 +11,7 @@
  *
  * Memory notes:
  *   - DMA descriptor count is kept small (3) to reduce peak heap pressure.
- *   - LCD LVGL buffer is 10 lines (240×10×2 = 4.8 KB) in DMA-capable SRAM.
+ *   - LCD LVGL partial buffer size is set in board_config.h (e.g. 6 lines).
  *   - No PSRAM branches; all allocations use internal heap.
  *
  * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
@@ -22,6 +22,7 @@
 #include "board_com_api.h"
 
 #include "tal_api.h"
+#include "tkl_gpio.h"
 
 #include "tdd_audio_8311_codec.h"
 
@@ -117,7 +118,27 @@ OPERATE_RET board_register_hardware(void)
 
 int board_display_init(void)
 {
-    return lcd_st7789_spi_init();
+    if (lcd_st7789_spi_init() != 0) {
+        return -1;
+    }
+
+    /* ST7789 driver does not drive backlight; without this the panel can work but stay black. */
+#if defined(DISPLAY_BACKLIGHT_PIN)
+    {
+        TUYA_GPIO_BASE_CFG_T bl_cfg = {.mode = TUYA_GPIO_PUSH_PULL, .direct = TUYA_GPIO_OUTPUT};
+
+        if (tkl_gpio_init(DISPLAY_BACKLIGHT_PIN, &bl_cfg) != OPRT_OK) {
+            return -1;
+        }
+#if DISPLAY_BACKLIGHT_OUTPUT_INVERT
+        (void)tkl_gpio_write(DISPLAY_BACKLIGHT_PIN, TUYA_GPIO_LEVEL_LOW);
+#else
+        (void)tkl_gpio_write(DISPLAY_BACKLIGHT_PIN, TUYA_GPIO_LEVEL_HIGH);
+#endif
+    }
+#endif
+
+    return 0;
 }
 
 void *board_display_get_panel_io_handle(void)

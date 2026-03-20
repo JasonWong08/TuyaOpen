@@ -86,15 +86,28 @@ extern "C" {
 #define LCD_DC_PIN   (6)
 #define LCD_CS_PIN   (5)
 
-/* Backlight: PWM on GPIO2, active-low */
-#define DISPLAY_BACKLIGHT_PIN           (2)
+/* Backlight: GPIO2 (see petoi_esp32c3_cube.c board_display_init); active-low = ON when pin LOW */
+#define DISPLAY_BACKLIGHT_PIN           TUYA_GPIO_NUM_2
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT true
 
-#define DISPLAY_WIDTH  (240)
-#define DISPLAY_HEIGHT (240)
+/* ST7789 多数模组需颜色反转；旧代码误用 BACKLIGHT_OUTPUT_INVERT(true) 曾等价于 invert on */
+#define DISPLAY_ST7789_COLOR_INVERT     1
 
-/* LVGL rendering buffer: 10 lines to keep SRAM usage minimal (240*10*2 = 4.8 KB) */
-#define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * 10)
+#define DISPLAY_WIDTH  (240)
+#define DISPLAY_HEIGHT (280)
+
+/* Partial buffer: 4 lines ≈ 240*4*2 = 1.92 KB
+ * full_refresh=1 要求整帧缓冲（240*240*2 = 115 KB）与 partial buffer 冲突，
+ * esp_lvgl_port 会在 lvgl_port_add_disp_priv 内断言崩溃，必须保持 0。*/
+#define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * 4)
+#define DISPLAY_LVGL_FULL_REFRESH       0
+
+/* ST7789 controller has 240x320 GRAM; the 240x280 physical panel is centred
+ * with a 20-row top offset (GRAM rows 20-299 map to physical rows 0-279).
+ * Setting Y_GAP=20 shifts all LVGL writes +20 in GRAM so they land exactly
+ * on the visible LCD area.  Without this, the bottom 20 rows stay unwritten
+ * (garbage/snow) and the top status bar is clipped off-screen. */
+#define DISPLAY_ST7789_Y_GAP             20
 
 #define DISPLAY_MONOCHROME false
 

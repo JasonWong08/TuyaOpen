@@ -209,7 +209,7 @@ OPERATE_RET ai_ui_init(void)
     memset(&cfg, 0x00, sizeof(THREAD_CFG_T));
     cfg.thrdname = "ai_ui";
     cfg.priority = THREAD_PRIO_2;
-    cfg.stackDepth = 1024 * 4;
+    cfg.stackDepth = 1024 * 3;
 
     TUYA_CALL_ERR_RETURN(tal_thread_create_and_start(&sg_ui_thrd_hdl, NULL, NULL, __ai_chat_ui_task, NULL, &cfg));
 

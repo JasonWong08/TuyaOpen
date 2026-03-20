@@ -21,6 +21,10 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lvgl_port.h"
 
+#ifndef DISPLAY_LVGL_FULL_REFRESH
+#define DISPLAY_LVGL_FULL_REFRESH 0
+#endif
+
 #if defined(BOARD_DISPLAY_TYPE) && (BOARD_DISPLAY_TYPE == DISPLAY_TYPE_LCD_SH8601)
 #include "lcd_sh8601.h"
 #endif
@@ -114,7 +118,7 @@ void lv_port_disp_register_to_lvgl(void)
                 .buff_spiram = DISPLAY_BUFF_SPIRAM,
                 .sw_rotate = 0,
                 .swap_bytes = DISPLAY_SWAP_BYTES,
-                .full_refresh = 0,
+                .full_refresh = DISPLAY_LVGL_FULL_REFRESH,
                 .direct_mode = 0,
             },
     };

@@ -78,6 +78,14 @@ void lv_vendor_start(uint32_t lvgl_task_pri, uint32_t lvgl_stack_size)
 
     lvgl_task_state = STATE_RUNNING;
 
+    /* Invalidate the whole screen so LVGL renders the default black background
+     * on the very first tick, clearing any stale GRAM content (snow).
+     * Uses LVGL's own pre-allocated DMA buffer – zero extra heap alloc. */
+    if (lvgl_port_lock(0) == ESP_OK) {
+        lv_obj_invalidate(lv_scr_act());
+        lvgl_port_unlock();
+    }
+
     LV_LOG_INFO("%s complete\n", __func__);
 }
 
