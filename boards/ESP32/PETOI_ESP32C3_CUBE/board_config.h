@@ -4,7 +4,12 @@
  *
  * Target: ESP32-C3, ~400KB SRAM, no PSRAM, 16MB Flash
  * Audio:  ES8311 codec via I2S + I2C
- * Display: ST7789 SPI LCD, 240x240
+ * Display: ST7789 SPI (xiaozhi lichuang-c3-dev: 1.69\" physical 240×280 + Y offset 20).
+ * This board file uses 240×240 if your module is square; match xiaozhi config.h if
+ * you see cropping or wrong aspect.
+ *
+ * UART: xiaozhi moved robot UART from GPIO18/19 (USB D-/D+ conflict) to GPIO20/21.
+ * Debug UART0 here: RX=20, TX=21 (see README in xiaozhi/main/boards/lichuang-c3-dev/).
  *
  * Pin mapping derived from xiaozhi lichuang-c3-dev reference design.
  *

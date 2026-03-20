@@ -38,8 +38,15 @@
 
 #define TUYA_AI_CHAT_PAR       "ty_ai_chat_par"
 
-#define AI_AUDIO_SLICE_TIME         80     
-#define AI_AUDIO_VAD_ACTIVE_TIME    200 
+#define AI_AUDIO_SLICE_TIME         80
+/* On no-PSRAM platforms (ESP32-C3) we use pure push-to-talk (VAD_MANUAL).
+ * Setting vad_active_ms to 0 reduces the recording ring buffer from
+ * (200+300)*32+1 = 16001 B  →  (0+300)*32+1 = 9601 B, saving ~6.4 KB. */
+#ifdef CONFIG_AI_AUDIO_VAD_ACTIVE_MS
+#define AI_AUDIO_VAD_ACTIVE_TIME    CONFIG_AI_AUDIO_VAD_ACTIVE_MS
+#else
+#define AI_AUDIO_VAD_ACTIVE_TIME    200
+#endif
 #define AI_AUDIO_VAD_OFF_TIME       1000
 /***********************************************************
 ***********************typedef define***********************

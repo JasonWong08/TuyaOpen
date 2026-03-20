@@ -76,7 +76,8 @@ static void __lvgl_init(void)
 {
     lv_vendor_init(DISPLAY_NAME);
 
-    lv_vendor_start(5, 1024*8);
+    /* ESP32-C3 has no PSRAM; 4 KB is sufficient for a simple chatbot UI. */
+    lv_vendor_start(5, 1024*4);
 }
 
 /**

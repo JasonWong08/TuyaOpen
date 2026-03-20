@@ -38,3 +38,7 @@ if (CONFIG_ENABLE_BATTERY STREQUAL "y")
 endif()
 
 add_subdirectory(${APP_PATH}/../ai_components)
+
+# Kconfig merge may not expose AI_AUDIO_VAD_ACTIVE_MS to the example target; force
+# 0 here to shrink the recording ringbuf on ESP32-C3 (no PSRAM).
+target_compile_definitions(${EXAMPLE_LIB} PRIVATE CONFIG_AI_AUDIO_VAD_ACTIVE_MS=0)

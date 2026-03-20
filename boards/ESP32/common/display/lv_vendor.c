@@ -29,6 +29,7 @@
 ***********************************************************/
 static uint8_t lvgl_task_state = STATE_INIT;
 static bool lv_vendor_initialized = false;
+static void *s_lv_vendor_device = NULL;
 
 void lv_vendor_disp_lock(void)
 {
@@ -49,9 +50,8 @@ void lv_vendor_init(void *device)
 
     lv_init();
 
+    s_lv_vendor_device = device;
     lv_port_disp_init(device);
-
-    lv_port_indev_init(device);
 
     lv_vendor_initialized = true;
 
@@ -71,6 +71,12 @@ void lv_vendor_start(uint32_t lvgl_task_pri, uint32_t lvgl_stack_size)
     port_cfg.task_priority = lvgl_task_pri;
     port_cfg.timer_period_ms = 50;
     lvgl_port_init(&port_cfg);
+
+    lv_port_disp_register_to_lvgl();
+
+    lv_port_indev_init(s_lv_vendor_device);
+
+    lvgl_task_state = STATE_RUNNING;
 
     LV_LOG_INFO("%s complete\n", __func__);
 }
