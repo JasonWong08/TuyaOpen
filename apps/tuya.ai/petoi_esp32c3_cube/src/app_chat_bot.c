@@ -20,6 +20,12 @@
 ***********************************************************/
 #define PRINTF_FREE_HEAP_TTIME (10 * 1000)
 #define DISP_NET_STATUS_TIME   (1 * 1000)
+/* Keep TLS path first on ESP32-C3: if pre-cloud heap is lower than this,
+ * delay LVGL/UI startup until cloud is connected. */
+#define PRECLOUD_UI_HEAP_MIN   (90 * 1024)
+/* After MQTT connect, system heap can still dip below 10KB on C3.
+ * Starting AI+LVGL in this window easily causes watchdog/reset. */
+#define POSTCLOUD_INIT_HEAP_MIN (20 * 1024)
 
 /***********************************************************
 ***********************typedef define***********************
@@ -33,10 +39,16 @@
 ***********************variable define**********************
 ***********************************************************/
 static TIMER_ID sg_printf_heap_tm;
+static bool     sg_precloud_inited = false;
+static bool     sg_postcloud_inited = false;
+static bool     sg_ui_inited = false;
+static bool     sg_postcloud_degraded = false;
+static bool     sg_offline_audio_inited = false;
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 static AI_UI_WIFI_STATUS_E sg_wifi_status = AI_UI_WIFI_STATUS_DISCONNECTED;
 static TIMER_ID            sg_disp_status_tm;
+extern OPERATE_RET ai_chat_ui_init(void);
 #endif
 /***********************************************************
 ***********************function define**********************
@@ -158,22 +170,86 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
     (void)event;
 }
 
-OPERATE_RET app_chat_bot_init(void)
+OPERATE_RET app_chat_bot_precloud_init(void)
 {
     OPERATE_RET rt = OPRT_OK;
+
+    if (sg_precloud_inited) {
+        return OPRT_OK;
+    }
+
+    // Free heap size
+    TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__printf_free_heap_tm_cb, NULL, &sg_printf_heap_tm));
+    TUYA_CALL_ERR_RETURN(tal_sw_timer_start(sg_printf_heap_tm, PRINTF_FREE_HEAP_TTIME, TAL_TIMER_CYCLE));
+
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+    /* On C3 no-PSRAM boards, LVGL + display task can consume heap that TLS setup
+     * urgently needs. Defer UI when heap is tight. */
+    uint32_t precloud_heap = tal_system_get_free_heap_size();
+    if (precloud_heap >= PRECLOUD_UI_HEAP_MIN) {
+        TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
+        sg_ui_inited = true;
+
+        ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
+        ai_ui_disp_msg(AI_UI_DISP_STATUS, (uint8_t *)INITIALIZING, strlen(INITIALIZING));
+        ai_ui_disp_msg(AI_UI_DISP_EMOTION, (uint8_t *)EMOJI_NEUTRAL, strlen(EMOJI_NEUTRAL));
+
+        // display status update
+        TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__display_status_tm_cb, NULL, &sg_disp_status_tm));
+        TUYA_CALL_ERR_RETURN(tal_sw_timer_start(sg_disp_status_tm, DISP_NET_STATUS_TIME, TAL_TIMER_CYCLE));
+    } else {
+        PR_WARN("defer pre-cloud UI, heap=%u < %u", (unsigned)precloud_heap, (unsigned)PRECLOUD_UI_HEAP_MIN);
+    }
+#endif
+
+    sg_precloud_inited = true;
+    return OPRT_OK;
+}
+
+OPERATE_RET app_chat_bot_postcloud_init(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    if (sg_postcloud_inited) {
+        return OPRT_OK;
+    }
+
+    uint32_t postcloud_heap = tal_system_get_free_heap_size();
+    if (postcloud_heap < POSTCLOUD_INIT_HEAP_MIN) {
+        sg_postcloud_degraded = true;
+        /* Keep cloud online first; postpone AI/UI to avoid WDT. */
+        PR_WARN("skip post-cloud AI/UI init, heap=%u < %u",
+                (unsigned)postcloud_heap, (unsigned)POSTCLOUD_INIT_HEAP_MIN);
+        return OPRT_OK;
+    }
+
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+    if (false == sg_ui_inited) {
+        TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
+        sg_ui_inited = true;
+        ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
+    }
+#endif
 
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
         .default_mode = AI_CHAT_MODE_WAKEUP,
         .default_vol  = 70,
         .evt_cb       = __ai_chat_handle_event,
     };
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    if (sg_offline_audio_inited) {
+        /* Offline alert path used standalone audio player. Deinit it before
+         * ai_chat_init() takes over audio modules. */
+        TUYA_CALL_ERR_LOG(ai_audio_player_deinit());
+        sg_offline_audio_inited = false;
+    }
+#endif
     TUYA_CALL_ERR_RETURN(ai_chat_init(&ai_chat_cfg));
 
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
     AI_VIDEO_CFG_T ai_video_cfg = {
         .disp_flush_cb = __ai_video_display_flush,
     };
-
     TUYA_CALL_ERR_LOG(ai_video_init(&ai_video_cfg));
 #endif
 
@@ -190,20 +266,81 @@ OPERATE_RET app_chat_bot_init(void)
     TUYA_CALL_ERR_RETURN(ai_picture_output_init(&picture_output_cfg));
 #endif
 
-    // Free heap size
-    tal_sw_timer_create(__printf_free_heap_tm_cb, NULL, &sg_printf_heap_tm);
-    tal_sw_timer_start(sg_printf_heap_tm, PRINTF_FREE_HEAP_TTIME, TAL_TIMER_CYCLE);
+    sg_postcloud_inited = true;
+    return OPRT_OK;
+}
 
+OPERATE_RET app_chat_bot_init(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+    TUYA_CALL_ERR_RETURN(app_chat_bot_precloud_init());
+    TUYA_CALL_ERR_RETURN(app_chat_bot_postcloud_init());
+    return OPRT_OK;
+}
+
+bool app_chat_bot_is_ready(void)
+{
+    return sg_postcloud_inited && (false == sg_postcloud_degraded);
+}
+
+OPERATE_RET app_chat_bot_try_recover_ui(uint32_t min_heap_bytes, const char *status_text)
+{
+    OPERATE_RET rt = OPRT_OK;
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
-    ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
+    uint32_t free_heap = tal_system_get_free_heap_size();
+    if (free_heap < min_heap_bytes) {
+        PR_WARN("defer offline UI recovery, heap=%u < %u",
+                (unsigned)free_heap, (unsigned)min_heap_bytes);
+        return OPRT_COM_ERROR;
+    }
 
-    ai_ui_disp_msg(AI_UI_DISP_STATUS, (uint8_t *)INITIALIZING, strlen(INITIALIZING));
-    ai_ui_disp_msg(AI_UI_DISP_EMOTION, (uint8_t *)EMOJI_NEUTRAL, strlen(EMOJI_NEUTRAL));
+    if (false == sg_ui_inited) {
+        TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
+        sg_ui_inited = true;
+        ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
 
-    // display status update
-    tal_sw_timer_create(__display_status_tm_cb, NULL, &sg_disp_status_tm);
-    tal_sw_timer_start(sg_disp_status_tm, DISP_NET_STATUS_TIME, TAL_TIMER_CYCLE);
-#endif
+        if (NULL == sg_disp_status_tm) {
+            TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__display_status_tm_cb, NULL, &sg_disp_status_tm));
+            TUYA_CALL_ERR_RETURN(tal_sw_timer_start(sg_disp_status_tm, DISP_NET_STATUS_TIME, TAL_TIMER_CYCLE));
+        }
+        PR_NOTICE("offline UI recovery init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
+    }
+
+    if (status_text && status_text[0] != '\0') {
+        ai_ui_disp_msg(AI_UI_DISP_STATUS, (uint8_t *)status_text, strlen(status_text));
+    }
 
     return OPRT_OK;
+#else
+    (void)min_heap_bytes;
+    (void)status_text;
+    return OPRT_NOT_SUPPORTED;
+#endif
+}
+
+OPERATE_RET app_chat_bot_try_recover_audio_alert(uint32_t min_heap_bytes, AI_AUDIO_ALERT_TYPE_E alert)
+{
+    OPERATE_RET rt = OPRT_OK;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    uint32_t free_heap = tal_system_get_free_heap_size();
+    if (free_heap < min_heap_bytes) {
+        PR_WARN("defer offline audio recovery, heap=%u < %u",
+                (unsigned)free_heap, (unsigned)min_heap_bytes);
+        return OPRT_COM_ERROR;
+    }
+
+    if (false == sg_offline_audio_inited) {
+        TUYA_CALL_ERR_RETURN(ai_audio_player_init());
+        TUYA_CALL_ERR_LOG(ai_audio_player_set_vol(70));
+        sg_offline_audio_inited = true;
+        PR_NOTICE("offline audio recovery init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
+    }
+
+    TUYA_CALL_ERR_LOG(ai_audio_player_alert(alert));
+    return OPRT_OK;
+#else
+    (void)min_heap_bytes;
+    (void)alert;
+    return OPRT_NOT_SUPPORTED;
+#endif
 }

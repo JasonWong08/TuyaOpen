@@ -211,7 +211,7 @@ static OPERATE_RET __ui_init(void)
     /* Mode label (leftmost) */
     sg_ui.mode_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_style_text_font(sg_ui.mode_label, sg_font.text, 0);
-    lv_label_set_text(sg_ui.mode_label, "");
+    lv_label_set_text_static(sg_ui.mode_label, "");
     lv_obj_align(sg_ui.mode_label, LV_ALIGN_LEFT_MID, 0, 0);
 
     /* Status label */
@@ -219,20 +219,20 @@ static OPERATE_RET __ui_init(void)
     lv_obj_set_flex_grow(sg_ui.status_label, 1);
     lv_label_set_long_mode(sg_ui.status_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_center(sg_ui.status_label);
-    lv_label_set_text(sg_ui.status_label, INITIALIZING);
+    lv_label_set_text_static(sg_ui.status_label, INITIALIZING);
 
     /* Emotion (left of status label) */
     sg_ui.emotion_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.icon, 0);
     lv_obj_align_to(sg_ui.emotion_label, sg_ui.status_label, LV_ALIGN_OUT_LEFT_MID, -5, 0);
-    lv_label_set_text(sg_ui.emotion_label, FONT_AWESOME_AI_CHIP);
+    lv_label_set_text_static(sg_ui.emotion_label, FONT_AWESOME_AI_CHIP);
 
     /* Notification label */
     sg_ui.notification_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_flex_grow(sg_ui.notification_label, 1);
     lv_label_set_long_mode(sg_ui.status_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_center(sg_ui.notification_label);
-    lv_label_set_text(sg_ui.notification_label, "");
+    lv_label_set_text_static(sg_ui.notification_label, "");
     lv_obj_add_flag(sg_ui.notification_label, LV_OBJ_FLAG_HIDDEN);
 
     /* Network status (rightmost) */
@@ -459,7 +459,7 @@ static void __ui_set_ai_msg_stream_start(void)
     lv_obj_set_flex_flow(text_cont, LV_FLEX_FLOW_COLUMN);
 
     sg_ui.stream_label = lv_label_create(text_cont);
-    lv_label_set_text(sg_ui.stream_label, "");
+    lv_label_set_text_static(sg_ui.stream_label, "");
     lv_obj_set_width(sg_ui.stream_label, LV_PCT(100));
     lv_label_set_long_mode(sg_ui.stream_label, LV_LABEL_LONG_WRAP);
 

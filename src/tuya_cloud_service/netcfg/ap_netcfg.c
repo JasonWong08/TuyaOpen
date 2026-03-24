@@ -530,7 +530,7 @@ static int ap_ext_cmd_parse(ap_netcfg_t *ap, char *data)
         }
     } else if (0 == strcmp(reqtype->valuestring,
                            "query_netcfg_stat")) { //  query_netcfg_stat
-        char *out = "{\"type\":1,\"stage\":2,\"status\":0}";
+        static const char out[] = "{\"type\":1,\"stage\":2,\"status\":0}";
         snprintf(buffer, buffer_size, "{\"reqType\":\"netcfg_stat_rpt\",\"data\":%s}", out);
     } else {
         PR_DEBUG("not support reqtype:%s", reqtype->valuestring);

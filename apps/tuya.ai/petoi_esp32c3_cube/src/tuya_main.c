@@ -5,7 +5,7 @@
  * Memory optimizations for ESP32-C3 (~400 KB SRAM, no PSRAM):
  *
  *  1. Log buffer reduced to 512 bytes (vs 1024 on PSRAM boards).
- *  2. Application thread stack reduced to 3072 bytes.
+ *  2. Application thread stack tuned for C3 runtime stability.
  *  3. No PSRAM allocation path: cJSON always uses internal heap.
  *  4. DMA descriptor count for audio kept small (board_config.h: DMA_DESC_NUM=3).
  *  5. LVGL render buffer is 10 lines × 240 px × 2 B = 4.8 KB DMA SRAM.
@@ -31,6 +31,7 @@
 #include "tuya_iot.h"
 #include "tuya_iot_dp.h"
 #include "netmgr.h"
+#include "netcfg.h"
 #include "tkl_output.h"
 #include "tal_cli.h"
 #include "tuya_authorize.h"
@@ -58,6 +59,9 @@
 #if defined(ENABLE_QRCODE) && (ENABLE_QRCODE == 1)
 #include "qrencode_print.h"
 #endif
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+#include "ble_mgr.h"
+#endif
 
 /* Tuya device handle */
 tuya_iot_client_t ai_client;
@@ -78,9 +82,29 @@ tuya_iot_license_t license;
  * With ~400 KB total and audio/display/TCP stacks in flight, 60 KB is a
  * reasonable low-water mark for ESP32-C3. */
 #define HEAP_WARN_THRESHOLD (60 * 1024)
+#define HEAP_FREE_CRIT_THRESHOLD (8 * 1024)
+#define HEAP_LARGEST_CRIT_THRESHOLD (4 * 1024)
+/* Keep activation/TLS first: offline UI/audio recovery must not run while
+ * heap is in the 40~70KB range, otherwise mbedtls_ssl_setup may fail. */
+#define OFFLINE_UI_RECOVER_HEAP_MIN    (96 * 1024)
+#define OFFLINE_AUDIO_RECOVER_HEAP_MIN (72 * 1024)
 
 static uint8_t _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
+static bool sg_cloud_ready = false;
+static bool sg_using_fallback_license = false;
+static bool sg_ble_released = false;
+
+typedef struct {
+    uint64_t boot_ms;
+    uint64_t bind_start_ms;
+    uint64_t mqtt_connected_ms;
+    uint32_t bind_start_count;
+    uint32_t mqtt_connected_count;
+    uint32_t mqtt_disconnected_count;
+} PETOI_RUN_STATS_T;
+
+static PETOI_RUN_STATS_T sg_run_stats = {0};
 
 void user_log_output_cb(const char *str)
 {
@@ -149,10 +173,15 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 
     switch (event->id) {
     case TUYA_EVENT_BIND_START:
+        sg_run_stats.bind_start_count++;
+        sg_run_stats.bind_start_ms = tal_system_get_millisecond();
         PR_INFO("Device Bind Start!");
         if (_need_reset == 1) {
-            PR_INFO("Device Reset!");
-            tal_system_reset();
+            /* On C3 memory-tuned path, cloud-triggered reset can race with
+             * reconnect and cause reboot loops. Keep running and re-enter
+             * bind flow instead of hard reset. */
+            PR_WARN("pending reset request detected, skip hard reset on bind start");
+            _need_reset = 0;
         }
 
         #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
@@ -161,10 +190,10 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
          * starve BLE netcfg + first LVGL text render. */
         {
             int bind_heap = tal_system_get_free_heap_size();
-            if (bind_heap >= 16384) {
+            if (bind_heap >= 16384 && app_chat_bot_is_ready()) {
                 ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
             } else {
-                PR_WARN("skip bind alert due low heap: %d", bind_heap);
+                PR_WARN("skip bind alert, heap=%d ready=%d", bind_heap, app_chat_bot_is_ready());
             }
         }
         #endif
@@ -180,10 +209,44 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     } break;
 
     case TUYA_EVENT_BIND_TOKEN_ON:
+        PR_NOTICE("Bind token received. waiting WiFi->TLS->MQTT");
         break;
 
     case TUYA_EVENT_MQTT_CONNECTED:
         PR_INFO("Device MQTT Connected!");
+        sg_run_stats.mqtt_connected_count++;
+        sg_run_stats.mqtt_connected_ms = tal_system_get_millisecond();
+        if (sg_run_stats.bind_start_ms > 0 && sg_run_stats.mqtt_connected_ms >= sg_run_stats.bind_start_ms) {
+            PR_NOTICE("Bind-to-MQTT latency: %u ms",
+                      (unsigned)(sg_run_stats.mqtt_connected_ms - sg_run_stats.bind_start_ms));
+        }
+
+        /* After cloud is online, BLE provisioning stack is no longer needed.
+         * Releasing BLE can reclaim tens of KB on ESP32-C3 and may allow
+         * post-cloud UI/audio init to pass memory threshold. */
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+        if (false == sg_ble_released) {
+            netcfg_stop(NETCFG_TUYA_BLE);
+            tuya_ble_deinit();
+            sg_ble_released = true;
+            tal_system_sleep(100);
+            PR_NOTICE("BLE released after MQTT connect, heap=%d", tal_system_get_free_heap_size());
+        }
+#endif
+
+        /* Cloud-first strategy:
+         * 1) do lightweight UI before bind
+         * 2) bring up full AI/audio only after MQTT is stable. */
+        if (false == sg_cloud_ready) {
+            OPERATE_RET app_rt = app_chat_bot_postcloud_init();
+            if (app_rt != OPRT_OK) {
+                PR_ERR("post-cloud app init failed: %d", app_rt);
+                break;
+            }
+            sg_cloud_ready = true;
+            PR_NOTICE("Post-cloud app init done, heap=%d", tal_system_get_free_heap_size());
+        }
+
         tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
 
         static uint8_t first = 1;
@@ -194,12 +257,28 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             UI_WIFI_STATUS_E wifi_status = UI_WIFI_STATUS_GOOD;
             ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&wifi_status, sizeof(UI_WIFI_STATUS_E));
 #endif
-            ai_audio_volume_upload();
+            if (app_chat_bot_is_ready()) {
+                ai_audio_volume_upload();
+            }
         }
         break;
 
     case TUYA_EVENT_MQTT_DISCONNECT:
         PR_INFO("Device MQTT DisConnected!");
+        sg_run_stats.mqtt_disconnected_count++;
+        if (false == sg_cloud_ready) {
+            const char *offline_status = CONNECT_SERVER;
+            if (sg_using_fallback_license && sg_run_stats.mqtt_connected_count == 0 && sg_run_stats.bind_start_count > 0) {
+                offline_status = "Cloud auth failed";
+                PR_ERR("MQTT auth rejected before first connect. Check UUID/AuthKey and product binding.");
+            }
+            if (OPRT_OK != app_chat_bot_try_recover_ui(OFFLINE_UI_RECOVER_HEAP_MIN, offline_status)) {
+                PR_DEBUG("disconnect-stage UI recovery skipped");
+            }
+            if (OPRT_OK != app_chat_bot_try_recover_audio_alert(OFFLINE_AUDIO_RECOVER_HEAP_MIN, AI_AUDIO_ALERT_NETWORK_FAIL)) {
+                PR_DEBUG("disconnect-stage audio recovery skipped");
+            }
+        }
         tal_event_publish(EVENT_MQTT_DISCONNECTED, NULL);
         break;
 
@@ -215,6 +294,16 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 
     case TUYA_EVENT_RESET:
         PR_INFO("Device Reset:%d", event->value.asInteger);
+        if (sg_using_fallback_license && sg_run_stats.mqtt_connected_count == 0) {
+            PR_ERR("cloud reset after MQTT auth reject. likely UUID/AuthKey not accepted by cloud");
+            if (OPRT_OK != app_chat_bot_try_recover_ui(OFFLINE_UI_RECOVER_HEAP_MIN, "Cloud auth failed")) {
+                PR_DEBUG("reset-stage UI recovery skipped");
+            }
+            if (OPRT_OK != app_chat_bot_try_recover_audio_alert(OFFLINE_AUDIO_RECOVER_HEAP_MIN, AI_AUDIO_ALERT_NOT_ACTIVE)) {
+                PR_DEBUG("reset-stage audio recovery skipped");
+            }
+        }
+        /* Keep a marker for observability, but do not reboot here. */
         _need_reset = 1;
         break;
 
@@ -284,6 +373,12 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
                 "Consider reducing audio buffer or deferring display init.",
                 (unsigned)free_now, (unsigned)HEAP_WARN_THRESHOLD);
     }
+    if (free_now < HEAP_FREE_CRIT_THRESHOLD || largest < HEAP_LARGEST_CRIT_THRESHOLD) {
+        PR_ERR("Heap critical! free=%u largest=%u (crit_free=%u, crit_largest=%u). "
+               "TLS/WiFi may fail due to fragmentation.",
+               (unsigned)free_now, (unsigned)largest,
+               (unsigned)HEAP_FREE_CRIT_THRESHOLD, (unsigned)HEAP_LARGEST_CRIT_THRESHOLD);
+    }
 #else
     PR_INFO("Heap: free=%d", tal_system_get_free_heap_size());
 #endif
@@ -292,6 +387,8 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
 void user_main(void)
 {
     int ret = OPRT_OK;
+    memset(&sg_run_stats, 0, sizeof(sg_run_stats));
+    sg_run_stats.boot_ms = tal_system_get_millisecond();
 
     /* ── Phase 1: Minimal bootstrap ──────────────────────────────────────
      * ESP32-C3 has no PSRAM. Always use internal heap for cJSON.
@@ -334,6 +431,7 @@ void user_main(void)
     if (OPRT_OK != tuya_authorize_read(&license)) {
         license.uuid    = TUYA_OPENSDK_UUID;
         license.authkey = TUYA_OPENSDK_AUTHKEY;
+        sg_using_fallback_license = true;
         PR_WARN("Replace UUID/AuthKey in tuya_config.h or provision via platform.");
     }
 
@@ -379,15 +477,13 @@ void user_main(void)
 
     PR_INFO("[Phase-3 done] Heap after hardware init: %d", tal_system_get_free_heap_size());
 
-    /* ── Phase 4: Application init ───────────────────────────────────────
-     * app_chat_bot_init() initialises the display (LVGL + ST7789), the
-     * AI audio pipeline, and the wake-word detector.
-     * Audio encode/decode ring-buffers are created per-session inside the
-     * AI components and released when the session ends (on-demand strategy).
+    /* ── Phase 4: Pre-cloud minimal app init ─────────────────────────────
+     * Keep only minimal UI/health display here. Full AI/audio is deferred
+     * until MQTT connected to avoid TLS allocation failures on ESP32-C3.
      * -------------------------------------------------------------------*/
-    ret = app_chat_bot_init();
+    ret = app_chat_bot_precloud_init();
     if (ret != OPRT_OK) {
-        PR_ERR("app_chat_bot_init failed: %d", ret);
+        PR_ERR("app_chat_bot_precloud_init failed: %d", ret);
     }
 
 #if defined(ENABLE_BATTERY) && (ENABLE_BATTERY == 1)
@@ -397,7 +493,7 @@ void user_main(void)
     }
 #endif
 
-    PR_INFO("[Phase-4 done] Heap after app init: %d", tal_system_get_free_heap_size());
+    PR_INFO("[Phase-4 done] Heap after pre-cloud app init: %d", tal_system_get_free_heap_size());
 
     tuya_iot_start(&ai_client);
 
@@ -430,9 +526,9 @@ static void tuya_app_thread(void *arg)
 void tuya_app_main(void)
 {
     THREAD_CFG_T thrd_param = {0};
-    /* Reduced from 4096 to 3072 bytes — saves 1 KB of stack SRAM.
-     * Sufficient for ESP32-C3 given the simplified init sequence. */
-    thrd_param.stackDepth = 3072;
+    /* MQTT/TLS + reset callback chain can overflow 3 KB stack on C3.
+     * Restore safer stack depth to avoid runtime stack protection faults. */
+    thrd_param.stackDepth = 4096;
     thrd_param.priority   = 4;
     thrd_param.thrdname   = "tuya_app_main";
     tal_thread_create_and_start(&ty_app_thread, NULL, NULL, tuya_app_thread, NULL, &thrd_param);

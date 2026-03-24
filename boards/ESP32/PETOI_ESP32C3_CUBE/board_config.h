@@ -33,8 +33,11 @@ extern "C" {
 #define I2S_OUTPUT_SAMPLE_RATE (16000)
 
 #define I2S_NUM    (0)
-#define I2S_MCK_IO (13)
-#define I2S_BCK_IO (12)
+/* ESP32-C3 logs show GPIO12/13 as unusable on this board/flash layout.
+ * Use a no-MCLK setup and move BCK to a regular GPIO to avoid runtime
+ * driver warnings and unstable audio clock routing. */
+#define I2S_MCK_IO (-1)
+#define I2S_BCK_IO (11)
 #define I2S_WS_IO  (8)
 #define I2S_DO_IO  (7)   /* DAC → speaker */
 #define I2S_DI_IO  (10)  /* ADC ← microphone */
