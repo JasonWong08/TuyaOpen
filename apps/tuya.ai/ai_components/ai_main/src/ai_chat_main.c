@@ -342,7 +342,6 @@ static int __ai_mqtt_connected_evt(void *data)
     (void)data;
 
     __ai_chat_load_config(&mode, &vol);
-    ai_mode_init(mode);
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
     /* Play prompt first to guarantee audible feedback on tiny-memory windows. */
@@ -350,8 +349,12 @@ static int __ai_mqtt_connected_evt(void *data)
         TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
         sg_network_alert_played = true;
         PR_NOTICE("play network-connected alert before ai_agent_init");
+        /* On ESP32-C3, mode switch may restart recorder task and contend with
+         * prompt playback; give audio path a short head start first. */
+        tal_system_sleep(120);
     }
 #endif
+    ai_mode_init(mode);
 
 #ifdef PLATFORM_ESP32
     size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
