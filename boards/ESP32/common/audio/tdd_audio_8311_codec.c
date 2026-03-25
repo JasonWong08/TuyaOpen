@@ -150,14 +150,23 @@ static void SetOutputVolume(int volume)
 static void EnableOutput(bool enable)
 {
     if (enable) {
-        // Play 16bit 1 channel
+        /* Keep output route conservative on C3:
+         * use dual-slot playback so mono prompt data is mirrored to both L/R
+         * and avoid "log says playing but no audible output" on some ES8311 boards. */
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+        int out_channel = 2;
+#else
+        int out_channel = 1;
+#endif
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = SAMPLE_DATABITS,
-            .channel         = 1,
+            .channel         = out_channel,
             .channel_mask    = 0,
             .sample_rate     = (uint32_t)output_sample_rate_,
             .mclk_multiple   = 0,
         };
+        PR_NOTICE("[codec-out] open sample_rate=%d bits=%d channel=%d mask=%d vol=%d pa_pin=%d", output_sample_rate_,
+                  SAMPLE_DATABITS, fs.channel, fs.channel_mask, output_volume_, (int)pa_pin_);
         ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
         if (pa_pin_ != GPIO_NUM_NC) {
@@ -201,11 +210,15 @@ static void CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws
                                     },
                                 .slot_cfg = {.data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
                                              .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+                                             .slot_mode = I2S_SLOT_MODE_MONO,
+#else
                                              .slot_mode      = I2S_SLOT_MODE_STEREO,
-                                             .slot_mask      = I2S_STD_SLOT_BOTH,
-                                             .ws_width       = I2S_DATA_BIT_WIDTH_16BIT,
-                                             .ws_pol         = false,
-                                             .bit_shift      = true,
+#endif
+                                             .slot_mask = I2S_STD_SLOT_BOTH,
+                                             .ws_width  = I2S_DATA_BIT_WIDTH_16BIT,
+                                             .ws_pol    = false,
+                                             .bit_shift = true,
 #ifdef I2S_HW_VERSION_2
                                              .left_align    = true,
                                              .big_endian    = false,
