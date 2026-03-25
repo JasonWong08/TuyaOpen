@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file lv_conf.h
  * Configuration file for v9.1.0
  */
@@ -120,8 +120,12 @@
  * "Transformed layers" (if `transform_angle/zoom` are set) use larger buffers
  * and can't be drawn in chunks. */
 
-/*The target buffer size for simple layer chunks.*/
-#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE    (24 * 1024)   /*[bytes]*/
+/*The target buffer size for simple layer chunks.
+ * On ESP32-C3 (no PSRAM, ~84 KiB SRAM) keep this small so that LVGL's
+ * adaptive layer-chunk allocation does not greedily consume all free heap.
+ * 24 KB default would leave <300 B for BLE after Phase-4; 4 KB is sufficient
+ * for the AI-chat emoji widgets (240-wide × 8-line strip = 3840 B/chunk). */
+#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE    (4 * 1024)   /*[bytes]*/
 
 #define LV_USE_DRAW_SW 1
 #if LV_USE_DRAW_SW == 1
@@ -756,7 +760,12 @@
 // Modified by TUYA Start
 #define LV_USE_PNG 1
 #if LV_USE_PNG
-    #define LV_PNG_USE_PSRAM 1          /* 0: use default sram memory, 1: use psram memory. */
+    /* Use PSRAM only when actually available; ESP32-C3 (PETOI board) has no PSRAM. */
+    #if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
+        #define LV_PNG_USE_PSRAM 1
+    #else
+        #define LV_PNG_USE_PSRAM 0
+    #endif
 #endif
 // Modified by TUYA End
 

@@ -21,6 +21,10 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lvgl_port.h"
 
+#ifndef DISPLAY_LVGL_FULL_REFRESH
+#define DISPLAY_LVGL_FULL_REFRESH 0
+#endif
+
 #if defined(BOARD_DISPLAY_TYPE) && (BOARD_DISPLAY_TYPE == DISPLAY_TYPE_LCD_SH8601)
 #include "lcd_sh8601.h"
 #endif
@@ -38,6 +42,13 @@
  **********************/
 
 /**********************
+ *  STATIC VARIABLES
+ **********************/
+static esp_lcd_panel_io_handle_t s_panel_io;
+static esp_lcd_panel_handle_t    s_panel;
+static bool                        s_disp_hw_ready;
+
+/**********************
  *      MACROS
  **********************/
 
@@ -46,22 +57,26 @@
  **********************/
 void lv_port_disp_init(char *device)
 {
+    (void)device;
+    s_disp_hw_ready = false;
+    s_panel_io      = NULL;
+    s_panel         = NULL;
+
     if (0 != board_display_init()) {
         return;
     }
 
-    esp_lcd_panel_io_handle_t panel_io = (esp_lcd_panel_io_handle_t)board_display_get_panel_io_handle();
-    esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t)board_display_get_panel_handle();
-    if (NULL == panel_io || NULL == panel) {
+    s_panel_io = (esp_lcd_panel_io_handle_t)board_display_get_panel_io_handle();
+    s_panel    = (esp_lcd_panel_handle_t)board_display_get_panel_handle();
+    if (NULL == s_panel_io || NULL == s_panel) {
         return;
     }
 
-    // Initialize LVGL port
-    if (esp_lcd_panel_init(panel) != ESP_OK) {
+    if (esp_lcd_panel_init(s_panel) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize display");
         return;
     }
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
 #if defined(BOARD_DISPLAY_TYPE) && (BOARD_DISPLAY_TYPE == DISPLAY_TYPE_LCD_SH8601)
 #ifndef BOARD_LCD_DEFAULT_BRIGHTNESS
@@ -70,15 +85,19 @@ void lv_port_disp_init(char *device)
     lcd_sh8601_set_backlight(BOARD_LCD_DEFAULT_BRIGHTNESS);
 #endif
 
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_stack = 8 * 1024;
-    port_cfg.task_priority = 1;
-    port_cfg.timer_period_ms = 50;
-    lvgl_port_init(&port_cfg);
+    s_disp_hw_ready = true;
+}
+
+void lv_port_disp_register_to_lvgl(void)
+{
+    if (!s_disp_hw_ready || s_panel_io == NULL || s_panel == NULL) {
+        ESP_LOGE(TAG, "Display hardware not ready");
+        return;
+    }
 
     const lvgl_port_display_cfg_t disp_cfg = {
-        .io_handle = panel_io,
-        .panel_handle = panel,
+        .io_handle = s_panel_io,
+        .panel_handle = s_panel,
         .control_handle = NULL,
         .buffer_size = DISPLAY_BUFFER_SIZE,
         .double_buffer = false,
@@ -99,7 +118,7 @@ void lv_port_disp_init(char *device)
                 .buff_spiram = DISPLAY_BUFF_SPIRAM,
                 .sw_rotate = 0,
                 .swap_bytes = DISPLAY_SWAP_BYTES,
-                .full_refresh = 0,
+                .full_refresh = DISPLAY_LVGL_FULL_REFRESH,
                 .direct_mode = 0,
             },
     };

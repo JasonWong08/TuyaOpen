@@ -78,6 +78,15 @@ int tuya_ble_deinit(void);
 bool tuya_ble_is_connected(void);
 
 /**
+ * @brief Disconnect current BLE peer if connected.
+ *
+ * This is primarily used after BLE netcfg has delivered WiFi credentials, so
+ * WiFi association can proceed with less BLE coexist pressure on low-memory
+ * targets.
+ */
+void tuya_ble_disconnect_current(void);
+
+/**
  * @brief Sends data over the BLE connection.
  *
  * This function is used to send data over the BLE connection established by the

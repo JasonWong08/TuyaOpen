@@ -33,8 +33,12 @@ extern "C" {
 /**********************
  * GLOBAL PROTOTYPES
  **********************/
-/* Initialize low level display driver */
+/* Panel + LCD init only (no esp_lvgl_port). Call lv_port_disp_register_to_lvgl()
+ * after lvgl_port_init() from lv_vendor_start(). */
 void lv_port_disp_init(char *device);
+
+/* Register the prepared panel with esp_lvgl_port (after lvgl_port_init). */
+void lv_port_disp_register_to_lvgl(void);
 
 /* Enable updating the screen (the flushing process) when disp_flush() is called by LVGL
  */

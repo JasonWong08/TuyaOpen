@@ -76,7 +76,8 @@ static void __lvgl_init(void)
 {
     lv_vendor_init(DISPLAY_NAME);
 
-    lv_vendor_start(5, 1024*8);
+    /* ESP32-C3 has no PSRAM; 4 KB is sufficient for a simple chatbot UI. */
+    lv_vendor_start(5, 1024*4);
 }
 
 /**
@@ -88,6 +89,11 @@ static void __ui_font_init(void)
     sg_font.icon       = ai_ui_get_icon_font();
     sg_font.emoji      = ai_ui_get_emo_font();
     sg_font.emoji_list = ai_ui_get_emo_list();
+
+    if (sg_font.text == NULL || sg_font.icon == NULL || sg_font.emoji == NULL || sg_font.emoji_list == NULL) {
+        PR_WARN("ui font init: text=%p icon=%p emoji=%p list=%p",
+                sg_font.text, sg_font.icon, sg_font.emoji, sg_font.emoji_list);
+    }
 }
 
 /**
@@ -162,6 +168,14 @@ static OPERATE_RET __ui_init(void)
     __ui_light_theme_init(&sg_theme_colors);
     __ui_font_init();
 
+    if (sg_font.text == NULL) {
+        sg_font.text = LV_FONT_DEFAULT;
+        PR_WARN("ui text font fallback to LV_FONT_DEFAULT");
+    }
+    if (sg_font.icon == NULL) {
+        sg_font.icon = sg_font.text;
+    }
+
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_text_font(screen, sg_font.text, 0);
     lv_obj_set_style_text_color(screen, sg_theme_colors.text, 0);
@@ -193,17 +207,23 @@ static OPERATE_RET __ui_init(void)
 
     // Emotion
     sg_ui.emotion_label = lv_label_create(sg_ui.content);
-    lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.emoji, 0);
-    lv_label_set_text(sg_ui.emotion_label, sg_font.emoji_list[0].emo_icon);
+    if (sg_font.emoji && sg_font.emoji_list) {
+        lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.emoji, 0);
+        lv_label_set_text(sg_ui.emotion_label, sg_font.emoji_list[0].emo_icon);
+    } else {
+        /* Fallback for low-memory/font-init failures: keep at least a visible marker. */
+        lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.text, 0);
+        lv_label_set_text_static(sg_ui.emotion_label, ":)");
+    }
 
     // Chat message
     sg_ui.chat_message_label = lv_label_create(sg_ui.content);
-    lv_label_set_text(sg_ui.chat_message_label, "");
+    lv_label_set_text_static(sg_ui.chat_message_label, "");
     lv_obj_set_width(sg_ui.chat_message_label, LV_HOR_RES * 0.9);         /* Limit width to 90% of screen width */
     lv_obj_set_height(sg_ui.chat_message_label, LV_VER_RES * 0.5);         /* Limit height to 50% of screen height */
     lv_label_set_long_mode(sg_ui.chat_message_label, LV_LABEL_LONG_WRAP); /* Set to automatic line break mode */
     lv_obj_set_style_text_align(sg_ui.chat_message_label, LV_TEXT_ALIGN_CENTER, 0); /* Set text to center alignment */
-    lv_label_set_text(sg_ui.chat_message_label, "");
+    lv_label_set_text_static(sg_ui.chat_message_label, "");
 
     /* Status bar */
     /* lv_obj_set_flex_flow(sg_ui.status_bar, LV_FLEX_FLOW_ROW); */
@@ -215,7 +235,7 @@ static OPERATE_RET __ui_init(void)
 
     sg_ui.chat_mode_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_style_text_color(sg_ui.chat_mode_label, sg_theme_colors.text, 0);
-    lv_label_set_text(sg_ui.chat_mode_label, "");
+    lv_label_set_text_static(sg_ui.chat_mode_label, "");
     lv_obj_align(sg_ui.chat_mode_label, LV_ALIGN_LEFT_MID, 5, 0);
 
     // Notification label
@@ -223,17 +243,20 @@ static OPERATE_RET __ui_init(void)
     lv_obj_set_flex_grow(sg_ui.notification_label, 1);
     lv_obj_set_style_text_align(sg_ui.notification_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(sg_ui.notification_label, sg_theme_colors.text, 0);
-    lv_label_set_text(sg_ui.notification_label, "");
+    lv_label_set_text_static(sg_ui.notification_label, "");
     lv_obj_align(sg_ui.notification_label, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(sg_ui.notification_label, LV_OBJ_FLAG_HIDDEN);
 
     // Status label
     sg_ui.status_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_flex_grow(sg_ui.status_label, 1);
-    lv_label_set_long_mode(sg_ui.status_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    /* Circular scrolling triggers continuous redraw/alloc pressure.
+     * On ESP32-C3 (no PSRAM), keep status text static for heap stability. */
+    lv_label_set_long_mode(sg_ui.status_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(sg_ui.status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(sg_ui.status_label, sg_theme_colors.text, 0);
-    lv_label_set_text(sg_ui.status_label, INITIALIZING);
+    /* ASCII fallback guarantees visibility even if CJK glyph table is missing. */
+    lv_label_set_text_static(sg_ui.status_label, "Initializing...");
     lv_obj_align(sg_ui.status_label, LV_ALIGN_CENTER, 0, 0);
 
     // Network status
@@ -246,6 +269,9 @@ static OPERATE_RET __ui_init(void)
     lv_obj_set_style_pad_left(sg_ui.status_bar, LV_HOR_RES * 0.1, 0);
     lv_obj_set_style_pad_right(sg_ui.status_bar, LV_HOR_RES * 0.1, 0);
 #endif
+
+    /* Force a full object-tree redraw after first-time UI construction. */
+    lv_obj_invalidate(screen);
 
     lv_vendor_disp_unlock();
 
@@ -294,7 +320,7 @@ static void __ui_set_ai_msg(char *text)
 static void __ui_set_ai_msg_stream_start(void)
 {
     lv_vendor_disp_lock();
-    lv_label_set_text(sg_ui.chat_message_label, "");
+    lv_label_set_text_static(sg_ui.chat_message_label, "");
     lv_obj_set_style_bg_color(sg_ui.chat_message_label, sg_theme_colors.assistant_bubble, 0);
     lv_obj_set_style_text_color(sg_ui.chat_message_label, sg_theme_colors.text, 0);
     lv_vendor_disp_unlock();
@@ -355,16 +381,23 @@ static void __ui_set_emotion(char *emotion)
         return;
     }
 
-    char *emo_icon = sg_font.emoji_list[0].emo_icon;
-    for (int i = 0; i < FONT_EMO_ICON_MAX_NUM; i++) {
-        if (strcmp(emotion, sg_font.emoji_list[i].emo_name) == 0) {
-            emo_icon = sg_font.emoji_list[i].emo_icon;
-            break;
+    const char *emo_icon = ":)";
+    if (sg_font.emoji_list) {
+        emo_icon = sg_font.emoji_list[0].emo_icon;
+        for (int i = 0; i < FONT_EMO_ICON_MAX_NUM; i++) {
+            if (strcmp(emotion, sg_font.emoji_list[i].emo_name) == 0) {
+                emo_icon = sg_font.emoji_list[i].emo_icon;
+                break;
+            }
         }
     }
 
     lv_vendor_disp_lock();
-    lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.emoji, 0);
+    if (sg_font.emoji && sg_font.emoji_list) {
+        lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.emoji, 0);
+    } else {
+        lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.text, 0);
+    }
     lv_label_set_text(sg_ui.emotion_label, emo_icon);
     lv_vendor_disp_unlock();
 }

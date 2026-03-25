@@ -95,7 +95,7 @@ static void mqtt_bind_activate_token_on(tuya_protocol_event_t *ev)
     /* get token from cJSON object */
     char *token = cJSON_GetObjectItem(data, "token")->valuestring;
     char *region = cJSON_GetObjectItem(data, "region")->valuestring;
-    char *regist_key = "pro"; // online env default
+    const char *regist_key = "pro"; // online env default
 
     if (cJSON_GetObjectItem(data, "env")) {
         regist_key = cJSON_GetObjectItem(data, "env")->valuestring;

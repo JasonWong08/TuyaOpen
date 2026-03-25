@@ -246,7 +246,7 @@ OPERATE_RET ai_audio_input_start(void)
     if (!sg_recorder->vad_task) {
         THREAD_CFG_T thrd_cfg = {
             .priority = THREAD_PRIO_5,
-            .stackDepth = 2 * 1024 + 512,  /* Support opus encode */
+            .stackDepth = 2 * 1024,
             .thrdname = "record_task",
             #if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
             .psram_mode = 1,

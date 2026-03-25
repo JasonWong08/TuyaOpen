@@ -365,14 +365,15 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
     }
 
     rt = audio_afe_processor_init();
-    if(rt != OPRT_OK) {
-        PR_ERR("audio_afe_processor_init err:%d",  rt);
-        return rt;
+    if (rt != OPRT_OK) {
+        /* Non-fatal: codec still works without AFE (push-to-talk mode). */
+        PR_WARN("audio_afe_processor_init failed (err:%d), VAD/wakeword disabled", rt);
+        rt = OPRT_OK;
     }
 
     const THREAD_CFG_T thread_cfg = {
         .thrdname = "esp32_i2s_8311_read",
-        .stackDepth = 3 * 1024,
+        .stackDepth = 2 * 1024,
         .priority = THREAD_PRIO_1,
     };
     PR_DEBUG("I2S 8311 read task args: %p", hdl);

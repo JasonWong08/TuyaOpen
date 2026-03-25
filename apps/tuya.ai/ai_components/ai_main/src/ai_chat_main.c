@@ -38,8 +38,15 @@
 
 #define TUYA_AI_CHAT_PAR       "ty_ai_chat_par"
 
-#define AI_AUDIO_SLICE_TIME         80     
-#define AI_AUDIO_VAD_ACTIVE_TIME    200 
+#define AI_AUDIO_SLICE_TIME         80
+/* On no-PSRAM platforms (ESP32-C3) we use pure push-to-talk (VAD_MANUAL).
+ * Setting vad_active_ms to 0 reduces the recording ring buffer from
+ * (200+300)*32+1 = 16001 B  →  (0+300)*32+1 = 9601 B, saving ~6.4 KB. */
+#ifdef CONFIG_AI_AUDIO_VAD_ACTIVE_MS
+#define AI_AUDIO_VAD_ACTIVE_TIME    CONFIG_AI_AUDIO_VAD_ACTIVE_MS
+#else
+#define AI_AUDIO_VAD_ACTIVE_TIME    200
+#endif
 #define AI_AUDIO_VAD_OFF_TIME       1000
 /***********************************************************
 ***********************typedef define***********************
@@ -290,7 +297,7 @@ static OPERATE_RET __ai_chat_mode_open_button(void)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    tdl_button_set_task_stack_size(4096);
+    tdl_button_set_task_stack_size(2048);
 
     TDL_BUTTON_CFG_T button_cfg = {.long_start_valid_time = 400,
                                    .long_keep_timer = 0,
@@ -425,7 +432,7 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
 
     THREAD_CFG_T thrd_cfg = {
         .priority = THREAD_PRIO_5,
-        .stackDepth = 3* 1024,
+        .stackDepth = 2 * 1024,
         .thrdname = "ai_chat_mode",
         #ifdef ENABLE_EXT_RAM
         .psram_mode = 1,

@@ -66,6 +66,9 @@ typedef struct {
     TIMER_ID broadcast_timer;
 } ap_netcfg_t;
 
+/* ~4.3 KiB incl. recv_buf[4096]; heap alloc during bind races with MP3/LVGL and often
+ * fails (malloc 0x10e4) on no-PSRAM ESP32-C3. Single global instance only — use BSS. */
+static ap_netcfg_t s_ap_netcfg_storage;
 static ap_netcfg_t *s_ap_netcfg = NULL;
 
 int ap_pbkdf2_cacl(char *pin, char *uuid, uint8_t *buf, uint8_t buflen);
@@ -78,7 +81,7 @@ ap_netcfg_t *ap_netcfg_get(void)
 void ap_netcfg_free(void)
 {
     if (s_ap_netcfg) {
-        tal_free(s_ap_netcfg);
+        memset(s_ap_netcfg, 0, sizeof(ap_netcfg_t));
         s_ap_netcfg = NULL;
     }
 }
@@ -527,7 +530,7 @@ static int ap_ext_cmd_parse(ap_netcfg_t *ap, char *data)
         }
     } else if (0 == strcmp(reqtype->valuestring,
                            "query_netcfg_stat")) { //  query_netcfg_stat
-        char *out = "{\"type\":1,\"stage\":2,\"status\":0}";
+        static const char out[] = "{\"type\":1,\"stage\":2,\"status\":0}";
         snprintf(buffer, buffer_size, "{\"reqType\":\"netcfg_stat_rpt\",\"data\":%s}", out);
     } else {
         PR_DEBUG("not support reqtype:%s", reqtype->valuestring);
@@ -963,7 +966,7 @@ int ap_netcfg_init(netcfg_args_t *netcfg_args)
         tal_system_sleep(200);
     }
 
-    TUYA_CHECK_NULL_RETURN(s_ap_netcfg = tal_malloc(sizeof(ap_netcfg_t)), OPRT_MALLOC_FAILED);
+    s_ap_netcfg = &s_ap_netcfg_storage;
     memset(s_ap_netcfg, 0, sizeof(ap_netcfg_t));
     memcpy(&s_ap_netcfg->netcfg_args, netcfg_args, sizeof(netcfg_args_t));
 

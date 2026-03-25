@@ -114,6 +114,20 @@ void __tuya_lan_init_tm_cb(TIMER_ID timer_id, void *arg)
     }
 
     if ((type & NETCONN_WIRED || type & NETCONN_WIFI) && client->is_activated) {
+#if OPERATING_SYSTEM <= SYSTEM_SMALL_MEMORY_END
+        /* On small-memory targets (e.g. ESP32-C3), LAN sockets can steal heap
+         * from MQTT TLS setup and cause mbedtls_ssl_setup allocation failures.
+         * Defer LAN until MQTT is already online and heap is comfortable. */
+        uint32_t free_heap = tal_system_get_free_heap_size();
+        if (false == client->mqctx.is_connected) {
+            PR_DEBUG("Defer LAN init until MQTT connected");
+            return;
+        }
+        if (free_heap < (56 * 1024)) {
+            PR_WARN("Defer LAN init due low heap: %u", (unsigned)free_heap);
+            return;
+        }
+#endif
         PR_DEBUG("Start LAN initialization");
         tuya_lan_init(client);
         tal_sw_timer_stop(sg_lan_init_timer);

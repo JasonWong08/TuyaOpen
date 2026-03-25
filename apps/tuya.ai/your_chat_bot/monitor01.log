@@ -1,0 +1,7 @@
+ap: free=15395   min_ever=8611    largest_block=11264 [0m
+[0;36;49m[03-17 17:38:48 ty I][app_chat_bot.c:52] Free heap size:22899[0m
+[0;36;49m[03-17 17:38:56 ty I][tuya_main.c:299] Heap: :11 ty I][app_chat_bot.c:52] Free heap size:40955[0m
+[0;36;49m[01-01 00:00:19 ty I][tuya_main.c:299] Heap: free=33451   min_ever=28259   largest_block=27648 [0m
+[0;36;49m[01-01 00:00:21 ty I][app_chat_bot.c:52] Free heap size:40955[0m
+[0;36;49m[01-01 00:00:29 ty I][tuya_main.c:299] Heap: free=33451   min_ever=28259   largest_block=27648 [0m
+[0;36;49m[01-01 00:00:31 ty I][app_chat_bot.c:52] Free heap size:40955[0m

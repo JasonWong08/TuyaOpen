@@ -135,7 +135,7 @@ static void __ui_init_128X64(void)
 
     sg_ui.emotion_label = lv_label_create(sg_ui.content_left);
     lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.emoji, 0);
-    lv_label_set_text(sg_ui.emotion_label, FONT_AWESOME_AI_CHIP);
+    lv_label_set_text_static(sg_ui.emotion_label, FONT_AWESOME_AI_CHIP);
     lv_obj_center(sg_ui.emotion_label);
     lv_obj_set_style_pad_top(sg_ui.emotion_label, 8, 0);
 
@@ -147,7 +147,7 @@ static void __ui_init_128X64(void)
     lv_obj_add_flag(sg_ui.content_right, LV_OBJ_FLAG_HIDDEN);
 
     sg_ui.chat_message_label = lv_label_create(sg_ui.content_right);
-    lv_label_set_text(sg_ui.chat_message_label, "");
+    lv_label_set_text_static(sg_ui.chat_message_label, "");
     lv_label_set_long_mode(sg_ui.chat_message_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_style_text_align(sg_ui.chat_message_label, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_width(sg_ui.chat_message_label, LV_HOR_RES - 32);
@@ -166,18 +166,18 @@ static void __ui_init_128X64(void)
     lv_obj_set_style_pad_column(sg_ui.status_bar, 0, 0);
 
     sg_ui.network_label = lv_label_create(sg_ui.status_bar);
-    lv_label_set_text(sg_ui.network_label, "");
+    lv_label_set_text_static(sg_ui.network_label, "");
     lv_obj_set_style_text_font(sg_ui.network_label, sg_font.icon, 0);
 
     sg_ui.notification_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_flex_grow(sg_ui.notification_label, 1);
     lv_obj_set_style_text_align(sg_ui.notification_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(sg_ui.notification_label, "");
+    lv_label_set_text_static(sg_ui.notification_label, "");
     lv_obj_add_flag(sg_ui.notification_label, LV_OBJ_FLAG_HIDDEN);
 
     sg_ui.status_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_flex_grow(sg_ui.status_label, 1);
-    lv_label_set_text(sg_ui.status_label, INITIALIZING);
+    lv_label_set_text_static(sg_ui.status_label, INITIALIZING);
     lv_obj_set_style_text_align(sg_ui.status_label, LV_TEXT_ALIGN_CENTER, 0);
 }
 #elif defined(AI_CHAT_GUI_OLED_SIZE_128_32) && (AI_CHAT_GUI_OLED_SIZE_128_32 == 1)
@@ -216,7 +216,7 @@ static void __ui_init_128X32(void)
 
     sg_ui.emotion_label = lv_label_create(sg_ui.content);
     lv_obj_set_style_text_font(sg_ui.emotion_label, sg_font.icon, 0);
-    lv_label_set_text(sg_ui.emotion_label, FONT_AWESOME_AI_CHIP);
+    lv_label_set_text_static(sg_ui.emotion_label, FONT_AWESOME_AI_CHIP);
     lv_obj_center(sg_ui.emotion_label);
 
     /* Right side */
@@ -240,26 +240,26 @@ static void __ui_init_128X32(void)
     sg_ui.status_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_flex_grow(sg_ui.status_label, 1);
     lv_obj_set_style_pad_left(sg_ui.status_label, 2, 0);
-    lv_label_set_text(sg_ui.status_label, INITIALIZING);
+    lv_label_set_text_static(sg_ui.status_label, INITIALIZING);
 
     sg_ui.notification_label = lv_label_create(sg_ui.status_bar);
     lv_obj_set_flex_grow(sg_ui.notification_label, 1);
     lv_obj_set_style_pad_left(sg_ui.notification_label, 2, 0);
-    lv_label_set_text(sg_ui.notification_label, "");
+    lv_label_set_text_static(sg_ui.notification_label, "");
     lv_obj_add_flag(sg_ui.notification_label, LV_OBJ_FLAG_HIDDEN);
 
     sg_ui.mute_label = lv_label_create(sg_ui.status_bar);
-    lv_label_set_text(sg_ui.mute_label, "");
+    lv_label_set_text_static(sg_ui.mute_label, "");
     lv_obj_set_style_text_font(sg_ui.mute_label, sg_font.icon, 0);
 
     sg_ui.network_label = lv_label_create(sg_ui.status_bar);
-    lv_label_set_text(sg_ui.network_label, "");
+    lv_label_set_text_static(sg_ui.network_label, "");
     lv_obj_set_style_text_font(sg_ui.network_label, sg_font.icon, 0);
     sg_ui.chat_message_label = lv_label_create(sg_ui.side_bar);
     lv_obj_set_size(sg_ui.chat_message_label, LV_HOR_RES - 32, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_left(sg_ui.chat_message_label, 2, 0);
     lv_label_set_long_mode(sg_ui.chat_message_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_label_set_text(sg_ui.chat_message_label, "");
+    lv_label_set_text_static(sg_ui.chat_message_label, "");
 
     lv_anim_init(&sg_ui.msg_anim);
     lv_anim_set_delay(&sg_ui.msg_anim, 1000);
@@ -335,7 +335,7 @@ static void __ui_set_ai_msg_stream_start(void)
     }
 
     lv_vendor_disp_lock();
-    lv_label_set_text(sg_ui.chat_message_label, "");
+    lv_label_set_text_static(sg_ui.chat_message_label, "");
     lv_vendor_disp_unlock();
 
     sg_is_streaming = true;

@@ -71,6 +71,14 @@ typedef struct {
     uint8_t adv_data[BLE_ADV_DATA_LEN];
     uint8_t rsp_len;
     uint8_t rsp_data[BLE_SCAN_RSP_DATA_LEN];
+    /* Cache the last payload we have successfully applied to controller.
+     * This avoids repeating adv set/start with identical payload under low heap. */
+    bool adv_payload_valid;
+    bool adv_started;
+    uint8_t last_adv_len;
+    uint8_t last_adv_data[BLE_ADV_DATA_LEN];
+    uint8_t last_rsp_len;
+    uint8_t last_rsp_data[BLE_SCAN_RSP_DATA_LEN];
     //! packet receive
     uint32_t send_sn;
     uint32_t recv_sn;
@@ -339,13 +347,57 @@ static int ble_packet_recv(tuya_ble_mgr_t *ble, uint8_t *buf, uint16_t len, ble_
     return OPRT_OK;
 }
 
+static bool ble_adv_payload_changed(tuya_ble_mgr_t *ble)
+{
+    if (!ble->adv_payload_valid) {
+        return true;
+    }
+
+    if (ble->adv_len != ble->last_adv_len || ble->rsp_len != ble->last_rsp_len) {
+        return true;
+    }
+
+    if (memcmp(ble->adv_data, ble->last_adv_data, ble->adv_len) != 0) {
+        return true;
+    }
+
+    if (memcmp(ble->rsp_data, ble->last_rsp_data, ble->rsp_len) != 0) {
+        return true;
+    }
+
+    return false;
+}
+
+static void ble_adv_payload_snapshot(tuya_ble_mgr_t *ble)
+{
+    ble->last_adv_len = ble->adv_len;
+    ble->last_rsp_len = ble->rsp_len;
+    memcpy(ble->last_adv_data, ble->adv_data, ble->adv_len);
+    memcpy(ble->last_rsp_data, ble->rsp_data, ble->rsp_len);
+    ble->adv_payload_valid = true;
+}
+
 static void ble_adv_update(tuya_ble_mgr_t *ble)
 {
     int rt = OPRT_OK;
     if (NULL == ble) {
         return;
     }
-    ble_adv_set(ble);
+    rt = ble_adv_set(ble);
+    if (OPRT_OK != rt) {
+        PR_ERR("ble_adv_set failed:%d", rt);
+        return;
+    }
+
+    bool payload_changed = ble_adv_payload_changed(ble);
+
+    /* Keep controller operation minimal when payload is unchanged.
+     * But we still need to ensure advertising is started at least once. */
+    if (!payload_changed && ble->adv_started) {
+        PR_DEBUG("ble adv unchanged, skip update");
+        return;
+    }
+
     TAL_BLE_DATA_T adv_data;
     TAL_BLE_DATA_T rsp_data;
 
@@ -354,15 +406,53 @@ static void ble_adv_update(tuya_ble_mgr_t *ble)
     rsp_data.p_data = ble->rsp_data;
     rsp_data.len = ble->rsp_len;
 
-    // Only update the advertising content when Bluetooth is connected
+    /* Only update the advertising content when Bluetooth is connected */
     if (ble->is_paired) {
-        TUYA_CALL_ERR_LOG(tal_ble_advertising_data_set(&adv_data, &rsp_data));
+        rt = tal_ble_advertising_data_set(&adv_data, &rsp_data);
+        if (OPRT_OK != rt) {
+            PR_ERR("ble adv set failed:%d", rt);
+            return;
+        }
     } else {
-        tal_ble_advertising_stop();
-        TUYA_CALL_ERR_LOG(tal_ble_advertising_data_set(&adv_data, &rsp_data));
         TAL_BLE_ADV_PARAMS_T ble_adv_params = DEFAULT_ADV_PARAMS(BT_ADV_INTERVAL_MIN, BT_ADV_INTERVAL_MAX);
-        TUYA_CALL_ERR_LOG(tal_ble_advertising_start(&ble_adv_params));
+
+        if (!ble->adv_started) {
+            /* First publish after boot / reconnect: set data then start adv. */
+            rt = tal_ble_advertising_data_set(&adv_data, &rsp_data);
+            if (OPRT_OK != rt) {
+                PR_ERR("ble adv set failed:%d", rt);
+                return;
+            }
+            rt = tal_ble_advertising_start(&ble_adv_params);
+            if (OPRT_OK != rt) {
+                PR_ERR("ble adv start failed:%d", rt);
+                return;
+            }
+            ble->adv_started = true;
+        } else if (payload_changed) {
+            /* Normal case: payload changed while adv is running, update in-place. */
+            rt = tal_ble_advertising_data_update(&adv_data, &rsp_data);
+            if (OPRT_OK != rt) {
+                PR_WARN("ble adv update failed:%d, fallback stop/set/start", rt);
+                tal_ble_advertising_stop();
+                ble->adv_started = false;
+
+                rt = tal_ble_advertising_data_set(&adv_data, &rsp_data);
+                if (OPRT_OK != rt) {
+                    PR_ERR("ble adv set failed:%d", rt);
+                    return;
+                }
+                rt = tal_ble_advertising_start(&ble_adv_params);
+                if (OPRT_OK != rt) {
+                    PR_ERR("ble adv start failed:%d", rt);
+                    return;
+                }
+                ble->adv_started = true;
+            }
+        }
     }
+
+    ble_adv_payload_snapshot(ble);
     PR_NOTICE("ble adv updated %d", rt);
 }
 
@@ -441,6 +531,18 @@ bool tuya_ble_is_connected(void)
     return s_ble_mgr->is_paired;
 }
 
+void tuya_ble_disconnect_current(void)
+{
+    if (NULL == s_ble_mgr) {
+        return;
+    }
+
+    if (s_ble_mgr->is_paired) {
+        PR_NOTICE("ble disconnect current peer for netcfg");
+        tal_ble_disconnect(s_ble_mgr->peer_info);
+    }
+}
+
 /**
  * @brief Add a session to the Tuya BLE manager.
  *
@@ -491,14 +593,18 @@ int tuya_ble_session_del(ble_seesion_type_t type)
     return OPRT_INVALID_PARM;
 }
 
+/* BSS static frame buffer – BLE callbacks are serialized (single connection),
+ * so reuse is safe and avoids two back-to-back 1 KB heap allocations when the
+ * heap is fragmented (only one 1 KB block available at encode time). */
+static uint8_t s_ble_encode_frame[TUYA_BLE_AIR_FRAME_MAX];
+
 static int ble_packet_encode(tuya_ble_mgr_t *ble, ble_packet_t *packet, uint8_t **outbuf, uint32_t *outlen)
 {
-    uint8_t *ble_frame = NULL;
+    uint8_t *ble_frame = s_ble_encode_frame;
     uint8_t *enc_buf = NULL;
 
-    ble_frame = tal_malloc(TUYA_BLE_AIR_FRAME_MAX);
     enc_buf = tal_malloc(TUYA_BLE_AIR_FRAME_MAX);
-    if (NULL == enc_buf || NULL == ble_frame) {
+    if (NULL == enc_buf) {
         PR_ERR("ble enc_buf malloc err");
         goto __exit;
     }
@@ -551,13 +657,9 @@ static int ble_packet_encode(tuya_ble_mgr_t *ble, ble_packet_t *packet, uint8_t 
         PR_ERR("ble frame encrypt err");
         goto __exit;
     }
-    tal_free(ble_frame);
     return OPRT_OK;
 
 __exit:
-    if (ble_frame) {
-        tal_free(ble_frame);
-    }
     if (enc_buf) {
         tal_free(enc_buf);
     }
@@ -947,6 +1049,7 @@ static void tal_ble_event_callback(void *data)
             memcpy(&ble->peer_info, &msg->ble_event.connect.peer, sizeof(TAL_BLE_PEER_INFO_T));
             ble->recv_sn = 0;
             ble->send_sn = 1;
+            ble->adv_started = false;
             tal_sw_timer_start(ble->pair_timer, BLE_CONN_MONITOR_TIME, TAL_TIMER_ONCE);
             PR_NOTICE("Ble Connected");
         } else {
@@ -959,6 +1062,7 @@ static void tal_ble_event_callback(void *data)
         memset(ble->pair_rand, 0x00, sizeof(ble->pair_rand));
         tal_sw_timer_stop(ble->pair_timer);
         ble->is_paired = false;
+        ble->adv_started = false;
         if (!tuya_iot_is_connected()) {
             ble_adv_update(ble);
         }

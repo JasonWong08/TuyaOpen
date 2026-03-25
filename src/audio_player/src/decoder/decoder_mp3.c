@@ -17,6 +17,9 @@
  * 
  */
 #include <stdint.h>
+/* Avoid ~16 KB per-frame heap alloc inside minimp3 (mp3dec_scratch_t); critical on
+ * no-PSRAM targets (e.g. ESP32-C3) during bind alert / TTS MP3 decode. */
+#define MINIMP3_USE_STATIC_SCRATCH 1
 #define MINIMP3_IMPLEMENTATION
 
 #include "tal_api.h"
@@ -25,19 +28,21 @@
 
 #define MP3_HEAD_SIZE (10)
 
-#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
-#define DECODER_MP3_MALLOC tal_psram_malloc
-#define DECODER_MP3_FREE   tal_psram_free
-#else
-#define DECODER_MP3_MALLOC tal_malloc
-#define DECODER_MP3_FREE   tal_free
-#endif
-
 typedef struct {
     bool is_first_frame;
     mp3dec_t decoder;
     uint32_t id3_size;
 } DECODER_MP3_CTX_T;
+
+#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
+#define DECODER_MP3_CTX_MALLOC tal_psram_malloc
+#define DECODER_MP3_CTX_FREE   tal_psram_free
+#else
+/* ~6.6 KB; heap alloc at bind races with AI_PLAYER_RINGBUF (~4 KB) → often only ~6 KB left
+ * (see malloc failed:0x1a14 free:0x175c). Keep ctx in BSS; pair with smaller LVGL partial
+ * buffer (e.g. PETOI 6 lines) so Phase-4 stays ~4 KB+ for LFS 4 KB cache. */
+static DECODER_MP3_CTX_T s_decoder_mp3_ctx;
+#endif
 
 static int __mp3_find_id3(uint8_t *buf)
 {
@@ -64,10 +69,14 @@ static int __mp3_find_id3(uint8_t *buf)
 
 OPERATE_RET decoder_mp3_start(void* *handle)
 {
-    DECODER_MP3_CTX_T *ctx = DECODER_MP3_MALLOC(sizeof(DECODER_MP3_CTX_T));
+#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
+    DECODER_MP3_CTX_T *ctx = (DECODER_MP3_CTX_T *)DECODER_MP3_CTX_MALLOC(sizeof(DECODER_MP3_CTX_T));
     if (!ctx) {
         return OPRT_MALLOC_FAILED;
     }
+#else
+    DECODER_MP3_CTX_T *ctx = &s_decoder_mp3_ctx;
+#endif
 
     memset(ctx, 0, sizeof(DECODER_MP3_CTX_T));
     ctx->is_first_frame = true;
@@ -84,11 +93,14 @@ OPERATE_RET decoder_mp3_stop(void* handle)
         return OPRT_INVALID_PARM;
     }
 
-    // mp3dec_t is a struct, no need to free
-    // Just reset it if needed
     memset(&ctx->decoder, 0, sizeof(mp3dec_t));
-
-    DECODER_MP3_FREE(ctx);
+#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
+    DECODER_MP3_CTX_FREE(ctx);
+#else
+    if (ctx != &s_decoder_mp3_ctx) {
+        return OPRT_INVALID_PARM;
+    }
+#endif
 
     return OPRT_OK;
 }
