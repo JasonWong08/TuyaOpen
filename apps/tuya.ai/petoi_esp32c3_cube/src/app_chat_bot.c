@@ -22,7 +22,7 @@
 #define DISP_NET_STATUS_TIME   (1 * 1000)
 /* Keep TLS path first on ESP32-C3: if pre-cloud heap is lower than this,
  * delay LVGL/UI startup until cloud is connected. */
-#define PRECLOUD_UI_HEAP_MIN   (90 * 1024)
+#define PRECLOUD_UI_HEAP_MIN (90 * 1024)
 /* After MQTT connect, system heap can still dip below 10KB on C3.
  * Starting AI+LVGL in this window easily causes watchdog/reset. */
 #define POSTCLOUD_INIT_HEAP_MIN (20 * 1024)
@@ -39,16 +39,39 @@
 ***********************variable define**********************
 ***********************************************************/
 static TIMER_ID sg_printf_heap_tm;
-static bool     sg_precloud_inited = false;
-static bool     sg_postcloud_inited = false;
-static bool     sg_ui_inited = false;
-static bool     sg_postcloud_degraded = false;
+static bool     sg_precloud_inited      = false;
+static bool     sg_postcloud_inited     = false;
+static bool     sg_ui_inited            = false;
+static bool     sg_postcloud_degraded   = false;
 static bool     sg_offline_audio_inited = false;
+
+#ifdef PLATFORM_ESP32
+extern size_t heap_caps_get_free_size(uint32_t caps);
+extern size_t heap_caps_get_minimum_free_size(uint32_t caps);
+extern size_t heap_caps_get_largest_free_block(uint32_t caps);
+
+#ifndef MALLOC_CAP_8BIT
+#define MALLOC_CAP_8BIT 0x00000008U
+#endif
+#endif
+
+static void __log_heap_snapshot(const char *stage)
+{
+#ifdef PLATFORM_ESP32
+    size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t min_ever = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    PR_NOTICE("[heap-snap] %s free=%u min_ever=%u largest=%u", stage ? stage : "unknown", (unsigned)free_now,
+              (unsigned)min_ever, (unsigned)largest);
+#else
+    PR_NOTICE("[heap-snap] %s free=%u", stage ? stage : "unknown", (unsigned)tal_system_get_free_heap_size());
+#endif
+}
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 static AI_UI_WIFI_STATUS_E sg_wifi_status = AI_UI_WIFI_STATUS_DISCONNECTED;
 static TIMER_ID            sg_disp_status_tm;
-extern OPERATE_RET ai_chat_ui_init(void);
+extern OPERATE_RET         ai_chat_ui_init(void);
 #endif
 /***********************************************************
 ***********************function define**********************
@@ -121,38 +144,38 @@ static void __ai_picture_output_notify_cb(AI_PICTURE_OUTPUT_NOTIFY_T *info)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    if(NULL == info) {
+    if (NULL == info) {
         return;
     }
 
-    if(AI_PICTURE_OUTPUT_START == info->event) {
+    if (AI_PICTURE_OUTPUT_START == info->event) {
         AI_PICTURE_CONVERT_CFG_T convert_cfg = {
-            .in_fmt = TUYA_FRAME_FMT_JPEG,
+            .in_fmt        = TUYA_FRAME_FMT_JPEG,
             .in_frame_size = info->total_size,
-            .out_fmt = TUYA_FRAME_FMT_RGB565,
+            .out_fmt       = TUYA_FRAME_FMT_RGB565,
         };
 
-        TUYA_CALL_ERR_LOG(ai_picture_convert_start(&convert_cfg)); 
-    }else if(AI_PICTURE_OUTPUT_SUCCESS == info->event) {
+        TUYA_CALL_ERR_LOG(ai_picture_convert_start(&convert_cfg));
+    } else if (AI_PICTURE_OUTPUT_SUCCESS == info->event) {
         AI_PICTURE_INFO_T picture_info;
 
         memset(&picture_info, 0, sizeof(AI_PICTURE_INFO_T));
 
         TUYA_CALL_ERR_LOG(ai_picture_convert(&picture_info));
-        if(rt == OPRT_OK) {
-            PR_NOTICE("Picture convert success: fmt=%d, width=%d, height=%d, size=%d",\
-                       picture_info.fmt, picture_info.width, picture_info.height, picture_info.frame_size);
-        #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
-            ai_ui_disp_picture(picture_info.fmt, picture_info.width, picture_info.height,\
-                               picture_info.frame, picture_info.frame_size);
+        if (rt == OPRT_OK) {
+            PR_NOTICE("Picture convert success: fmt=%d, width=%d, height=%d, size=%d", picture_info.fmt,
+                      picture_info.width, picture_info.height, picture_info.frame_size);
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+            ai_ui_disp_picture(picture_info.fmt, picture_info.width, picture_info.height, picture_info.frame,
+                               picture_info.frame_size);
 
-        #endif
+#endif
         }
-    
+
         TUYA_CALL_ERR_LOG(ai_picture_convert_stop());
-    }else if(AI_PICTURE_OUTPUT_FAILED == info->event) {
+    } else if (AI_PICTURE_OUTPUT_FAILED == info->event) {
         TUYA_CALL_ERR_LOG(ai_picture_convert_stop());
-    }else {
+    } else {
         ;
     }
 }
@@ -163,7 +186,6 @@ void __ai_picture_output_cb(uint8_t *data, uint32_t len, bool is_eof)
 }
 
 #endif
-
 
 static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
 {
@@ -211,23 +233,28 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
     OPERATE_RET rt = OPRT_OK;
 
     if (sg_postcloud_inited) {
+        __log_heap_snapshot("postcloud_init.already_inited");
         return OPRT_OK;
     }
 
     uint32_t postcloud_heap = tal_system_get_free_heap_size();
+    __log_heap_snapshot("postcloud_init.entry");
     if (postcloud_heap < POSTCLOUD_INIT_HEAP_MIN) {
         sg_postcloud_degraded = true;
         /* Keep cloud online first; postpone AI/UI to avoid WDT. */
-        PR_WARN("skip post-cloud AI/UI init, heap=%u < %u",
-                (unsigned)postcloud_heap, (unsigned)POSTCLOUD_INIT_HEAP_MIN);
+        PR_WARN("skip post-cloud AI/UI init, heap=%u < %u", (unsigned)postcloud_heap,
+                (unsigned)POSTCLOUD_INIT_HEAP_MIN);
+        __log_heap_snapshot("postcloud_init.skip_below_threshold");
         return OPRT_OK;
     }
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
     if (false == sg_ui_inited) {
+        __log_heap_snapshot("postcloud_init.before_ui_init");
         TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
         sg_ui_inited = true;
         ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
+        __log_heap_snapshot("postcloud_init.after_ui_init");
     }
 #endif
 
@@ -244,7 +271,14 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         sg_offline_audio_inited = false;
     }
 #endif
-    TUYA_CALL_ERR_RETURN(ai_chat_init(&ai_chat_cfg));
+    __log_heap_snapshot("postcloud_init.before_ai_chat_init");
+    rt = ai_chat_init(&ai_chat_cfg);
+    if (rt != OPRT_OK) {
+        PR_ERR("ai_chat_init failed: %d", rt);
+        __log_heap_snapshot("postcloud_init.ai_chat_init_failed");
+        return rt;
+    }
+    __log_heap_snapshot("postcloud_init.after_ai_chat_init");
 
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
     AI_VIDEO_CFG_T ai_video_cfg = {
@@ -267,6 +301,7 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
 #endif
 
     sg_postcloud_inited = true;
+    __log_heap_snapshot("postcloud_init.exit");
     return OPRT_OK;
 }
 
@@ -289,8 +324,7 @@ OPERATE_RET app_chat_bot_try_recover_ui(uint32_t min_heap_bytes, const char *sta
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
     uint32_t free_heap = tal_system_get_free_heap_size();
     if (free_heap < min_heap_bytes) {
-        PR_WARN("defer offline UI recovery, heap=%u < %u",
-                (unsigned)free_heap, (unsigned)min_heap_bytes);
+        PR_WARN("defer offline UI recovery, heap=%u < %u", (unsigned)free_heap, (unsigned)min_heap_bytes);
         return OPRT_COM_ERROR;
     }
 
@@ -324,8 +358,7 @@ OPERATE_RET app_chat_bot_try_recover_audio_alert(uint32_t min_heap_bytes, AI_AUD
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
     uint32_t free_heap = tal_system_get_free_heap_size();
     if (free_heap < min_heap_bytes) {
-        PR_WARN("defer offline audio recovery, heap=%u < %u",
-                (unsigned)free_heap, (unsigned)min_heap_bytes);
+        PR_WARN("defer offline audio recovery, heap=%u < %u", (unsigned)free_heap, (unsigned)min_heap_bytes);
         return OPRT_COM_ERROR;
     }
 
