@@ -32,15 +32,13 @@ extern "C" {
 #define I2S_INPUT_SAMPLE_RATE  (16000)
 #define I2S_OUTPUT_SAMPLE_RATE (16000)
 
-#define I2S_NUM    (0)
-/* ESP32-C3 logs show GPIO12/13 as unusable on this board/flash layout.
- * Use a no-MCLK setup and move BCK to a regular GPIO to avoid runtime
- * driver warnings and unstable audio clock routing. */
-#define I2S_MCK_IO (-1)
-#define I2S_BCK_IO (11)
-#define I2S_WS_IO  (8)
-#define I2S_DO_IO  (7)   /* DAC → speaker */
-#define I2S_DI_IO  (10)  /* ADC ← microphone */
+#define I2S_NUM (0)
+/* Align with xiaozhi lichuang-c3-dev reference mapping (same hardware). */
+#define I2S_MCK_IO (10)
+#define I2S_BCK_IO (8)
+#define I2S_WS_IO  (12)
+#define I2S_DO_IO  (11) /* DAC -> speaker */
+#define I2S_DI_IO  (7)  /* ADC <- microphone */
 
 /* Reduce DMA descriptors to lower peak heap usage on C3 */
 #define AUDIO_CODEC_DMA_DESC_NUM  (3)
@@ -59,8 +57,8 @@ extern "C" {
  * so pass the 8-bit write address 0x30 to get the correct 7-bit address 0x18. */
 #define AUDIO_CODEC_ES8311_ADDR (0x30)
 
-/* No external PA enable pin; ES8311 controls speaker internally */
-#define AUDIO_CODEC_PA_IO (-1)
+/* External PA enable pin used on xiaozhi lichuang-c3-dev compatible boards */
+#define AUDIO_CODEC_PA_IO (13)
 
 /***********************************************************
  * Button
@@ -85,7 +83,7 @@ extern "C" {
 
 #define LCD_SCLK_PIN (3)
 #define LCD_MOSI_PIN (4)
-#define LCD_MISO_PIN (-1)  /* not used */
+#define LCD_MISO_PIN (-1) /* not used */
 #define LCD_DC_PIN   (6)
 #define LCD_CS_PIN   (5)
 
@@ -94,7 +92,7 @@ extern "C" {
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT true
 
 /* ST7789 多数模组需颜色反转；旧代码误用 BACKLIGHT_OUTPUT_INVERT(true) 曾等价于 invert on */
-#define DISPLAY_ST7789_COLOR_INVERT     1
+#define DISPLAY_ST7789_COLOR_INVERT 1
 
 #define DISPLAY_WIDTH  (240)
 #define DISPLAY_HEIGHT (280)
@@ -102,15 +100,15 @@ extern "C" {
 /* Partial buffer: 4 lines ≈ 240*4*2 = 1.92 KB
  * full_refresh=1 要求整帧缓冲（240*240*2 = 115 KB）与 partial buffer 冲突，
  * esp_lvgl_port 会在 lvgl_port_add_disp_priv 内断言崩溃，必须保持 0。*/
-#define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * 4)
-#define DISPLAY_LVGL_FULL_REFRESH       0
+#define DISPLAY_BUFFER_SIZE       (DISPLAY_WIDTH * 4)
+#define DISPLAY_LVGL_FULL_REFRESH 0
 
 /* ST7789 controller has 240x320 GRAM; the 240x280 physical panel is centred
  * with a 20-row top offset (GRAM rows 20-299 map to physical rows 0-279).
  * Setting Y_GAP=20 shifts all LVGL writes +20 in GRAM so they land exactly
  * on the visible LCD area.  Without this, the bottom 20 rows stay unwritten
  * (garbage/snow) and the top status bar is clipped off-screen. */
-#define DISPLAY_ST7789_Y_GAP             20
+#define DISPLAY_ST7789_Y_GAP 20
 
 #define DISPLAY_MONOCHROME false
 
