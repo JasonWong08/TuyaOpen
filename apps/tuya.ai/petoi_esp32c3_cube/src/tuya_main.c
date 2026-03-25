@@ -382,21 +382,19 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
 {
 #ifdef PLATFORM_ESP32
     size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    size_t min_ever = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
-    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    PR_INFO("Heap: free=%-6u  min_ever=%-6u  largest_block=%-6u", (unsigned)free_now, (unsigned)min_ever,
-            (unsigned)largest);
+    PR_INFO("Heap: free=%-6u", (unsigned)free_now);
 
     if (free_now < HEAP_WARN_THRESHOLD) {
         PR_WARN("Low heap! free=%u bytes (threshold=%u). "
                 "Consider reducing audio buffer or deferring display init.",
                 (unsigned)free_now, (unsigned)HEAP_WARN_THRESHOLD);
     }
-    if (free_now < HEAP_FREE_CRIT_THRESHOLD || largest < HEAP_LARGEST_CRIT_THRESHOLD) {
-        PR_ERR("Heap critical! free=%u largest=%u (crit_free=%u, crit_largest=%u). "
-               "TLS/WiFi may fail due to fragmentation.",
-               (unsigned)free_now, (unsigned)largest, (unsigned)HEAP_FREE_CRIT_THRESHOLD,
-               (unsigned)HEAP_LARGEST_CRIT_THRESHOLD);
+    /* Keep periodic monitor lightweight on ESP32-C3: walking TLSF pools for
+     * largest-block stats can itself trip when heap metadata is already
+     * damaged by earlier OOM/fragmentation pressure. */
+    if (free_now < HEAP_FREE_CRIT_THRESHOLD) {
+        PR_ERR("Heap critical! free=%u (crit_free=%u). TLS/WiFi may fail due to fragmentation.", (unsigned)free_now,
+               (unsigned)HEAP_FREE_CRIT_THRESHOLD);
     }
 #else
     PR_INFO("Heap: free=%d", tal_system_get_free_heap_size());

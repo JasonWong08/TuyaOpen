@@ -33,6 +33,13 @@
 #include "tuya_error_code.h"
 #include "tuya_lan.h"
 
+#ifdef PLATFORM_ESP32
+extern size_t heap_caps_get_largest_free_block(uint32_t caps);
+#ifndef MALLOC_CAP_8BIT
+#define MALLOC_CAP_8BIT 0x00000008U
+#endif
+#endif
+
 #ifdef ENABLE_WIFI
 #include "netconn_wifi.h"
 extern netmgr_conn_wifi_t s_netmgr_wifi;
@@ -54,10 +61,10 @@ extern netmgr_conn_cellular_t s_netmgr_cellular;
 
 typedef struct {
     MUTEX_HANDLE lock; // mutex
-    BOOL_T inited;
+    BOOL_T       inited;
 
-    netmgr_type_e type;     // network manage type
-    netmgr_type_e active;   // the connect now used
+    netmgr_type_e   type;   // network manage type
+    netmgr_type_e   active; // the connect now used
     netmgr_status_e status; // the network status
 
     netmgr_conn_base_t *conn; // connections
@@ -74,8 +81,8 @@ static TIMER_ID sg_lan_init_timer = NULL;
  */
 static netmgr_type_e __get_active_conn()
 {
-    netmgr_type_e active_type = NETCONN_AUTO;
-    netmgr_conn_base_t *cur_conn = s_netmgr.conn;
+    netmgr_type_e       active_type = NETCONN_AUTO;
+    netmgr_conn_base_t *cur_conn    = s_netmgr.conn;
 
     if (NULL == cur_conn) {
         PR_ERR("no connection registered");
@@ -107,7 +114,7 @@ void __tuya_lan_init_tm_cb(TIMER_ID timer_id, void *arg)
         return;
     }
 
-    netmgr_type_e type = (netmgr_type_e)s_netmgr.type;
+    netmgr_type_e      type   = (netmgr_type_e)s_netmgr.type;
     tuya_iot_client_t *client = tuya_iot_client_get();
     if (client == NULL) {
         return;
@@ -117,16 +124,33 @@ void __tuya_lan_init_tm_cb(TIMER_ID timer_id, void *arg)
 #if OPERATING_SYSTEM <= SYSTEM_SMALL_MEMORY_END
         /* On small-memory targets (e.g. ESP32-C3), LAN sockets can steal heap
          * from MQTT TLS setup and cause mbedtls_ssl_setup allocation failures.
-         * Defer LAN until MQTT is already online and heap is comfortable. */
+         * Defer LAN until MQTT is already online and heap is comfortable.
+         *
+         * C3 field logs show LAN startup around ~56-62KB free can still trip
+         * allocator asserts under BLE->MQTT transition pressure, so keep a
+         * higher margin and reject fragmented windows as well. */
         uint32_t free_heap = tal_system_get_free_heap_size();
+#ifdef PLATFORM_ESP32
+        size_t largest_heap = 0;
+#endif
         if (false == client->mqctx.is_connected) {
             PR_DEBUG("Defer LAN init until MQTT connected");
             return;
         }
-        if (free_heap < (56 * 1024)) {
+
+        if (free_heap < (72 * 1024)) {
             PR_WARN("Defer LAN init due low heap: %u", (unsigned)free_heap);
             return;
         }
+
+#ifdef PLATFORM_ESP32
+        largest_heap = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if (largest_heap < (20 * 1024)) {
+            PR_WARN("Defer LAN init due fragmented heap: free=%u largest=%u", (unsigned)free_heap,
+                    (unsigned)largest_heap);
+            return;
+        }
+#endif
 #endif
         PR_DEBUG("Start LAN initialization");
         tuya_lan_init(client);
@@ -158,7 +182,7 @@ static netmgr_conn_base_t *__get_conn_by_type(netmgr_type_e type)
 
 static OPERATE_RET __get_netmgr_status(netmgr_type_e type, netmgr_status_e *status)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET         rt       = OPRT_OK;
     netmgr_conn_base_t *cur_conn = s_netmgr.conn;
 
     if (NULL == status) {
@@ -208,7 +232,7 @@ static void __netmgr_event_cb(netmgr_type_e type, netmgr_status_e status)
 
     if (s_netmgr.type & type) {
         netmgr_status_e active_status = NETMGR_LINK_DOWN;
-        netmgr_type_e active_conn = __get_active_conn();
+        netmgr_type_e   active_conn   = __get_active_conn();
         __get_netmgr_status(active_conn, &active_status);
 
         // both changed
@@ -216,8 +240,8 @@ static void __netmgr_event_cb(netmgr_type_e type, netmgr_status_e status)
             PR_DEBUG("netmgr conn type changed [%s] --> [%s], status changed %d --> %d",
                      NETMGR_TYPE_TO_STR(s_netmgr.active), NETMGR_TYPE_TO_STR(active_conn), s_netmgr.status,
                      active_status);
-            s_netmgr.status = active_status;
-            s_netmgr.active = active_conn;
+            s_netmgr.status            = active_status;
+            s_netmgr.active            = active_conn;
             netmgr_conn_base_t *p_conn = __get_conn_by_type(active_conn);
             tal_network_card_set_active(p_conn->card_type);
             tal_event_publish(EVENT_LINK_TYPE_CHG, (void *)&s_netmgr.active);
@@ -232,7 +256,7 @@ static void __netmgr_event_cb(netmgr_type_e type, netmgr_status_e status)
             // active_conn changed
             PR_DEBUG("netmgr conn type changed [%s] --> [%s]", NETMGR_TYPE_TO_STR(s_netmgr.active),
                      NETMGR_TYPE_TO_STR(active_conn));
-            s_netmgr.active = active_conn;
+            s_netmgr.active            = active_conn;
             netmgr_conn_base_t *p_conn = __get_conn_by_type(active_conn);
             tal_network_card_set_active(p_conn->card_type);
             tal_event_publish(EVENT_LINK_TYPE_CHG, (void *)&s_netmgr.active);
@@ -246,7 +270,7 @@ OPERATE_RET __netmgr_conn_register(netmgr_type_e type, netmgr_conn_base_t *conn)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    netmgr_conn_base_t *cur_conn = s_netmgr.conn;
+    netmgr_conn_base_t *cur_conn  = s_netmgr.conn;
     netmgr_conn_base_t *prev_conn = NULL;
 
     if (NULL == conn) {
@@ -269,7 +293,7 @@ OPERATE_RET __netmgr_conn_register(netmgr_type_e type, netmgr_conn_base_t *conn)
     // First insert the new connection
     if (NULL == s_netmgr.conn) {
         s_netmgr.conn = conn;
-        conn->next = NULL;
+        conn->next    = NULL;
         PR_DEBUG("netmgr [%s] is the first connection", NETMGR_TYPE_TO_STR(type));
         goto __EXIT;
     }
@@ -281,17 +305,17 @@ OPERATE_RET __netmgr_conn_register(netmgr_type_e type, netmgr_conn_base_t *conn)
             if (prev_conn == NULL) {
                 // insert at the head
                 s_netmgr.conn = conn;
-                conn->next = cur_conn;
+                conn->next    = cur_conn;
             } else {
                 // insert in the middle
                 prev_conn->next = conn;
-                conn->next = cur_conn;
+                conn->next      = cur_conn;
             }
             break;
         }
 
         prev_conn = cur_conn;
-        cur_conn = cur_conn->next;
+        cur_conn  = cur_conn->next;
     }
 
     // If we reached the end of the list, insert at the tail
@@ -299,10 +323,10 @@ OPERATE_RET __netmgr_conn_register(netmgr_type_e type, netmgr_conn_base_t *conn)
         if (prev_conn == NULL) {
             // This should not happen as we already handled empty list case above
             s_netmgr.conn = conn;
-            conn->next = NULL;
+            conn->next    = NULL;
         } else {
             prev_conn->next = conn;
-            conn->next = NULL;
+            conn->next      = NULL;
         }
     }
 
@@ -330,7 +354,7 @@ OPERATE_RET netmgr_init(netmgr_type_e type)
 
     TUYA_CALL_ERR_RETURN(tal_mutex_create_init(&s_netmgr.lock));
     s_netmgr.status = NETMGR_LINK_DOWN;
-    s_netmgr.type = type;
+    s_netmgr.type   = type;
 
 #ifdef ENABLE_WIRED
     if (type & NETCONN_WIRED) {
@@ -365,7 +389,7 @@ OPERATE_RET netmgr_init(netmgr_type_e type)
 
 #ifdef ENABLE_BLUETOOTH
     tuya_ble_cfg_t ble_cfg = {0};
-    ble_cfg.client = tuya_iot_client_get();
+    ble_cfg.client         = tuya_iot_client_get();
     snprintf(ble_cfg.device_name, sizeof(ble_cfg.device_name), "TYBLE");
     tuya_ble_init(&ble_cfg);
 #endif
@@ -387,7 +411,7 @@ OPERATE_RET netmgr_init(netmgr_type_e type)
  */
 OPERATE_RET netmgr_conn_set(netmgr_type_e type, netmgr_conn_config_type_e cmd, void *param)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET         rt       = OPRT_OK;
     netmgr_conn_base_t *cur_conn = s_netmgr.conn;
 
     if (!s_netmgr.inited) {
@@ -428,7 +452,7 @@ OPERATE_RET netmgr_conn_set(netmgr_type_e type, netmgr_conn_config_type_e cmd, v
  */
 OPERATE_RET netmgr_conn_get(netmgr_type_e type, netmgr_conn_config_type_e cmd, void *param)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET         rt       = OPRT_OK;
     netmgr_conn_base_t *cur_conn = s_netmgr.conn;
 
     if (!s_netmgr.inited) {
