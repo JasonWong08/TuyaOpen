@@ -26,12 +26,10 @@
 /* After MQTT connect, system heap can still dip below 10KB on C3.
  * Starting AI+LVGL in this window easily causes watchdog/reset. */
 #define POSTCLOUD_INIT_HEAP_MIN (20 * 1024)
-/* Display-priority mode:
- * keep UI alive first, and only start full AI/audio when heap has enough
- * continuous space for ringbuffer + mode threads. */
-#define POSTCLOUD_DISPLAY_HEAP_MIN    (16 * 1024)
-#define POSTCLOUD_AI_INIT_HEAP_MIN    (24 * 1024)
-#define POSTCLOUD_AI_LARGEST_HEAP_MIN (16 * 1024)
+/* Audio-priority mode:
+ * prioritize full AI audio chain after MQTT if memory allows. */
+#define POSTCLOUD_AUDIO_INIT_HEAP_MIN    (32 * 1024)
+#define POSTCLOUD_AUDIO_LARGEST_HEAP_MIN (20 * 1024)
 
 /***********************************************************
 ***********************typedef define***********************
@@ -99,6 +97,7 @@ static void __get_heap_snapshot(uint32_t *free_heap, uint32_t *largest_heap)
     }
 }
 
+/* Display timer helper is shared by normal and degraded paths. */
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 static OPERATE_RET __ensure_display_status_timer(void)
 {
@@ -119,7 +118,7 @@ static OPERATE_RET __ensure_ui_ready(const char *status_text)
     if (false == sg_ui_inited) {
         TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
         sg_ui_inited = true;
-        PR_NOTICE("display-priority: ui init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
+        PR_NOTICE("ui init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
     }
 
     ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
@@ -307,26 +306,20 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         return OPRT_OK;
     }
 
-#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
     uint32_t free_heap = 0, largest_heap = 0;
     __get_heap_snapshot(&free_heap, &largest_heap);
-    if ((free_heap < POSTCLOUD_AI_INIT_HEAP_MIN) || (largest_heap < POSTCLOUD_AI_LARGEST_HEAP_MIN)) {
-        if (free_heap >= POSTCLOUD_DISPLAY_HEAP_MIN) {
-            __log_heap_snapshot("postcloud_init.before_ui_init");
-            TUYA_CALL_ERR_RETURN(__ensure_ui_ready(CONNECT_SERVER));
-            __log_heap_snapshot("postcloud_init.after_ui_init");
-        } else {
-            PR_WARN("display-priority: skip ui init, heap=%u < %u", (unsigned)free_heap,
-                    (unsigned)POSTCLOUD_DISPLAY_HEAP_MIN);
-        }
-
+    if ((free_heap < POSTCLOUD_AUDIO_INIT_HEAP_MIN) || (largest_heap < POSTCLOUD_AUDIO_LARGEST_HEAP_MIN)) {
         sg_postcloud_degraded = true;
-        PR_WARN("display-priority: defer ai init, free=%u largest=%u (need free>=%u largest>=%u)", (unsigned)free_heap,
-                (unsigned)largest_heap, (unsigned)POSTCLOUD_AI_INIT_HEAP_MIN, (unsigned)POSTCLOUD_AI_LARGEST_HEAP_MIN);
+        PR_WARN("audio-priority: defer ai init, free=%u largest=%u (need free>=%u largest>=%u)", (unsigned)free_heap,
+                (unsigned)largest_heap, (unsigned)POSTCLOUD_AUDIO_INIT_HEAP_MIN,
+                (unsigned)POSTCLOUD_AUDIO_LARGEST_HEAP_MIN);
         __log_heap_snapshot("postcloud_init.defer_ai");
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+        /* Degraded path still keeps status visible, but does not block on display. */
+        TUYA_CALL_ERR_LOG(__ensure_ui_ready(CONNECT_SERVER));
+#endif
         return OPRT_OK;
     }
-#endif
 
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
         .default_mode = AI_CHAT_MODE_WAKEUP,
@@ -352,6 +345,7 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         sg_postcloud_degraded = true;
         return OPRT_OK;
     }
+    /* ai_chat_init() now owns UI init; mark UI as ready for fallback paths. */
     sg_ui_inited = true;
     __log_heap_snapshot("postcloud_init.after_ai_chat_init");
 
