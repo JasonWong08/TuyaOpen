@@ -33,12 +33,14 @@ extern "C" {
 #define I2S_OUTPUT_SAMPLE_RATE (16000)
 
 #define I2S_NUM (0)
-/* Align with xiaozhi lichuang-c3-dev reference mapping (same hardware). */
-#define I2S_MCK_IO (10)
-#define I2S_BCK_IO (8)
-#define I2S_WS_IO  (12)
-#define I2S_DO_IO  (11) /* DAC -> speaker */
-#define I2S_DI_IO  (7)  /* ADC <- microphone */
+/* Hybrid fix:
+ * keep PA pin aligned with xiaozhi (GPIO13), but fallback to the previous
+ * non-conflict I2S mapping to avoid GPIO12 unusable warning on this board. */
+#define I2S_MCK_IO (-1)
+#define I2S_BCK_IO (11)
+#define I2S_WS_IO  (8)
+#define I2S_DO_IO  (7)  /* DAC -> speaker */
+#define I2S_DI_IO  (10) /* ADC <- microphone */
 
 /* Reduce DMA descriptors to lower peak heap usage on C3 */
 #define AUDIO_CODEC_DMA_DESC_NUM  (3)
