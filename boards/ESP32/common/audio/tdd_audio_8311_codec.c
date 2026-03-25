@@ -66,6 +66,24 @@ static const audio_codec_if_t      *codec_if_           = NULL;
 static esp_codec_dev_handle_t       output_dev_         = NULL;
 static esp_codec_dev_handle_t       input_dev_          = NULL;
 
+static void __codec_configure_pa_gpio(gpio_num_t pin)
+{
+    if (pin == GPIO_NUM_NC) {
+        return;
+    }
+    gpio_config_t io = {
+        .pin_bit_mask = (1ULL << (unsigned)pin),
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    esp_err_t e = gpio_config(&io);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "PA gpio_config pin=%d err=%s", (int)pin, esp_err_to_name(e));
+    }
+}
+
 #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3)
 extern size_t heap_caps_get_free_size(uint32_t caps);
 extern size_t heap_caps_get_minimum_free_size(uint32_t caps);
@@ -150,17 +168,11 @@ static void SetOutputVolume(int volume)
 static void EnableOutput(bool enable)
 {
     if (enable) {
-        /* Keep output route conservative on C3:
-         * use dual-slot playback so mono prompt data is mirrored to both L/R
-         * and avoid "log says playing but no audible output" on some ES8311 boards. */
-#if defined(CONFIG_IDF_TARGET_ESP32C3)
-        int out_channel = 2;
-#else
-        int out_channel = 1;
-#endif
+        /* Mono PCM from ai_player matches channel=1; opening as 2ch without doubling
+         * samples can yield inaudible output on esp_codec_dev_write paths. */
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = SAMPLE_DATABITS,
-            .channel         = out_channel,
+            .channel         = 1,
             .channel_mask    = 0,
             .sample_rate     = (uint32_t)output_sample_rate_,
             .mclk_multiple   = 0,
@@ -170,6 +182,7 @@ static void EnableOutput(bool enable)
         ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
         if (pa_pin_ != GPIO_NUM_NC) {
+            __codec_configure_pa_gpio(pa_pin_);
             gpio_set_level(pa_pin_, 1);
         }
     } else {
@@ -246,10 +259,18 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     void       *i2c_master_handle = NULL;
     i2c_port_t  i2c_port          = (i2c_port_t)(i2s_config->i2c_id);
     uint8_t     es8311_addr       = i2s_config->es8311_addr;
-    pa_pin_                       = i2s_config->gpio_output_pa;
-    input_sample_rate_            = i2s_config->mic_sample_rate;
-    output_sample_rate_           = i2s_config->spk_sample_rate;
-    output_volume_                = i2s_config->default_volume;
+
+    /* Re-open without teardown used to call i2s_new_channel again on static handles,
+     * stressing TLSF and risking block_trim_free asserts under low heap. */
+    if (output_dev_ != NULL) {
+        PR_NOTICE("codec_8311_init: idempotent skip (output_dev already created)");
+        return OPRT_OK;
+    }
+
+    pa_pin_             = i2s_config->gpio_output_pa;
+    input_sample_rate_  = i2s_config->mic_sample_rate;
+    output_sample_rate_ = i2s_config->spk_sample_rate;
+    output_volume_      = i2s_config->default_volume;
     __codec_heap_snapshot("codec_8311_init.entry");
     PR_NOTICE("[codec-cfg] i2c_id=%d i2s_id=%d sample_in=%d sample_out=%d volume=%d desc_num=%u frame_num=%u",
               i2s_config->i2c_id, i2s_config->i2s_id, i2s_config->mic_sample_rate, i2s_config->spk_sample_rate,
@@ -391,6 +412,11 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
     }
 
     hdl->mic_cb = mic_cb;
+
+    if (hdl->thrd_hdl != NULL) {
+        PR_NOTICE("I2S8311: idempotent open (read task exists), mic_cb updated");
+        return OPRT_OK;
+    }
 
     TDD_AUDIO_8311_CODEC_T *tdd_i2s_cfg = &hdl->cfg;
 

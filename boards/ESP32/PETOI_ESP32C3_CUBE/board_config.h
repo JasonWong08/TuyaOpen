@@ -13,7 +13,7 @@
  *
  * Pin mapping derived from xiaozhi lichuang-c3-dev reference design.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
 #ifndef __BOARD_CONFIG_H__
@@ -33,14 +33,14 @@ extern "C" {
 #define I2S_OUTPUT_SAMPLE_RATE (16000)
 
 #define I2S_NUM (0)
-/* Hybrid fix:
- * keep PA pin aligned with xiaozhi (GPIO13), but fallback to the previous
- * non-conflict I2S mapping to avoid GPIO12 unusable warning on this board. */
-#define I2S_MCK_IO (-1)
-#define I2S_BCK_IO (11)
-#define I2S_WS_IO  (8)
-#define I2S_DO_IO  (7)  /* DAC -> speaker */
-#define I2S_DI_IO  (10) /* ADC <- microphone */
+/* xiaozhi lichuang-c3-dev I2S netlist: user confirmed short audible output with this map.
+ * Hybrid dout=7/din=10 was silent on the same PCB (DATA not routed to those pads).
+ * GPIO12 may log "unusable" on some flash packages; audio still worked in field test. */
+#define I2S_MCK_IO (10)
+#define I2S_BCK_IO (8)
+#define I2S_WS_IO  (12)
+#define I2S_DO_IO  (11)
+#define I2S_DI_IO  (7)
 
 /* Reduce DMA descriptors to lower peak heap usage on C3 */
 #define AUDIO_CODEC_DMA_DESC_NUM  (3)
