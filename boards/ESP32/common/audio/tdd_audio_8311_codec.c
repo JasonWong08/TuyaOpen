@@ -58,6 +58,7 @@ static int                          input_sample_rate_  = 0;
 static int                          output_sample_rate_ = 0;
 static int                          output_volume_      = 0;
 static gpio_num_t                   pa_pin_             = 0;
+static bool                         pa_inverted_        = false;
 static i2c_master_bus_handle_t      codec_i2c_bus_      = NULL;
 static const audio_codec_data_if_t *data_if_            = NULL;
 static const audio_codec_ctrl_if_t *ctrl_if_            = NULL;
@@ -167,6 +168,11 @@ static void SetOutputVolume(int volume)
 
 static void EnableOutput(bool enable)
 {
+    int pa_level = enable ? 1 : 0;
+    if (pa_inverted_) {
+        pa_level = !pa_level;
+    }
+
     if (enable) {
         /* Mono PCM from ai_player matches channel=1; opening as 2ch without doubling
          * samples can yield inaudible output on esp_codec_dev_write paths. */
@@ -183,12 +189,12 @@ static void EnableOutput(bool enable)
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
         if (pa_pin_ != GPIO_NUM_NC) {
             __codec_configure_pa_gpio(pa_pin_);
-            gpio_set_level(pa_pin_, 1);
+            gpio_set_level(pa_pin_, pa_level);
         }
     } else {
         ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
         if (pa_pin_ != GPIO_NUM_NC) {
-            gpio_set_level(pa_pin_, 0);
+            gpio_set_level(pa_pin_, pa_level);
         }
     }
 }
@@ -268,6 +274,7 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     }
 
     pa_pin_             = i2s_config->gpio_output_pa;
+    pa_inverted_        = (i2s_config->pa_output_invert != 0);
     input_sample_rate_  = i2s_config->mic_sample_rate;
     output_sample_rate_ = i2s_config->spk_sample_rate;
     output_volume_      = i2s_config->default_volume;
@@ -322,6 +329,7 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     es8311_cfg.use_mclk                  = ((i2s_config->i2s_mck_io != -1) ? true : false);
     es8311_cfg.hw_gain.pa_voltage        = 5.0;
     es8311_cfg.hw_gain.codec_dac_voltage = 3.3;
+    es8311_cfg.pa_reverted               = pa_inverted_;
     codec_if_                            = es8311_codec_new(&es8311_cfg);
     assert(codec_if_ != NULL);
 

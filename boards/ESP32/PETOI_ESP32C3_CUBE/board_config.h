@@ -61,6 +61,9 @@ extern "C" {
 
 /* External PA enable pin used on xiaozhi lichuang-c3-dev compatible boards */
 #define AUDIO_CODEC_PA_IO (13)
+/* Board symptom is "only short pop without full voice", which usually indicates
+ * PA enable polarity mismatch. Set to 1 for active-low PA enable. */
+#define AUDIO_CODEC_PA_INVERT (1)
 
 /***********************************************************
  * Button

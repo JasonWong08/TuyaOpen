@@ -42,22 +42,23 @@ static OPERATE_RET __board_register_audio(void)
 
 #if defined(AUDIO_CODEC_NAME)
     TDD_AUDIO_8311_CODEC_T cfg = {
-        .i2c_id         = I2C_NUM,
-        .i2c_sda_io     = I2C_SDA_IO,
-        .i2c_scl_io     = I2C_SCL_IO,
-        .mic_sample_rate = I2S_INPUT_SAMPLE_RATE,
-        .spk_sample_rate = I2S_OUTPUT_SAMPLE_RATE,
-        .i2s_id         = I2S_NUM,
-        .i2s_mck_io     = I2S_MCK_IO,
-        .i2s_bck_io     = I2S_BCK_IO,
-        .i2s_ws_io      = I2S_WS_IO,
-        .i2s_do_io      = I2S_DO_IO,
-        .i2s_di_io      = I2S_DI_IO,
-        .gpio_output_pa = AUDIO_CODEC_PA_IO,   /* NC: no external PA enable */
-        .es8311_addr    = AUDIO_CODEC_ES8311_ADDR,
-        .dma_desc_num   = AUDIO_CODEC_DMA_DESC_NUM,
-        .dma_frame_num  = AUDIO_CODEC_DMA_FRAME_NUM,
-        .default_volume = 80,
+        .i2c_id           = I2C_NUM,
+        .i2c_sda_io       = I2C_SDA_IO,
+        .i2c_scl_io       = I2C_SCL_IO,
+        .mic_sample_rate  = I2S_INPUT_SAMPLE_RATE,
+        .spk_sample_rate  = I2S_OUTPUT_SAMPLE_RATE,
+        .i2s_id           = I2S_NUM,
+        .i2s_mck_io       = I2S_MCK_IO,
+        .i2s_bck_io       = I2S_BCK_IO,
+        .i2s_ws_io        = I2S_WS_IO,
+        .i2s_do_io        = I2S_DO_IO,
+        .i2s_di_io        = I2S_DI_IO,
+        .gpio_output_pa   = AUDIO_CODEC_PA_IO, /* NC: no external PA enable */
+        .pa_output_invert = AUDIO_CODEC_PA_INVERT,
+        .es8311_addr      = AUDIO_CODEC_ES8311_ADDR,
+        .dma_desc_num     = AUDIO_CODEC_DMA_DESC_NUM,
+        .dma_frame_num    = AUDIO_CODEC_DMA_FRAME_NUM,
+        .default_volume   = 80,
     };
 
     TUYA_CALL_ERR_RETURN(tdd_audio_8311_codec_register(AUDIO_CODEC_NAME, cfg));
@@ -75,9 +76,9 @@ static OPERATE_RET __board_register_button(void)
 
 #if defined(BUTTON_NAME)
     BUTTON_GPIO_CFG_T button_hw_cfg = {
-        .pin    = BOARD_BUTTON_PIN,
-        .level  = BOARD_BUTTON_ACTIVE_LV,
-        .mode   = BUTTON_TIMER_SCAN_MODE,
+        .pin                = BOARD_BUTTON_PIN,
+        .level              = BOARD_BUTTON_ACTIVE_LV,
+        .mode               = BUTTON_TIMER_SCAN_MODE,
         .pin_type.gpio_pull = TUYA_GPIO_PULLUP,
     };
 

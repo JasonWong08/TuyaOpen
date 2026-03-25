@@ -20,22 +20,23 @@ extern "C" {
 ************************macro define************************
 ***********************************************************/
 typedef struct {
-    uint8_t i2c_id;
-    TUYA_GPIO_NUM_E i2c_sda_io;                /*!< GPIO number of I2C SDA signal, pulled-up internally */
-    TUYA_GPIO_NUM_E i2c_scl_io;                /*!< GPIO number of I2C SCL signal, pulled-up internally */
-    uint32_t mic_sample_rate;
-    uint32_t spk_sample_rate;
-    uint8_t i2s_id;
+    uint8_t         i2c_id;
+    TUYA_GPIO_NUM_E i2c_sda_io; /*!< GPIO number of I2C SDA signal, pulled-up internally */
+    TUYA_GPIO_NUM_E i2c_scl_io; /*!< GPIO number of I2C SCL signal, pulled-up internally */
+    uint32_t        mic_sample_rate;
+    uint32_t        spk_sample_rate;
+    uint8_t         i2s_id;
     TUYA_GPIO_NUM_E i2s_mck_io;
     TUYA_GPIO_NUM_E i2s_bck_io;
     TUYA_GPIO_NUM_E i2s_ws_io;
     TUYA_GPIO_NUM_E i2s_do_io;
     TUYA_GPIO_NUM_E i2s_di_io;
     TUYA_GPIO_NUM_E gpio_output_pa;
-    uint8_t es8311_addr;
-    uint32_t dma_desc_num;
-    uint32_t dma_frame_num;
-    int default_volume;
+    uint8_t         pa_output_invert; /*!< 0: PA active-high, 1: PA active-low */
+    uint8_t         es8311_addr;
+    uint32_t        dma_desc_num;
+    uint32_t        dma_frame_num;
+    int             default_volume;
 } TDD_AUDIO_8311_CODEC_T;
 
 /***********************************************************
