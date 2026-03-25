@@ -55,12 +55,13 @@
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
-static AI_USER_EVENT_NOTIFY sg_evt_notify_cb     = NULL;
-static THREAD_HANDLE        sg_ai_chat_mode_task = NULL;
-static AI_CHAT_MODE_E       sg_ai_default_mode   = AI_CHAT_MODE_HOLD;
-static int                  sg_ai_default_vol    = 70;
-static bool                 sg_ai_agent_inited   = false;
-static bool                 sg_ai_ui_ready       = false;
+static AI_USER_EVENT_NOTIFY sg_evt_notify_cb        = NULL;
+static THREAD_HANDLE        sg_ai_chat_mode_task    = NULL;
+static AI_CHAT_MODE_E       sg_ai_default_mode      = AI_CHAT_MODE_HOLD;
+static int                  sg_ai_default_vol       = 70;
+static bool                 sg_ai_agent_inited      = false;
+static bool                 sg_ai_ui_ready          = false;
+static bool                 sg_network_alert_played = false;
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
 static TDL_BUTTON_HANDLE sg_button_hdl = NULL;
@@ -422,6 +423,11 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
     TUYA_CALL_ERR_RETURN(tkl_kws_init());
 
     TUYA_CALL_ERR_LOG(ai_audio_player_set_vol(vol));
+    if (false == sg_network_alert_played) {
+        TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
+        sg_network_alert_played = true;
+        PR_NOTICE("audio-priority: play network-connected alert");
+    }
 
     TUYA_CALL_ERR_RETURN(
         tal_event_subscribe(EVENT_AUDIO_VAD, "vad_change", __ai_vad_change_evt, SUBSCRIBE_TYPE_NORMAL));
