@@ -26,6 +26,12 @@
 /* After MQTT connect, system heap can still dip below 10KB on C3.
  * Starting AI+LVGL in this window easily causes watchdog/reset. */
 #define POSTCLOUD_INIT_HEAP_MIN (20 * 1024)
+/* Display-priority mode:
+ * keep UI alive first, and only start full AI/audio when heap has enough
+ * continuous space for ringbuffer + mode threads. */
+#define POSTCLOUD_DISPLAY_HEAP_MIN    (16 * 1024)
+#define POSTCLOUD_AI_INIT_HEAP_MIN    (24 * 1024)
+#define POSTCLOUD_AI_LARGEST_HEAP_MIN (16 * 1024)
 
 /***********************************************************
 ***********************typedef define***********************
@@ -44,6 +50,13 @@ static bool     sg_postcloud_inited     = false;
 static bool     sg_ui_inited            = false;
 static bool     sg_postcloud_degraded   = false;
 static bool     sg_offline_audio_inited = false;
+
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+static AI_UI_WIFI_STATUS_E sg_wifi_status = AI_UI_WIFI_STATUS_DISCONNECTED;
+static TIMER_ID            sg_disp_status_tm;
+extern OPERATE_RET         ai_chat_ui_init(void);
+static void                __display_status_tm_cb(TIMER_ID timer_id, void *arg);
+#endif
 
 #ifdef PLATFORM_ESP32
 extern size_t heap_caps_get_free_size(uint32_t caps);
@@ -68,11 +81,57 @@ static void __log_heap_snapshot(const char *stage)
 #endif
 }
 
-#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
-static AI_UI_WIFI_STATUS_E sg_wifi_status = AI_UI_WIFI_STATUS_DISCONNECTED;
-static TIMER_ID            sg_disp_status_tm;
-extern OPERATE_RET         ai_chat_ui_init(void);
+static void __get_heap_snapshot(uint32_t *free_heap, uint32_t *largest_heap)
+{
+#ifdef PLATFORM_ESP32
+    size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+#else
+    size_t free_now = tal_system_get_free_heap_size();
+    size_t largest  = free_now;
 #endif
+
+    if (free_heap) {
+        *free_heap = (uint32_t)free_now;
+    }
+    if (largest_heap) {
+        *largest_heap = (uint32_t)largest;
+    }
+}
+
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+static OPERATE_RET __ensure_display_status_timer(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    if (NULL == sg_disp_status_tm) {
+        TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__display_status_tm_cb, NULL, &sg_disp_status_tm));
+        TUYA_CALL_ERR_RETURN(tal_sw_timer_start(sg_disp_status_tm, DISP_NET_STATUS_TIME, TAL_TIMER_CYCLE));
+    }
+
+    return rt;
+}
+
+static OPERATE_RET __ensure_ui_ready(const char *status_text)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    if (false == sg_ui_inited) {
+        TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
+        sg_ui_inited = true;
+        PR_NOTICE("display-priority: ui init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
+    }
+
+    ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
+    if (status_text && status_text[0] != '\0') {
+        ai_ui_disp_msg(AI_UI_DISP_STATUS, (uint8_t *)status_text, strlen(status_text));
+    }
+    ai_ui_disp_msg(AI_UI_DISP_EMOTION, (uint8_t *)EMOJI_NEUTRAL, strlen(EMOJI_NEUTRAL));
+
+    return __ensure_display_status_timer();
+}
+#endif
+
 /***********************************************************
 ***********************function define**********************
 ***********************************************************/
@@ -249,12 +308,23 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
     }
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
-    if (false == sg_ui_inited) {
-        __log_heap_snapshot("postcloud_init.before_ui_init");
-        TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
-        sg_ui_inited = true;
-        ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
-        __log_heap_snapshot("postcloud_init.after_ui_init");
+    uint32_t free_heap = 0, largest_heap = 0;
+    __get_heap_snapshot(&free_heap, &largest_heap);
+    if ((free_heap < POSTCLOUD_AI_INIT_HEAP_MIN) || (largest_heap < POSTCLOUD_AI_LARGEST_HEAP_MIN)) {
+        if (free_heap >= POSTCLOUD_DISPLAY_HEAP_MIN) {
+            __log_heap_snapshot("postcloud_init.before_ui_init");
+            TUYA_CALL_ERR_RETURN(__ensure_ui_ready(CONNECT_SERVER));
+            __log_heap_snapshot("postcloud_init.after_ui_init");
+        } else {
+            PR_WARN("display-priority: skip ui init, heap=%u < %u", (unsigned)free_heap,
+                    (unsigned)POSTCLOUD_DISPLAY_HEAP_MIN);
+        }
+
+        sg_postcloud_degraded = true;
+        PR_WARN("display-priority: defer ai init, free=%u largest=%u (need free>=%u largest>=%u)", (unsigned)free_heap,
+                (unsigned)largest_heap, (unsigned)POSTCLOUD_AI_INIT_HEAP_MIN, (unsigned)POSTCLOUD_AI_LARGEST_HEAP_MIN);
+        __log_heap_snapshot("postcloud_init.defer_ai");
+        return OPRT_OK;
     }
 #endif
 
@@ -276,8 +346,13 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
     if (rt != OPRT_OK) {
         PR_ERR("ai_chat_init failed: %d", rt);
         __log_heap_snapshot("postcloud_init.ai_chat_init_failed");
-        return rt;
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+        TUYA_CALL_ERR_LOG(__ensure_ui_ready(CONNECT_SERVER));
+#endif
+        sg_postcloud_degraded = true;
+        return OPRT_OK;
     }
+    sg_ui_inited = true;
     __log_heap_snapshot("postcloud_init.after_ai_chat_init");
 
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
@@ -328,23 +403,9 @@ OPERATE_RET app_chat_bot_try_recover_ui(uint32_t min_heap_bytes, const char *sta
         return OPRT_COM_ERROR;
     }
 
-    if (false == sg_ui_inited) {
-        TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
-        sg_ui_inited = true;
-        ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
-
-        if (NULL == sg_disp_status_tm) {
-            TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__display_status_tm_cb, NULL, &sg_disp_status_tm));
-            TUYA_CALL_ERR_RETURN(tal_sw_timer_start(sg_disp_status_tm, DISP_NET_STATUS_TIME, TAL_TIMER_CYCLE));
-        }
-        PR_NOTICE("offline UI recovery init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
-    }
-
-    if (status_text && status_text[0] != '\0') {
-        ai_ui_disp_msg(AI_UI_DISP_STATUS, (uint8_t *)status_text, strlen(status_text));
-    }
-
-    return OPRT_OK;
+    TUYA_CALL_ERR_RETURN(__ensure_ui_ready(status_text));
+    PR_NOTICE("offline UI recovery init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
+    return rt;
 #else
     (void)min_heap_bytes;
     (void)status_text;
