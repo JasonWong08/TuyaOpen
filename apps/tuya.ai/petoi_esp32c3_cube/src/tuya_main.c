@@ -81,19 +81,29 @@ tuya_iot_license_t license;
 /* Warn when free internal heap falls below this threshold (bytes).
  * With ~400 KB total and audio/display/TCP stacks in flight, 60 KB is a
  * reasonable low-water mark for ESP32-C3. */
-#define HEAP_WARN_THRESHOLD (60 * 1024)
-#define HEAP_FREE_CRIT_THRESHOLD (8 * 1024)
+#define HEAP_WARN_THRESHOLD         (60 * 1024)
+#define HEAP_FREE_CRIT_THRESHOLD    (8 * 1024)
 #define HEAP_LARGEST_CRIT_THRESHOLD (4 * 1024)
 /* Keep activation/TLS first: offline UI/audio recovery must not run while
  * heap is in the 40~70KB range, otherwise mbedtls_ssl_setup may fail. */
 #define OFFLINE_UI_RECOVER_HEAP_MIN    (96 * 1024)
 #define OFFLINE_AUDIO_RECOVER_HEAP_MIN (72 * 1024)
 
-static uint8_t _need_reset = 0;
+static uint8_t  _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
-static bool sg_cloud_ready = false;
-static bool sg_using_fallback_license = false;
-static bool sg_ble_released = false;
+static bool     sg_cloud_ready            = false;
+static bool     sg_using_fallback_license = false;
+static bool     sg_ble_released           = false;
+
+#ifdef PLATFORM_ESP32
+extern size_t heap_caps_get_free_size(uint32_t caps);
+extern size_t heap_caps_get_minimum_free_size(uint32_t caps);
+extern size_t heap_caps_get_largest_free_block(uint32_t caps);
+
+#ifndef MALLOC_CAP_8BIT
+#define MALLOC_CAP_8BIT 0x00000008U
+#endif
+#endif /* PLATFORM_ESP32 */
 
 typedef struct {
     uint64_t boot_ms;
@@ -105,6 +115,19 @@ typedef struct {
 } PETOI_RUN_STATS_T;
 
 static PETOI_RUN_STATS_T sg_run_stats = {0};
+
+static void __log_heap_snapshot(const char *stage)
+{
+#ifdef PLATFORM_ESP32
+    size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t min_ever = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    PR_NOTICE("[heap-snap] %s free=%u min_ever=%u largest=%u", stage ? stage : "unknown", (unsigned)free_now,
+              (unsigned)min_ever, (unsigned)largest);
+#else
+    PR_NOTICE("[heap-snap] %s free=%d", stage ? stage : "unknown", tal_system_get_free_heap_size());
+#endif
+}
 
 void user_log_output_cb(const char *str)
 {
@@ -153,12 +176,12 @@ OPERATE_RET audio_dp_obj_proc(dp_obj_recv_t *dpobj)
 OPERATE_RET ai_audio_volume_upload(void)
 {
     tuya_iot_client_t *client = tuya_iot_client_get();
-    dp_obj_t dp_obj = {0};
+    dp_obj_t           dp_obj = {0};
 
     uint8_t volume = ai_chat_get_volume();
 
-    dp_obj.id = DPID_VOLUME;
-    dp_obj.type = PROP_VALUE;
+    dp_obj.id             = DPID_VOLUME;
+    dp_obj.type           = PROP_VALUE;
     dp_obj.value.dp_value = volume;
 
     PR_DEBUG("DP upload volume:%d", volume);
@@ -184,7 +207,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             _need_reset = 0;
         }
 
-        #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         /* On ESP32-C3 (no PSRAM) bind-time heap is very tight (~9-10KB).
          * Starting TTS alert here can consume almost all remaining heap and
          * starve BLE netcfg + first LVGL text render. */
@@ -196,7 +219,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
                 PR_WARN("skip bind alert, heap=%d ready=%d", bind_heap, app_chat_bot_is_ready());
             }
         }
-        #endif
+#endif
 
         break;
 
@@ -214,6 +237,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 
     case TUYA_EVENT_MQTT_CONNECTED:
         PR_INFO("Device MQTT Connected!");
+        __log_heap_snapshot("mqtt_connected.entry");
         sg_run_stats.mqtt_connected_count++;
         sg_run_stats.mqtt_connected_ms = tal_system_get_millisecond();
         if (sg_run_stats.bind_start_ms > 0 && sg_run_stats.mqtt_connected_ms >= sg_run_stats.bind_start_ms) {
@@ -231,6 +255,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             sg_ble_released = true;
             tal_system_sleep(100);
             PR_NOTICE("BLE released after MQTT connect, heap=%d", tal_system_get_free_heap_size());
+            __log_heap_snapshot("mqtt_connected.after_ble_release");
         }
 #endif
 
@@ -238,13 +263,16 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
          * 1) do lightweight UI before bind
          * 2) bring up full AI/audio only after MQTT is stable. */
         if (false == sg_cloud_ready) {
+            __log_heap_snapshot("mqtt_connected.before_postcloud_init");
             OPERATE_RET app_rt = app_chat_bot_postcloud_init();
             if (app_rt != OPRT_OK) {
                 PR_ERR("post-cloud app init failed: %d", app_rt);
+                __log_heap_snapshot("mqtt_connected.postcloud_init_failed");
                 break;
             }
             sg_cloud_ready = true;
             PR_NOTICE("Post-cloud app init done, heap=%d", tal_system_get_free_heap_size());
+            __log_heap_snapshot("mqtt_connected.after_postcloud_init");
         }
 
         tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
@@ -268,14 +296,16 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         sg_run_stats.mqtt_disconnected_count++;
         if (false == sg_cloud_ready) {
             const char *offline_status = CONNECT_SERVER;
-            if (sg_using_fallback_license && sg_run_stats.mqtt_connected_count == 0 && sg_run_stats.bind_start_count > 0) {
+            if (sg_using_fallback_license && sg_run_stats.mqtt_connected_count == 0 &&
+                sg_run_stats.bind_start_count > 0) {
                 offline_status = "Cloud auth failed";
                 PR_ERR("MQTT auth rejected before first connect. Check UUID/AuthKey and product binding.");
             }
             if (OPRT_OK != app_chat_bot_try_recover_ui(OFFLINE_UI_RECOVER_HEAP_MIN, offline_status)) {
                 PR_DEBUG("disconnect-stage UI recovery skipped");
             }
-            if (OPRT_OK != app_chat_bot_try_recover_audio_alert(OFFLINE_AUDIO_RECOVER_HEAP_MIN, AI_AUDIO_ALERT_NETWORK_FAIL)) {
+            if (OPRT_OK !=
+                app_chat_bot_try_recover_audio_alert(OFFLINE_AUDIO_RECOVER_HEAP_MIN, AI_AUDIO_ALERT_NETWORK_FAIL)) {
                 PR_DEBUG("disconnect-stage audio recovery skipped");
             }
         }
@@ -299,7 +329,8 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             if (OPRT_OK != app_chat_bot_try_recover_ui(OFFLINE_UI_RECOVER_HEAP_MIN, "Cloud auth failed")) {
                 PR_DEBUG("reset-stage UI recovery skipped");
             }
-            if (OPRT_OK != app_chat_bot_try_recover_audio_alert(OFFLINE_AUDIO_RECOVER_HEAP_MIN, AI_AUDIO_ALERT_NOT_ACTIVE)) {
+            if (OPRT_OK !=
+                app_chat_bot_try_recover_audio_alert(OFFLINE_AUDIO_RECOVER_HEAP_MIN, AI_AUDIO_ALERT_NOT_ACTIVE)) {
                 PR_DEBUG("reset-stage audio recovery skipped");
             }
         }
@@ -325,8 +356,8 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             PR_DEBUG("devid.%s", dpraw->devid);
         }
 
-        uint32_t index = 0;
-        dp_raw_t *dp = &dpraw->dp;
+        uint32_t  index = 0;
+        dp_raw_t *dp    = &dpraw->dp;
         PR_DEBUG("dpid:%d type:RAW len:%d data:", dp->id, dp->len);
         for (index = 0; index < dp->len; index++) {
             PR_DEBUG_RAW("%02x", dp->data[index]);
@@ -347,26 +378,14 @@ bool user_network_check(void)
     return status == NETMGR_LINK_DOWN ? false : true;
 }
 
-/* On ESP32 platforms, use heap_caps_* for detailed heap stats.
- * Prototypes declared here to avoid pulling in full esp-idf headers. */
-#ifdef PLATFORM_ESP32
-extern size_t heap_caps_get_free_size(uint32_t caps);
-extern size_t heap_caps_get_minimum_free_size(uint32_t caps);
-extern size_t heap_caps_get_largest_free_block(uint32_t caps);
-
-#ifndef MALLOC_CAP_8BIT
-#define MALLOC_CAP_8BIT 0x00000008U
-#endif
-#endif /* PLATFORM_ESP32 */
-
 static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
 {
 #ifdef PLATFORM_ESP32
     size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     size_t min_ever = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
     size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    PR_INFO("Heap: free=%-6u  min_ever=%-6u  largest_block=%-6u",
-            (unsigned)free_now, (unsigned)min_ever, (unsigned)largest);
+    PR_INFO("Heap: free=%-6u  min_ever=%-6u  largest_block=%-6u", (unsigned)free_now, (unsigned)min_ever,
+            (unsigned)largest);
 
     if (free_now < HEAP_WARN_THRESHOLD) {
         PR_WARN("Low heap! free=%u bytes (threshold=%u). "
@@ -376,8 +395,8 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
     if (free_now < HEAP_FREE_CRIT_THRESHOLD || largest < HEAP_LARGEST_CRIT_THRESHOLD) {
         PR_ERR("Heap critical! free=%u largest=%u (crit_free=%u, crit_largest=%u). "
                "TLS/WiFi may fail due to fragmentation.",
-               (unsigned)free_now, (unsigned)largest,
-               (unsigned)HEAP_FREE_CRIT_THRESHOLD, (unsigned)HEAP_LARGEST_CRIT_THRESHOLD);
+               (unsigned)free_now, (unsigned)largest, (unsigned)HEAP_FREE_CRIT_THRESHOLD,
+               (unsigned)HEAP_LARGEST_CRIT_THRESHOLD);
     }
 #else
     PR_INFO("Heap: free=%d", tal_system_get_free_heap_size());
@@ -429,8 +448,8 @@ void user_main(void)
      * Log heap before and after to track the cost.
      * -------------------------------------------------------------------*/
     if (OPRT_OK != tuya_authorize_read(&license)) {
-        license.uuid    = TUYA_OPENSDK_UUID;
-        license.authkey = TUYA_OPENSDK_AUTHKEY;
+        license.uuid              = TUYA_OPENSDK_UUID;
+        license.authkey           = TUYA_OPENSDK_AUTHKEY;
         sg_using_fallback_license = true;
         PR_WARN("Replace UUID/AuthKey in tuya_config.h or provision via platform.");
     }
