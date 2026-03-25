@@ -49,6 +49,17 @@
 #define AI_AUDIO_VAD_ACTIVE_TIME 200
 #endif
 #define AI_AUDIO_VAD_OFF_TIME 1000
+#ifdef PLATFORM_ESP32
+extern size_t heap_caps_get_free_size(uint32_t caps);
+extern size_t heap_caps_get_largest_free_block(uint32_t caps);
+#ifndef MALLOC_CAP_8BIT
+#define MALLOC_CAP_8BIT 0x00000008U
+#endif
+/* On ESP32-C3 with no PSRAM, keep prompt-audio first:
+ * if heap window is too small, defer cloud AI init to avoid starving alert playback. */
+#define AI_AGENT_INIT_HEAP_MIN         (18 * 1024)
+#define AI_AGENT_INIT_LARGEST_HEAP_MIN (8 * 1024)
+#endif
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
@@ -330,6 +341,30 @@ static int __ai_mqtt_connected_evt(void *data)
 
     (void)data;
 
+    __ai_chat_load_config(&mode, &vol);
+    ai_mode_init(mode);
+
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    /* Play prompt first to guarantee audible feedback on tiny-memory windows. */
+    if (false == sg_network_alert_played) {
+        TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
+        sg_network_alert_played = true;
+        PR_NOTICE("play network-connected alert before ai_agent_init");
+    }
+#endif
+
+#ifdef PLATFORM_ESP32
+    size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    if ((free_now < AI_AGENT_INIT_HEAP_MIN) || (largest < AI_AGENT_INIT_LARGEST_HEAP_MIN)) {
+        PR_WARN("defer ai_agent_init due low/fragmented heap: free=%u largest=%u need_free>=%u need_largest>=%u",
+                (unsigned)free_now, (unsigned)largest, (unsigned)AI_AGENT_INIT_HEAP_MIN,
+                (unsigned)AI_AGENT_INIT_LARGEST_HEAP_MIN);
+        sg_ai_agent_inited = false;
+        return OPRT_OK;
+    }
+#endif
+
     /* Do not abort this handler on failure: local audio/modes must still run on
      * ESP32-C3 when heap is too low for the cloud AI protocol (~10KB contiguous). */
     rt = ai_agent_init();
@@ -339,19 +374,6 @@ static int __ai_mqtt_connected_evt(void *data)
     } else {
         sg_ai_agent_inited = true;
     }
-
-    __ai_chat_load_config(&mode, &vol);
-    ai_mode_init(mode);
-
-#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-    /* Deferred from ai_chat_init(): allocate AI protocol before playing the MQTT
-     * connect prompt to reduce malloc -3 (OPRT_MALLOC_FAILED) and heap overlap. */
-    if (false == sg_network_alert_played) {
-        TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
-        sg_network_alert_played = true;
-        PR_NOTICE("play network-connected alert after ai_agent_init attempt");
-    }
-#endif
 
     return OPRT_OK;
 }
