@@ -60,8 +60,13 @@ TuyaOpen powers next-gen AI-agent hardware: it supports gear (Tuya T-Series WIFI
 
 Whether you’re creating smart home products, industrial IoT solutions, or custom AI applications, TuyaOpen provides the tools and examples to get started quickly and scale your ideas across platforms.
 
+## System Components
+<p align="center">
+<img src="https://images.tuyacn.com/fe-static/docs/img/220c9d84-d5f1-4976-b910-b63e415e9e03.png" width="80%" >
+</p>
 
-### TuyaOpen SDK Framework
+
+### Detailed SDK Framework Stacks
 <p align="center">
 <img src="https://images.tuyacn.com/fe-static/docs/img/25713212-9840-4cf5-889c-6f55476a59f9.jpg" width="80%" >
 </p>
