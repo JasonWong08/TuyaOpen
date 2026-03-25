@@ -5,7 +5,7 @@
  * This module implements the main AI chat functionality, including mode management,
  * audio input/output, button handling, and configuration management.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  */
 
@@ -13,6 +13,7 @@
 #include "tkl_kws.h"
 
 #include "cJSON.h"
+#include "tuya_error_code.h"
 #include "tuya_ai_agent.h"
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
@@ -327,15 +328,32 @@ static int __ai_mqtt_connected_evt(void *data)
     uint32_t    mode = sg_ai_default_mode;
     int         vol  = sg_ai_default_vol;
 
-    TUYA_CALL_ERR_RETURN(ai_agent_init());
+    (void)data;
+
+    /* Do not abort this handler on failure: local audio/modes must still run on
+     * ESP32-C3 when heap is too low for the cloud AI protocol (~10KB contiguous). */
+    rt = ai_agent_init();
+    if (rt != OPRT_OK) {
+        PR_WARN("ai_agent_init failed rt=%d, cloud AI disabled until next reconnect", rt);
+        sg_ai_agent_inited = false;
+    } else {
+        sg_ai_agent_inited = true;
+    }
 
     __ai_chat_load_config(&mode, &vol);
-
     ai_mode_init(mode);
 
-    sg_ai_agent_inited = true;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    /* Deferred from ai_chat_init(): allocate AI protocol before playing the MQTT
+     * connect prompt to reduce malloc -3 (OPRT_MALLOC_FAILED) and heap overlap. */
+    if (false == sg_network_alert_played) {
+        TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
+        sg_network_alert_played = true;
+        PR_NOTICE("play network-connected alert after ai_agent_init attempt");
+    }
+#endif
 
-    return rt;
+    return OPRT_OK;
 }
 
 static OPERATE_RET __ai_chat_mode_register(void)
@@ -423,11 +441,8 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
     TUYA_CALL_ERR_RETURN(tkl_kws_init());
 
     TUYA_CALL_ERR_LOG(ai_audio_player_set_vol(vol));
-    if (false == sg_network_alert_played) {
-        TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
-        sg_network_alert_played = true;
-        PR_NOTICE("audio-priority: play network-connected alert");
-    }
+    /* Network-connected prompt is played from __ai_mqtt_connected_evt() after
+     * ai_agent_init(), so cloud protocol allocation is not competing with decode. */
 
     TUYA_CALL_ERR_RETURN(
         tal_event_subscribe(EVENT_AUDIO_VAD, "vad_change", __ai_vad_change_evt, SUBSCRIBE_TYPE_NORMAL));
