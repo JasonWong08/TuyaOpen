@@ -32,15 +32,12 @@ extern "C" {
 #define I2S_INPUT_SAMPLE_RATE  (16000)
 #define I2S_OUTPUT_SAMPLE_RATE (16000)
 
-#define I2S_NUM (0)
-/* xiaozhi lichuang-c3-dev I2S netlist: user confirmed short audible output with this map.
- * Hybrid dout=7/din=10 was silent on the same PCB (DATA not routed to those pads).
- * GPIO12 may log "unusable" on some flash packages; audio still worked in field test. */
-#define I2S_MCK_IO (10)
-#define I2S_BCK_IO (8)
-#define I2S_WS_IO  (12)
-#define I2S_DO_IO  (11)
-#define I2S_DI_IO  (7)
+#define I2S_NUM    (0)
+#define I2S_MCK_IO (13)
+#define I2S_BCK_IO (12)
+#define I2S_WS_IO  (8)
+#define I2S_DO_IO  (7)  /* DAC -> speaker */
+#define I2S_DI_IO  (10) /* ADC <- microphone */
 
 /* Reduce DMA descriptors to lower peak heap usage on C3 */
 #define AUDIO_CODEC_DMA_DESC_NUM  (3)
@@ -59,11 +56,9 @@ extern "C" {
  * so pass the 8-bit write address 0x30 to get the correct 7-bit address 0x18. */
 #define AUDIO_CODEC_ES8311_ADDR (0x30)
 
-/* External PA enable pin used on xiaozhi lichuang-c3-dev compatible boards */
-#define AUDIO_CODEC_PA_IO (13)
-/* Board symptom is "only short pop without full voice", which usually indicates
- * PA enable polarity mismatch. Set to 1 for active-low PA enable. */
-#define AUDIO_CODEC_PA_INVERT (1)
+/* Baseline 2026-03-20: no external PA control; ES8311 drives speaker path. */
+#define AUDIO_CODEC_PA_IO     (-1)
+#define AUDIO_CODEC_PA_INVERT (0)
 
 /***********************************************************
  * Button
