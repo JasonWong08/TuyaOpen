@@ -61,6 +61,11 @@ extern size_t heap_caps_get_largest_free_block(uint32_t caps);
 #define AI_AGENT_INIT_LARGEST_HEAP_MIN (8 * 1024)
 #endif
 #define AI_AGENT_INIT_RETRY_INTERVAL_MS (2000U)
+#ifdef PLATFORM_ESP32
+#define AI_CHAT_MODE_TASK_STACK_SIZE (6144U)
+#else
+#define AI_CHAT_MODE_TASK_STACK_SIZE (2 * 1024U)
+#endif
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
@@ -223,8 +228,7 @@ static void __ai_chat_mode_task(void *args)
                     sg_ai_agent_init_busy = false;
                     if (rt == OPRT_OK) {
                         sg_ai_agent_inited = true;
-                        PR_NOTICE("ai_agent_init recovered by retry: free=%u largest=%u", (unsigned)free_now,
-                                  (unsigned)largest);
+                        PR_NOTICE("ai_agent_init recovered by retry");
                     } else {
                         PR_WARN("ai_agent_init retry failed rt=%d, keep local-audio only", rt);
                     }
@@ -531,7 +535,7 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
 
     THREAD_CFG_T thrd_cfg = {
         .priority   = THREAD_PRIO_5,
-        .stackDepth = 2 * 1024,
+        .stackDepth = AI_CHAT_MODE_TASK_STACK_SIZE,
         .thrdname   = "ai_chat_mode",
 #ifdef ENABLE_EXT_RAM
         .psram_mode = 1,
