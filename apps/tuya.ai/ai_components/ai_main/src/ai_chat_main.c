@@ -57,10 +57,10 @@ extern size_t heap_caps_get_largest_free_block(uint32_t caps);
 #endif
 /* On ESP32-C3 with no PSRAM, keep prompt-audio first:
  * if heap window is too small, defer cloud AI init to avoid starving alert playback.
- * Runtime logs on PETOI_C3 show stable operation around free~10KB/largest~6KB after
- * audio init; use these as retry floor so cloud AI can still be attempted. */
+ * Runtime logs on PETOI_C3 often settle at largest=4096 after audio path comes up;
+ * allow retry from this floor, while still keeping free-heap guard in place. */
 #define AI_AGENT_INIT_HEAP_MIN         (10 * 1024)
-#define AI_AGENT_INIT_LARGEST_HEAP_MIN (6 * 1024)
+#define AI_AGENT_INIT_LARGEST_HEAP_MIN (4 * 1024)
 #endif
 #define AI_AGENT_INIT_RETRY_INTERVAL_MS (2000U)
 #ifdef PLATFORM_ESP32
