@@ -551,8 +551,8 @@ OPERATE_RET tuya_ai_player_service_init(AI_PLAYER_CFG_T *cfg)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    /* Deinit path may enqueue FG/BG EXIT plus SERVICE_DEINIT back-to-back.
-     * Keep queue depth >= 3 to avoid queue-send fail during teardown. */
+    /* Deinit may enqueue FG/BG EXIT plus SERVICE_DEINIT in a short burst.
+     * Keep queue depth >= 3 to avoid queue send fail (-0x6701). */
     TUYA_CALL_ERR_RETURN(tal_queue_create_init(&s_ai_player_ctx.queue, SIZEOF(AI_PLAYER_MSG_T), 4));
 
     THREAD_CFG_T thread_cfg = {0};
