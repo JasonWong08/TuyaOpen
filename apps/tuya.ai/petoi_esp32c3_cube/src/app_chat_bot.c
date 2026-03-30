@@ -460,7 +460,16 @@ OPERATE_RET app_chat_bot_release_offline_audio(void)
     OPERATE_RET rt = OPRT_OK;
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
     if (sg_offline_audio_inited) {
-        TUYA_CALL_ERR_LOG(ai_audio_player_deinit());
+        /* Deinit may race with still-draining player queue right after alert EOF.
+         * Retry briefly so SERVICE_DEINIT can be posted and resources are freed. */
+        for (int i = 0; i < 3; i++) {
+            rt = ai_audio_player_deinit();
+            if (rt == OPRT_OK) {
+                break;
+            }
+            tal_system_sleep(30);
+        }
+        TUYA_CALL_ERR_LOG(rt);
         sg_offline_audio_inited = false;
         PR_NOTICE("offline audio recovery released, heap=%u", (unsigned)tal_system_get_free_heap_size());
     }
