@@ -68,6 +68,14 @@ OPERATE_RET app_chat_bot_try_recover_ui(uint32_t min_heap_bytes, const char *sta
  */
 OPERATE_RET app_chat_bot_try_recover_audio_alert(uint32_t min_heap_bytes, AI_AUDIO_ALERT_TYPE_E alert);
 
+/**
+ * @brief Release offline audio recovery resources proactively.
+ *
+ * Useful after bind voice prompt is played and device enters
+ * WiFi/TLS/MQTT activation path, to return heap to cloud stack.
+ */
+OPERATE_RET app_chat_bot_release_offline_audio(void);
+
 #ifdef __cplusplus
 }
 #endif

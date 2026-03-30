@@ -208,14 +208,18 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         }
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        /* Keep bind stage cloud-first: pre-cloud audio init can cost >10KB on C3
-         * and has caused TLS setup failures during activation (mbedtls_ssl_setup). */
+        /* Play bind-start prompt via lightweight offline path so first boot can
+         * still have voice feedback even when full post-cloud chain is not ready.
+         * The offline player is released at BIND_TOKEN_ON before TLS heavy path. */
         {
             int bind_heap = tal_system_get_free_heap_size();
-            if (bind_heap >= 16384 && app_chat_bot_is_ready()) {
+            if (app_chat_bot_is_ready()) {
                 ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
             } else {
-                PR_WARN("skip bind alert, heap=%d ready=%d", bind_heap, app_chat_bot_is_ready());
+                OPERATE_RET ar = app_chat_bot_try_recover_audio_alert(20 * 1024, AI_AUDIO_ALERT_NETWORK_CFG);
+                if (ar != OPRT_OK) {
+                    PR_WARN("skip bind alert, heap=%d ready=%d rt=%d", bind_heap, app_chat_bot_is_ready(), ar);
+                }
             }
         }
 #endif
@@ -231,6 +235,13 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     } break;
 
     case TUYA_EVENT_BIND_TOKEN_ON:
+        /* Release offline-only audio player before WiFi->TLS->MQTT heavy path. */
+        {
+            OPERATE_RET release_rt = app_chat_bot_release_offline_audio();
+            if (release_rt != OPRT_OK) {
+                PR_WARN("release offline audio failed: %d", release_rt);
+            }
+        }
         PR_NOTICE("Bind token received. waiting WiFi->TLS->MQTT");
         break;
 

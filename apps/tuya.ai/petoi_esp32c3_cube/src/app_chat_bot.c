@@ -454,3 +454,16 @@ OPERATE_RET app_chat_bot_try_recover_audio_alert(uint32_t min_heap_bytes, AI_AUD
     return OPRT_NOT_SUPPORTED;
 #endif
 }
+
+OPERATE_RET app_chat_bot_release_offline_audio(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    if (sg_offline_audio_inited) {
+        TUYA_CALL_ERR_LOG(ai_audio_player_deinit());
+        sg_offline_audio_inited = false;
+        PR_NOTICE("offline audio recovery released, heap=%u", (unsigned)tal_system_get_free_heap_size());
+    }
+#endif
+    return OPRT_OK;
+}
