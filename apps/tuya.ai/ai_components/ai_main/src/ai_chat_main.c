@@ -53,9 +53,9 @@
 /* On ESP32-C3 with no PSRAM, keep prompt-audio first: defer cloud AI init when
  * free heap is low. We intentionally avoid heap_caps_get_largest_free_block() in
  * hot paths (MQTT / retry loop) after field faults under heap contention. */
-#define AI_AGENT_INIT_HEAP_MIN (10 * 1024)
+#define AI_AGENT_INIT_HEAP_MIN (22 * 1024)
 #endif
-#define AI_AGENT_INIT_RETRY_INTERVAL_MS (2000U)
+#define AI_AGENT_INIT_RETRY_INTERVAL_MS (8000U)
 #ifdef PLATFORM_ESP32
 #define AI_CHAT_MODE_TASK_STACK_SIZE (6144U)
 #else
@@ -219,9 +219,9 @@ static void __ai_chat_mode_task(void *args)
             if (should_retry) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
                 if (ai_audio_player_is_playing()) {
-                    /* Keep prompt playback priority; retry after playback window. */
+                    /* Keep prompt playback priority; retry immediately after playback. */
                     sg_ai_agent_retry_ms  = now_ms;
-                    sg_ai_agent_retry_now = false;
+                    sg_ai_agent_retry_now = true;
                     ai_mode_task_running(args);
                     tal_system_sleep(20);
                     continue;
@@ -441,8 +441,19 @@ static int __ai_mqtt_connected_evt(void *data)
     }
 #endif
 
-    /* Do not abort this handler on failure: local audio/modes must still run on
-     * ESP32-C3 when heap is too low for the cloud AI protocol (~10KB contiguous). */
+    /* On ESP32-C3, avoid running ai_agent_init() in MQTT callback window:
+     * prompt playback + mode startup can temporarily drive heap near floor and
+     * cause tuya_ai_input_init() OOM (-3). Defer init to retry task with guards. */
+#ifdef PLATFORM_ESP32
+    sg_ai_agent_inited    = false;
+    sg_ai_agent_retry_ms  = tal_system_get_millisecond();
+    sg_ai_agent_retry_now = true;
+    PR_NOTICE("defer ai_agent_init to retry task (audio/heap guard)");
+    return OPRT_OK;
+#endif
+
+    /* Do not abort this handler on failure: local audio/modes must still run when
+     * heap is too low for the cloud AI protocol (~10KB contiguous). */
     sg_ai_agent_init_busy = true;
     rt                    = ai_agent_init();
     sg_ai_agent_init_busy = false;
