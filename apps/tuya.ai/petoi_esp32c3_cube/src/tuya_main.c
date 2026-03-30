@@ -94,6 +94,11 @@ static TIMER_ID sg_printf_heap_tm;
 static bool     sg_cloud_ready            = false;
 static bool     sg_using_fallback_license = false;
 static bool     sg_ble_released           = false;
+static bool     sg_ble_release_scheduled  = false;
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+static TIMER_ID sg_ble_release_stage1_tm = NULL;
+static TIMER_ID sg_ble_release_stage2_tm = NULL;
+#endif
 
 #ifdef PLATFORM_ESP32
 extern size_t heap_caps_get_free_size(uint32_t caps);
@@ -115,6 +120,115 @@ typedef struct {
 } PETOI_RUN_STATS_T;
 
 static PETOI_RUN_STATS_T sg_run_stats = {0};
+
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+/* Stage BLE teardown around bind token:
+ * 1) stop netcfg/disconnect first, 2) deinit BLE later.
+ * This keeps TLS handshake window cleaner on C3 low-heap path. */
+#define BLE_RELEASE_STAGE1_DELAY_MS (150)
+#define BLE_RELEASE_STAGE2_DELAY_MS (600)
+
+static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg);
+
+static void __ble_release_timer_cleanup(void)
+{
+    if (sg_ble_release_stage1_tm) {
+        tal_sw_timer_stop(sg_ble_release_stage1_tm);
+        tal_sw_timer_delete(sg_ble_release_stage1_tm);
+        sg_ble_release_stage1_tm = NULL;
+    }
+
+    if (sg_ble_release_stage2_tm) {
+        tal_sw_timer_stop(sg_ble_release_stage2_tm);
+        tal_sw_timer_delete(sg_ble_release_stage2_tm);
+        sg_ble_release_stage2_tm = NULL;
+    }
+}
+
+static void __ble_release_force_now(const char *reason)
+{
+    if (sg_ble_released) {
+        return;
+    }
+
+    PR_NOTICE("force BLE release: %s", reason ? reason : "unknown");
+    TUYA_CALL_ERR_LOG(netcfg_stop(NETCFG_TUYA_BLE));
+    tuya_ble_disconnect_current();
+    TUYA_CALL_ERR_LOG(tuya_ble_deinit());
+    sg_ble_released          = true;
+    sg_ble_release_scheduled = false;
+    __ble_release_timer_cleanup();
+}
+
+static void __ble_release_stage1_cb(TIMER_ID timer_id, void *arg)
+{
+    (void)timer_id;
+    (void)arg;
+
+    if (sg_ble_released) {
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        return;
+    }
+
+    PR_NOTICE("BLE release stage1: stop netcfg + disconnect peer");
+    TUYA_CALL_ERR_LOG(netcfg_stop(NETCFG_TUYA_BLE));
+    tuya_ble_disconnect_current();
+
+    if (sg_ble_release_stage2_tm == NULL) {
+        if (tal_sw_timer_create(__ble_release_stage2_cb, NULL, &sg_ble_release_stage2_tm) != OPRT_OK) {
+            __ble_release_force_now("stage2 timer create failed");
+            return;
+        }
+    }
+
+    if (tal_sw_timer_start(sg_ble_release_stage2_tm, BLE_RELEASE_STAGE2_DELAY_MS, TAL_TIMER_ONCE) != OPRT_OK) {
+        __ble_release_force_now("stage2 timer start failed");
+        return;
+    }
+}
+
+static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg)
+{
+    (void)timer_id;
+    (void)arg;
+
+    if (sg_ble_released) {
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        return;
+    }
+
+    PR_NOTICE("BLE release stage2: deinit BLE stack");
+    TUYA_CALL_ERR_LOG(tuya_ble_deinit());
+    sg_ble_released          = true;
+    sg_ble_release_scheduled = false;
+    __ble_release_timer_cleanup();
+}
+
+static void __schedule_ble_release_after_bind(void)
+{
+    if (sg_ble_released || sg_ble_release_scheduled) {
+        return;
+    }
+
+    if (sg_ble_release_stage1_tm == NULL) {
+        if (tal_sw_timer_create(__ble_release_stage1_cb, NULL, &sg_ble_release_stage1_tm) != OPRT_OK) {
+            __ble_release_force_now("stage1 timer create failed");
+            return;
+        }
+    }
+
+    if (tal_sw_timer_start(sg_ble_release_stage1_tm, BLE_RELEASE_STAGE1_DELAY_MS, TAL_TIMER_ONCE) != OPRT_OK) {
+        __ble_release_force_now("stage1 timer start failed");
+        return;
+    }
+
+    sg_ble_release_scheduled = true;
+    PR_NOTICE("BLE release scheduled: stage1=%dms stage2=%dms", BLE_RELEASE_STAGE1_DELAY_MS,
+              BLE_RELEASE_STAGE2_DELAY_MS);
+}
+#endif
 
 static void __log_heap_snapshot(const char *stage)
 {
@@ -242,6 +356,9 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
                 PR_WARN("release offline audio failed: %d", release_rt);
             }
         }
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+        __schedule_ble_release_after_bind();
+#endif
         PR_NOTICE("Bind token received. waiting WiFi->TLS->MQTT");
         break;
 
@@ -260,9 +377,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
          * post-cloud UI/audio init to pass memory threshold. */
 #if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
         if (false == sg_ble_released) {
-            netcfg_stop(NETCFG_TUYA_BLE);
-            tuya_ble_deinit();
-            sg_ble_released = true;
+            __ble_release_force_now("mqtt_connected_fallback");
             tal_system_sleep(100);
             PR_NOTICE("BLE released after MQTT connect, heap=%d", tal_system_get_free_heap_size());
             __log_heap_snapshot("mqtt_connected.after_ble_release");
