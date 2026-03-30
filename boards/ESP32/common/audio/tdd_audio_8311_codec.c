@@ -272,6 +272,12 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
         PR_NOTICE("codec_8311_init: idempotent skip (output_dev already created)");
         return OPRT_OK;
     }
+    /* If a prior attempt created I2S but failed before output_dev_, a second pass
+     * would call i2s_new_channel again on leaked handles — TLSF corruption. */
+    if (tx_handle_ != NULL || rx_handle_ != NULL) {
+        PR_ERR("codec_8311_init: refuse duplicate init (partial I2S state)");
+        return OPRT_COM_ERROR;
+    }
 
     pa_pin_             = i2s_config->gpio_output_pa;
     pa_inverted_        = (i2s_config->pa_output_invert != 0);

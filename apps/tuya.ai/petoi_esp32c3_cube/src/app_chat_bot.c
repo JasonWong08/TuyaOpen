@@ -43,11 +43,12 @@
 ***********************variable define**********************
 ***********************************************************/
 static TIMER_ID sg_printf_heap_tm;
-static bool     sg_precloud_inited      = false;
-static bool     sg_postcloud_inited     = false;
-static bool     sg_ui_inited            = false;
-static bool     sg_postcloud_degraded   = false;
-static bool     sg_offline_audio_inited = false;
+static bool     sg_precloud_inited       = false;
+static bool     sg_postcloud_inited      = false;
+static bool     sg_postcloud_in_progress = false;
+static bool     sg_ui_inited             = false;
+static bool     sg_postcloud_degraded    = false;
+static bool     sg_offline_audio_inited  = false;
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 static AI_UI_WIFI_STATUS_E sg_wifi_status = AI_UI_WIFI_STATUS_DISCONNECTED;
@@ -295,6 +296,14 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         return OPRT_OK;
     }
 
+    /* Prevent nested/concurrent entry (e.g. MQTT/event churn) from running
+     * ai_chat_init + codec_8311_init twice — major TLSF heap corruption risk. */
+    if (sg_postcloud_in_progress) {
+        PR_WARN("postcloud_init: reentry ignored (init in progress)");
+        return OPRT_OK;
+    }
+    sg_postcloud_in_progress = true;
+
     uint32_t postcloud_heap = tal_system_get_free_heap_size();
     __log_heap_snapshot("postcloud_init.entry");
     if (postcloud_heap < POSTCLOUD_INIT_HEAP_MIN) {
@@ -303,7 +312,7 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         PR_WARN("skip post-cloud AI/UI init, heap=%u < %u", (unsigned)postcloud_heap,
                 (unsigned)POSTCLOUD_INIT_HEAP_MIN);
         __log_heap_snapshot("postcloud_init.skip_below_threshold");
-        return OPRT_OK;
+        goto postcloud_exit;
     }
 
     uint32_t free_heap = 0, largest_heap = 0;
@@ -318,7 +327,7 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         /* Degraded path still keeps status visible, but does not block on display. */
         TUYA_CALL_ERR_LOG(__ensure_ui_ready(CONNECT_SERVER));
 #endif
-        return OPRT_OK;
+        goto postcloud_exit;
     }
 
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
@@ -343,7 +352,7 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         TUYA_CALL_ERR_LOG(__ensure_ui_ready(CONNECT_SERVER));
 #endif
         sg_postcloud_degraded = true;
-        return OPRT_OK;
+        goto postcloud_exit;
     }
     /* ai_chat_init() now owns UI init; mark UI as ready for fallback paths. */
     sg_ui_inited = true;
@@ -357,7 +366,12 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
 #endif
 
 #if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
-    TUYA_CALL_ERR_RETURN(ai_mcp_init());
+    rt = ai_mcp_init();
+    if (rt != OPRT_OK) {
+        PR_ERR("ai_mcp_init failed: %d", rt);
+        sg_postcloud_in_progress = false;
+        return rt;
+    }
 #endif
 
 #if defined(ENABLE_COMP_AI_PICTURE) && (ENABLE_COMP_AI_PICTURE == 1)
@@ -366,11 +380,19 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         .output_cb = __ai_picture_output_cb,
     };
 
-    TUYA_CALL_ERR_RETURN(ai_picture_output_init(&picture_output_cfg));
+    rt = ai_picture_output_init(&picture_output_cfg);
+    if (rt != OPRT_OK) {
+        PR_ERR("ai_picture_output_init failed: %d", rt);
+        sg_postcloud_in_progress = false;
+        return rt;
+    }
 #endif
 
     sg_postcloud_inited = true;
     __log_heap_snapshot("postcloud_init.exit");
+
+postcloud_exit:
+    sg_postcloud_in_progress = false;
     return OPRT_OK;
 }
 
