@@ -208,18 +208,12 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         }
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        /* On ESP32-C3 (no PSRAM) bind-time heap is very tight (~9-10KB).
-         * Starting TTS alert here can consume almost all remaining heap and
-         * starve BLE netcfg + first LVGL text render. */
+        /* Keep bind stage cloud-first: pre-cloud audio init can cost >10KB on C3
+         * and has caused TLS setup failures during activation (mbedtls_ssl_setup). */
         {
             int bind_heap = tal_system_get_free_heap_size();
             if (bind_heap >= 16384 && app_chat_bot_is_ready()) {
                 ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
-            } else if (bind_heap >= 16384) {
-                /* postcloud/MQTT not done yet: is_ready() is false; use lightweight offline path */
-                if (OPRT_OK != app_chat_bot_try_recover_audio_alert(12000, AI_AUDIO_ALERT_NETWORK_CFG)) {
-                    PR_WARN("skip bind alert, heap=%d offline_audio_failed", bind_heap);
-                }
             } else {
                 PR_WARN("skip bind alert, heap=%d ready=%d", bind_heap, app_chat_bot_is_ready());
             }

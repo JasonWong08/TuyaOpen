@@ -436,7 +436,11 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
 
     hdl->i2s_id = TUYA_I2S_NUM_0;
 
-    codec_8311_init(hdl->i2s_id, tdd_i2s_cfg);
+    rt = codec_8311_init(hdl->i2s_id, tdd_i2s_cfg);
+    if (rt != OPRT_OK) {
+        PR_ERR("codec_8311_init failed: %d", rt);
+        return rt;
+    }
 
     PR_NOTICE("I2S 8311 channels created");
 
@@ -480,7 +484,14 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_play(TDD_AUDIO_HANDLE_T handle, uint
     ESP_I2S_8311_HANDLE_T *hdl = (ESP_I2S_8311_HANDLE_T *)handle;
 
     TUYA_CHECK_NULL_RETURN(hdl, OPRT_COM_ERROR);
-    TUYA_CHECK_NULL_RETURN(hdl->mutex_play, OPRT_COM_ERROR);
+    if (NULL == hdl->mutex_play) {
+        PR_WARN("I2S8311: play before open completed, try reopen");
+        rt = __tdd_audio_esp_i2s_8311_open(handle, hdl->mic_cb);
+        if (rt != OPRT_OK || NULL == hdl->mutex_play) {
+            PR_ERR("I2S8311: reopen failed rt=%d", rt);
+            return OPRT_COM_ERROR;
+        }
+    }
 
     if (NULL == data || len == 0) {
         PR_ERR("I2S 8311 play data is NULL");
