@@ -147,6 +147,8 @@ static void __ble_release_timer_cleanup(void)
 
 static void __ble_release_force_now(const char *reason)
 {
+    OPERATE_RET rt = OPRT_OK;
+
     if (sg_ble_released) {
         return;
     }
@@ -162,6 +164,8 @@ static void __ble_release_force_now(const char *reason)
 
 static void __ble_release_stage1_cb(TIMER_ID timer_id, void *arg)
 {
+    OPERATE_RET rt = OPRT_OK;
+
     (void)timer_id;
     (void)arg;
 
@@ -190,6 +194,8 @@ static void __ble_release_stage1_cb(TIMER_ID timer_id, void *arg)
 
 static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg)
 {
+    OPERATE_RET rt = OPRT_OK;
+
     (void)timer_id;
     (void)arg;
 
