@@ -50,17 +50,10 @@
 #endif
 #define AI_AUDIO_VAD_OFF_TIME 1000
 #ifdef PLATFORM_ESP32
-extern size_t heap_caps_get_free_size(uint32_t caps);
-extern size_t heap_caps_get_largest_free_block(uint32_t caps);
-#ifndef MALLOC_CAP_8BIT
-#define MALLOC_CAP_8BIT 0x00000008U
-#endif
-/* On ESP32-C3 with no PSRAM, keep prompt-audio first:
- * if heap window is too small, defer cloud AI init to avoid starving alert playback.
- * Runtime logs on PETOI_C3 often settle at largest=4096 after audio path comes up;
- * allow retry from this floor, while still keeping free-heap guard in place. */
-#define AI_AGENT_INIT_HEAP_MIN         (10 * 1024)
-#define AI_AGENT_INIT_LARGEST_HEAP_MIN (4 * 1024)
+/* On ESP32-C3 with no PSRAM, keep prompt-audio first: defer cloud AI init when
+ * free heap is low. We intentionally avoid heap_caps_get_largest_free_block() in
+ * hot paths (MQTT / retry loop) after field faults under heap contention. */
+#define AI_AGENT_INIT_HEAP_MIN (10 * 1024)
 #endif
 #define AI_AGENT_INIT_RETRY_INTERVAL_MS (2000U)
 #ifdef PLATFORM_ESP32
@@ -234,9 +227,8 @@ static void __ai_chat_mode_task(void *args)
                 }
 #endif
 #ifdef PLATFORM_ESP32
-                size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-                size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-                if ((free_now >= AI_AGENT_INIT_HEAP_MIN) && (largest >= AI_AGENT_INIT_LARGEST_HEAP_MIN)) {
+                uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
+                if (free_now >= AI_AGENT_INIT_HEAP_MIN) {
                     OPERATE_RET rt        = OPRT_OK;
                     sg_ai_agent_init_busy = true;
                     rt                    = ai_agent_init();
@@ -248,8 +240,8 @@ static void __ai_chat_mode_task(void *args)
                         PR_WARN("ai_agent_init retry failed rt=%d, keep local-audio only", rt);
                     }
                 } else {
-                    PR_DEBUG("skip ai_agent_init retry due low/fragmented heap: free=%u largest=%u", (unsigned)free_now,
-                             (unsigned)largest);
+                    PR_DEBUG("skip ai_agent_init retry: free=%u need>=%u", (unsigned)free_now,
+                             (unsigned)AI_AGENT_INIT_HEAP_MIN);
                 }
 #else
                 OPERATE_RET rt        = OPRT_OK;
@@ -428,12 +420,12 @@ static int __ai_mqtt_connected_evt(void *data)
     ai_mode_init(mode);
 
 #ifdef PLATFORM_ESP32
-    size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    if ((free_now < AI_AGENT_INIT_HEAP_MIN) || (largest < AI_AGENT_INIT_LARGEST_HEAP_MIN)) {
-        PR_WARN("defer ai_agent_init due low/fragmented heap: free=%u largest=%u need_free>=%u need_largest>=%u",
-                (unsigned)free_now, (unsigned)largest, (unsigned)AI_AGENT_INIT_HEAP_MIN,
-                (unsigned)AI_AGENT_INIT_LARGEST_HEAP_MIN);
+    /* Avoid heap_caps_get_largest_free_block() in MQTT/event path: it walks the
+     * heap and has triggered Load faults under contention; retry task uses same policy. */
+    uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
+    if (free_now < AI_AGENT_INIT_HEAP_MIN) {
+        PR_WARN("defer ai_agent_init (mqtt evt): free=%u need_free>=%u (largest not checked here)", (unsigned)free_now,
+                (unsigned)AI_AGENT_INIT_HEAP_MIN);
         sg_ai_agent_inited    = false;
         sg_ai_agent_retry_ms  = tal_system_get_millisecond();
         sg_ai_agent_retry_now = true;
