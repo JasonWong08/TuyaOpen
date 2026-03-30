@@ -79,6 +79,7 @@ static bool                 sg_ai_agent_retry_now   = false;
 static bool                 sg_ai_ui_ready          = false;
 static bool                 sg_network_alert_played = false;
 static uint64_t             sg_ai_agent_retry_ms    = 0;
+static bool                 sg_ai_mode_inited       = false;
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
 static TDL_BUTTON_HANDLE sg_button_hdl = NULL;
@@ -417,7 +418,14 @@ static int __ai_mqtt_connected_evt(void *data)
         tal_system_sleep(120);
     }
 #endif
-    ai_mode_init(mode);
+    if (!sg_ai_mode_inited) {
+        rt = ai_mode_init(mode);
+        if (rt != OPRT_OK) {
+            PR_WARN("ai_mode_init failed rt=%d", rt);
+        } else {
+            sg_ai_mode_inited = true;
+        }
+    }
 
 #ifdef PLATFORM_ESP32
     /* Avoid heap_caps_get_largest_free_block() in MQTT/event path: it walks the
