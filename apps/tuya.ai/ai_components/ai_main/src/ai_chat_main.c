@@ -328,6 +328,7 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
 {
     PR_DEBUG("ai chat button event: %d", event);
     (void)name;
+    bool degraded_no_agent = (sg_mqtt_connected && !sg_ai_agent_inited && !sg_ai_agent_init_busy);
 
     if (TDL_BUTTON_PRESS_DOUBLE_CLICK == event) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
@@ -355,8 +356,7 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
         return;
     }
 
-    if ((TDL_BUTTON_PRESS_DOWN == event || TDL_BUTTON_LONG_PRESS_START == event) && sg_mqtt_connected &&
-        !sg_ai_agent_inited && !sg_ai_agent_init_busy) {
+    if ((TDL_BUTTON_PRESS_DOWN == event) && degraded_no_agent) {
         /* Try cloud agent init immediately after user asks to talk. */
         sg_ai_agent_retry_now = true;
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
@@ -364,6 +364,13 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
          * Still provide an immediate local wakeup cue on key down. */
         ai_audio_player_alert(AI_AUDIO_ALERT_WAKEUP);
 #endif
+    }
+
+    if (degraded_no_agent && (TDL_BUTTON_PRESS_UP == event || TDL_BUTTON_PRESS_SINGLE_CLICK == event ||
+                              TDL_BUTTON_LONG_PRESS_START == event)) {
+        /* When cloud agent is not ready, suppress hold/upload path to avoid
+         * invalid session uploads and noisy "event or session id was null". */
+        return;
     }
 
     ai_mode_handle_key(event, arg);
