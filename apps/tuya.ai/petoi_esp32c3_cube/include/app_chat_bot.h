@@ -50,6 +50,14 @@ OPERATE_RET app_chat_bot_init(void);
 bool app_chat_bot_is_ready(void);
 
 /**
+ * @brief Whether post-cloud initialization has completed.
+ *
+ * This differs from `app_chat_bot_is_ready()`: it only indicates that
+ * `ai_chat_init()` path has run successfully, regardless of degraded flag.
+ */
+bool app_chat_bot_is_postcloud_inited(void);
+
+/**
  * @brief Try to initialize lightweight UI/status path in offline/degraded mode.
  *
  * This is used when MQTT cannot be established (e.g. auth rejected) so the

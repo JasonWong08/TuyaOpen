@@ -88,13 +88,16 @@ tuya_iot_license_t license;
  * heap is in the 40~70KB range, otherwise mbedtls_ssl_setup may fail. */
 #define OFFLINE_UI_RECOVER_HEAP_MIN    (96 * 1024)
 #define OFFLINE_AUDIO_RECOVER_HEAP_MIN (72 * 1024)
+#define POSTCLOUD_RETRY_INTERVAL_MS    (2000)
 
 static uint8_t  _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
-static bool     sg_cloud_ready            = false;
-static bool     sg_using_fallback_license = false;
-static bool     sg_ble_released           = false;
-static bool     sg_ble_release_scheduled  = false;
+static bool     sg_cloud_ready               = false;
+static bool     sg_using_fallback_license    = false;
+static bool     sg_ble_released              = false;
+static bool     sg_ble_release_scheduled     = false;
+static bool     sg_postcloud_retry_scheduled = false;
+static TIMER_ID sg_postcloud_retry_tm        = NULL;
 #if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
 static TIMER_ID sg_ble_release_stage1_tm = NULL;
 static TIMER_ID sg_ble_release_stage2_tm = NULL;
@@ -269,6 +272,70 @@ static void __log_heap_snapshot(const char *stage)
 #endif
 }
 
+static bool __is_mqtt_connected_now(void)
+{
+    return (ai_client.status == TUYA_STATUS_MQTT_CONNECTED);
+}
+
+static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg);
+
+static void __schedule_postcloud_retry(void)
+{
+    if (sg_postcloud_retry_scheduled) {
+        return;
+    }
+
+    if (sg_postcloud_retry_tm == NULL) {
+        if (tal_sw_timer_create(__postcloud_retry_tm_cb, NULL, &sg_postcloud_retry_tm) != OPRT_OK) {
+            PR_WARN("post-cloud retry: timer create failed");
+            return;
+        }
+    }
+
+    if (tal_sw_timer_start(sg_postcloud_retry_tm, POSTCLOUD_RETRY_INTERVAL_MS, TAL_TIMER_ONCE) != OPRT_OK) {
+        PR_WARN("post-cloud retry: timer start failed");
+        return;
+    }
+
+    sg_postcloud_retry_scheduled = true;
+    PR_NOTICE("post-cloud retry scheduled in %d ms", POSTCLOUD_RETRY_INTERVAL_MS);
+}
+
+static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
+{
+    (void)timer_id;
+    (void)arg;
+
+    sg_postcloud_retry_scheduled = false;
+
+    if (!__is_mqtt_connected_now()) {
+        PR_DEBUG("post-cloud retry skipped: mqtt disconnected");
+        return;
+    }
+
+    if (app_chat_bot_is_postcloud_inited()) {
+        sg_cloud_ready = true;
+        return;
+    }
+
+    __log_heap_snapshot("postcloud_retry.before_postcloud_init");
+    if (app_chat_bot_postcloud_init() != OPRT_OK) {
+        PR_WARN("post-cloud retry: init returned error");
+    }
+
+    if (app_chat_bot_is_postcloud_inited()) {
+        sg_cloud_ready = true;
+        PR_NOTICE("Post-cloud app init recovered, heap=%d", tal_system_get_free_heap_size());
+        __log_heap_snapshot("postcloud_retry.after_postcloud_init");
+        /* Re-publish after ai_chat_init subscribes EVENT_MQTT_CONNECTED. */
+        tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
+        return;
+    }
+
+    PR_NOTICE("post-cloud init still deferred, heap=%d", tal_system_get_free_heap_size());
+    __schedule_postcloud_retry();
+}
+
 void user_log_output_cb(const char *str)
 {
     tal_uart_write(TUYA_UART_NUM_0, (const uint8_t *)str, strlen(str));
@@ -426,9 +493,15 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
                 __log_heap_snapshot("mqtt_connected.postcloud_init_failed");
                 break;
             }
-            sg_cloud_ready = true;
-            PR_NOTICE("Post-cloud app init done, heap=%d", tal_system_get_free_heap_size());
-            __log_heap_snapshot("mqtt_connected.after_postcloud_init");
+            if (app_chat_bot_is_postcloud_inited()) {
+                sg_cloud_ready = true;
+                PR_NOTICE("Post-cloud app init done, heap=%d", tal_system_get_free_heap_size());
+                __log_heap_snapshot("mqtt_connected.after_postcloud_init");
+            } else {
+                sg_cloud_ready = false;
+                PR_WARN("Post-cloud app init deferred, schedule retry");
+                __schedule_postcloud_retry();
+            }
         }
 
         tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
@@ -462,6 +535,11 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     case TUYA_EVENT_MQTT_DISCONNECT:
         PR_INFO("Device MQTT DisConnected!");
         sg_run_stats.mqtt_disconnected_count++;
+        sg_cloud_ready = app_chat_bot_is_postcloud_inited();
+        if (sg_postcloud_retry_tm) {
+            tal_sw_timer_stop(sg_postcloud_retry_tm);
+        }
+        sg_postcloud_retry_scheduled = false;
         if (false == sg_cloud_ready) {
             const char *offline_status = CONNECT_SERVER;
             if (sg_using_fallback_license && sg_run_stats.mqtt_connected_count == 0 &&

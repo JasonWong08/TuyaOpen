@@ -388,7 +388,8 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
     }
 #endif
 
-    sg_postcloud_inited = true;
+    sg_postcloud_inited   = true;
+    sg_postcloud_degraded = false;
     __log_heap_snapshot("postcloud_init.exit");
 
 postcloud_exit:
@@ -407,6 +408,11 @@ OPERATE_RET app_chat_bot_init(void)
 bool app_chat_bot_is_ready(void)
 {
     return sg_postcloud_inited && (false == sg_postcloud_degraded);
+}
+
+bool app_chat_bot_is_postcloud_inited(void)
+{
+    return sg_postcloud_inited;
 }
 
 OPERATE_RET app_chat_bot_try_recover_ui(uint32_t min_heap_bytes, const char *status_text)
