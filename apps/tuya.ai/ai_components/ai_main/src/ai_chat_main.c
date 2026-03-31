@@ -359,6 +359,11 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
         !sg_ai_agent_inited && !sg_ai_agent_init_busy) {
         /* Try cloud agent init immediately after user asks to talk. */
         sg_ai_agent_retry_now = true;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+        /* In degraded mode on C3, ai_agent_init may keep failing due to low heap.
+         * Still provide an immediate local wakeup cue on key down. */
+        ai_audio_player_alert(AI_AUDIO_ALERT_WAKEUP);
+#endif
     }
 
     ai_mode_handle_key(event, arg);
