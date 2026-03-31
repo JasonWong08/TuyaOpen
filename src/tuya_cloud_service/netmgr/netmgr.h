@@ -11,7 +11,7 @@
  * network connectivity for Tuya devices, facilitating seamless communication
  * with Tuya cloud services and supporting device control and data exchange.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  * 2025-07-11   yangjie     Add types to string conversion macros
  *
@@ -102,6 +102,14 @@ typedef struct netmgr_conn_base {
  * @return OPERATE_RET
  */
 OPERATE_RET netmgr_init(netmgr_type_e type);
+
+/**
+ * @brief Stop periodic LAN discovery init timer (if running).
+ *
+ * For SKUs that do not use Tuya LAN control, call after netmgr_init() on
+ * memory-constrained MCUs to avoid competing TLS/socket work with cloud MQTT.
+ */
+void netmgr_stop_periodic_lan_init_timer(void);
 
 /**
  * @brief set network connection attribute

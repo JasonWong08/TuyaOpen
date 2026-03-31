@@ -53,7 +53,7 @@
 /* On ESP32-C3 with no PSRAM, keep prompt-audio first: defer cloud AI init when
  * free heap is low. We intentionally avoid heap_caps_get_largest_free_block() in
  * hot paths (MQTT / retry loop) after field faults under heap contention. */
-#define AI_AGENT_INIT_HEAP_MIN (22 * 1024)
+#define AI_AGENT_INIT_HEAP_MIN (28 * 1024)
 #endif
 #define AI_AGENT_INIT_RETRY_INTERVAL_MS (8000U)
 #ifdef PLATFORM_ESP32
@@ -80,6 +80,10 @@ static bool                 sg_ai_ui_ready          = false;
 static bool                 sg_network_alert_played = false;
 static uint64_t             sg_ai_agent_retry_ms    = 0;
 static bool                 sg_ai_mode_inited       = false;
+#ifdef PLATFORM_ESP32
+/* One-shot delay per MQTT session: avoid overlapping AI mq/TLS with meta.save etc. */
+static bool sg_ai_agent_tls_stagger_done = false;
+#endif
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
 static TDL_BUTTON_HANDLE sg_button_hdl = NULL;
@@ -230,7 +234,21 @@ static void __ai_chat_mode_task(void *args)
 #ifdef PLATFORM_ESP32
                 uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
                 if (free_now >= AI_AGENT_INIT_HEAP_MIN) {
-                    OPERATE_RET rt        = OPRT_OK;
+                    OPERATE_RET rt = OPRT_OK;
+                    if (!sg_ai_agent_tls_stagger_done) {
+                        PR_NOTICE("ai_agent: stagger 2.5s before first init (vs device MQTT/meta TLS)");
+                        tal_system_sleep(2500);
+                        sg_ai_agent_tls_stagger_done = true;
+                        free_now = (uint32_t)tal_system_get_free_heap_size();
+                        if (free_now < AI_AGENT_INIT_HEAP_MIN) {
+                            PR_WARN("ai_agent: post-stagger heap low free=%u, defer init", (unsigned)free_now);
+                            sg_ai_agent_retry_ms  = now_ms;
+                            sg_ai_agent_retry_now = true;
+                            ai_mode_task_running(args);
+                            tal_system_sleep(20);
+                            continue;
+                        }
+                    }
                     sg_ai_agent_init_busy = true;
                     rt                    = ai_agent_init();
                     sg_ai_agent_init_busy = false;
@@ -503,6 +521,9 @@ static int __ai_mqtt_disconnected_evt(void *data)
     sg_ai_agent_inited    = false;
     sg_ai_agent_init_busy = false;
     sg_ai_agent_retry_now = false;
+#ifdef PLATFORM_ESP32
+    sg_ai_agent_tls_stagger_done = false;
+#endif
     return OPRT_OK;
 }
 

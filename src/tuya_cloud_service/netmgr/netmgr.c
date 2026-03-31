@@ -379,6 +379,18 @@ OPERATE_RET netmgr_init(netmgr_type_e type)
     return rt;
 }
 
+void netmgr_stop_periodic_lan_init_timer(void)
+{
+#if !defined(ENABLE_CELLULAR) || (ENABLE_CELLULAR == 0)
+    if (sg_lan_init_timer != NULL) {
+        tal_sw_timer_stop(sg_lan_init_timer);
+        tal_sw_timer_delete(sg_lan_init_timer);
+        sg_lan_init_timer = NULL;
+        PR_NOTICE("netmgr: periodic LAN init timer stopped");
+    }
+#endif
+}
+
 /**
  * @brief Sets the connection configuration for the network manager.
  *

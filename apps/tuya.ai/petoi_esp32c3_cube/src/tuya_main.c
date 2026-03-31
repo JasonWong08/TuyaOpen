@@ -19,7 +19,7 @@
  *     when an active session starts, and freed on session end (handled by
  *     ai_components — see app_chat_bot.h for the session lifecycle hooks).
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
 #include "tuya_cloud_types.h"
@@ -746,6 +746,8 @@ void user_main(void)
     type |= NETCONN_WIRED;
 #endif
     netmgr_init(type);
+    /* No LAN control on this board; drop 500 ms probe to cut heap/log noise vs MQTT/TLS. */
+    netmgr_stop_periodic_lan_init_timer();
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
     /* ESP32-C3 无 PSRAM：BLE + SoftAP 并存时 WiFi 易分配不到 event beacon 缓冲
      *（日志: alloc eb len=752 fail → ieee80211_hostap_attach 崩溃）。仅使用 BLE 配网即可。 */
