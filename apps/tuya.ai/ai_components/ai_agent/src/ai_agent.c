@@ -231,8 +231,8 @@ OPERATE_RET ai_agent_init(void)
 
 #if defined(ENABLE_AI_MONITOR) && (ENABLE_AI_MONITOR == 1)
     ai_monitor_config_t monitor_cfg = AI_MONITOR_CFG_DEFAULT;
-    /* Monitor is a debug aid. On low-memory targets (e.g. ESP32-C3 no PSRAM),
-     * monitor init may fail and should not block core ai_agent startup. */
+    /* Monitor is a debug aid and must not block core ai_agent startup
+     * on low-memory targets like ESP32-C3 (no PSRAM). */
     rt = tuya_ai_monitor_init(&monitor_cfg);
     if (rt != OPRT_OK) {
         PR_WARN("ai monitor init failed: %d, continue without monitor", rt);
