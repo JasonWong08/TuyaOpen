@@ -337,10 +337,16 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
     };
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
     if (sg_offline_audio_inited) {
-        /* Offline alert path used standalone audio player. Deinit it before
-         * ai_chat_init() takes over audio modules. */
-        TUYA_CALL_ERR_LOG(ai_audio_player_deinit());
-        sg_offline_audio_inited = false;
+        /* Offline alert path used standalone audio player. Release it before
+         * ai_chat_init() takes over audio modules. If still busy, keep deferred
+         * mode and retry later instead of forcing a deinit/play race. */
+        rt = app_chat_bot_release_offline_audio();
+        if (rt != OPRT_OK) {
+            PR_WARN("postcloud_init: offline audio still busy, retry later rt=%d", rt);
+            __log_heap_snapshot("postcloud_init.defer_offline_audio_busy");
+            sg_postcloud_degraded = true;
+            goto postcloud_exit;
+        }
     }
 #endif
     __log_heap_snapshot("postcloud_init.before_ai_chat_init");
@@ -475,7 +481,11 @@ OPERATE_RET app_chat_bot_release_offline_audio(void)
             }
             tal_system_sleep(30);
         }
-        TUYA_CALL_ERR_LOG(rt);
+        if (rt != OPRT_OK) {
+            PR_WARN("offline audio recovery release deferred, rt=%d heap=%u", rt,
+                    (unsigned)tal_system_get_free_heap_size());
+            return rt;
+        }
         sg_offline_audio_inited = false;
         PR_NOTICE("offline audio recovery released, heap=%u", (unsigned)tal_system_get_free_heap_size());
     }

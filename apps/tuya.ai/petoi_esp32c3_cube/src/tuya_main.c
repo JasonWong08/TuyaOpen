@@ -51,6 +51,9 @@
 
 #include "app_chat_bot.h"
 #include "reset_netcfg.h"
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#include "ai_audio_player.h"
+#endif
 
 #if defined(ENABLE_BATTERY) && (ENABLE_BATTERY == 1)
 #include "app_battery.h"
@@ -324,7 +327,7 @@ static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
     }
 
     /* Retry path must free the lightweight offline prompt player first,
-     * otherwise largest block usually stays below ai_chat_init threshold. */
+     * and app layer now does race-safe deferred release when audio is busy. */
     TUYA_CALL_ERR_LOG(app_chat_bot_release_offline_audio());
     __log_heap_snapshot("postcloud_retry.before_postcloud_init");
     if (app_chat_bot_postcloud_init() != OPRT_OK) {
