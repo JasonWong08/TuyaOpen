@@ -4,7 +4,7 @@
  * @version 0.1
  * @date 2025-04-17
  *
- * @copyright Copyright (c) 2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2025-2026 Tuya Inc. All Rights Reserved.
  *
  * Permission is hereby granted, to any person obtaining a copy of this software and
  * associated documentation files (the "Software"), Under the premise of complying
@@ -272,4 +272,9 @@ AI_EVENT_CB tuya_ai_agent_get_evt_cb(void);
  * @return TRUE is ready, FALSE is not ready
  */
 BOOL_T tuya_ai_agent_is_ready(void);
+
+/**
+ * @brief Active cloud session with valid sid (safe for upload/event APIs).
+ */
+BOOL_T tuya_ai_agent_is_session_ready(void);
 #endif // __TUYA_AI_AGENT_H__

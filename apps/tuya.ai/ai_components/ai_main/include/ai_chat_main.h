@@ -6,7 +6,7 @@
  * which manages the overall AI chat functionality including mode configuration
  * and volume control.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  */
 
@@ -65,16 +65,14 @@ extern "C" {
 ************************macro define************************
 ***********************************************************/
 
-
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
 typedef struct {
-    AI_CHAT_MODE_E        default_mode;
-    int                   default_vol;
-    AI_USER_EVENT_NOTIFY  evt_cb;
-}AI_CHAT_MODE_CFG_T;
-
+    AI_CHAT_MODE_E       default_mode;
+    int                  default_vol;
+    AI_USER_EVENT_NOTIFY evt_cb;
+} AI_CHAT_MODE_CFG_T;
 
 /***********************************************************
 ********************function declaration********************
@@ -98,6 +96,11 @@ OPERATE_RET ai_chat_set_volume(int volume);
 @return int Volume value (0-100)
 */
 int ai_chat_get_volume(void);
+
+/**
+@brief Cloud voice path usable: MQTT up, agent inited, and valid AI session sid.
+*/
+BOOL_T ai_chat_is_cloud_talk_ready(void);
 
 #ifdef __cplusplus
 }

@@ -328,7 +328,9 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
 {
     PR_DEBUG("ai chat button event: %d", event);
     (void)name;
-    bool degraded_no_agent = (sg_mqtt_connected && !sg_ai_agent_inited && !sg_ai_agent_init_busy);
+    /* Treat "agent inited but no cloud session" like degraded: local prompts only,
+     * no invalid tuya_ai_agent_event uploads (e.g. after mq cfg timeout). */
+    bool degraded_no_agent = sg_mqtt_connected && !sg_ai_agent_init_busy && !ai_chat_is_cloud_talk_ready();
 
     if (TDL_BUTTON_PRESS_DOUBLE_CLICK == event) {
         if (degraded_no_agent) {
@@ -371,8 +373,15 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
 #endif
     }
 
-    if (degraded_no_agent && (TDL_BUTTON_PRESS_UP == event || TDL_BUTTON_PRESS_SINGLE_CLICK == event ||
-                              TDL_BUTTON_LONG_PRESS_START == event)) {
+    if (degraded_no_agent && TDL_BUTTON_PRESS_SINGLE_CLICK == event) {
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+        /* Short press often ends here without a reliable separate DOWN path; keep local cue. */
+        ai_audio_player_alert(AI_AUDIO_ALERT_WAKEUP);
+#endif
+        return;
+    }
+
+    if (degraded_no_agent && (TDL_BUTTON_PRESS_UP == event || TDL_BUTTON_LONG_PRESS_START == event)) {
         /* When cloud agent is not ready, suppress hold/upload path to avoid
          * invalid session uploads and noisy "event or session id was null". */
         return;
@@ -643,6 +652,15 @@ OPERATE_RET ai_chat_set_volume(int volume)
 #endif
 
     return rt;
+}
+
+/**
+@brief Cloud voice path usable (MQTT + agent inited + valid session sid).
+*/
+BOOL_T ai_chat_is_cloud_talk_ready(void)
+{
+    return (BOOL_T)(sg_mqtt_connected && sg_ai_agent_inited && !sg_ai_agent_init_busy &&
+                    tuya_ai_agent_is_session_ready());
 }
 
 /**

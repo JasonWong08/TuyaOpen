@@ -4,7 +4,7 @@
  * @version 0.1
  * @date 2025-04-17
  *
- * @copyright Copyright (c) 2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2025-2026 Tuya Inc. All Rights Reserved.
  *
  * Permission is hereby granted, to any person obtaining a copy of this software and
  * associated documentation files (the "Software"), Under the premise of complying
@@ -1416,6 +1416,10 @@ OPERATE_RET tuya_ai_agent_event(AI_EVENT_TYPE etype, AI_PACKET_PT ptype)
 #endif
     } else {
         PR_DEBUG("[upload event] type:%d", etype);
+        if (!tuya_ai_agent_is_session_ready()) {
+            PR_WARN("[upload event] skip type:%d (no active session/sid)", etype);
+            return OPRT_RESOURCE_NOT_READY;
+        }
         if (AI_EVENT_START == etype) {
             rt = __ai_event_start();
         } else if (AI_EVENT_PAYLOADS_END == etype) {
@@ -1521,4 +1525,17 @@ BOOL_T tuya_ai_agent_is_ready(void)
     } else {
         return tuya_ai_client_is_ready();
     }
+}
+
+BOOL_T tuya_ai_agent_is_session_ready(void)
+{
+    if (ai_agent_ctx.enable_joyinside) {
+#if defined(ENABLE_JOYINSIDE) && (ENABLE_JOYINSIDE == 1)
+        return joyinside_client_is_ready();
+#else
+        return FALSE;
+#endif
+    }
+    AI_AGENT_SESSION_T *session = __ai_agent_get_active_session();
+    return (session != NULL && session->sid[0] != '\0');
 }
