@@ -472,6 +472,13 @@ OPERATE_RET app_chat_bot_release_offline_audio(void)
     OPERATE_RET rt = OPRT_OK;
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
     if (sg_offline_audio_inited) {
+        /* Do not deinit while a local alert is still draining.
+         * This can race with player internals and corrupt queue/mutex state. */
+        if (ai_audio_player_is_playing()) {
+            PR_WARN("offline audio release skipped: player still busy");
+            return OPRT_COM_ERROR;
+        }
+
         /* Deinit may race with still-draining player queue right after alert EOF.
          * Retry briefly so SERVICE_DEINIT can be posted and resources are freed. */
         for (int i = 0; i < 3; i++) {

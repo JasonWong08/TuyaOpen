@@ -326,9 +326,24 @@ static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
         return;
     }
 
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    /* Avoid releasing/reinitializing offline player while a local alert is
+     * still draining; this can race with datasink/mutex internals. */
+    if (ai_audio_player_is_playing()) {
+        PR_NOTICE("post-cloud retry postponed: audio player busy");
+        __schedule_postcloud_retry();
+        return;
+    }
+#endif
+
     /* Retry path must free the lightweight offline prompt player first,
      * and app layer now does race-safe deferred release when audio is busy. */
-    TUYA_CALL_ERR_LOG(app_chat_bot_release_offline_audio());
+    rt = app_chat_bot_release_offline_audio();
+    if (rt != OPRT_OK) {
+        PR_NOTICE("post-cloud retry postponed: offline audio release deferred rt=%d", rt);
+        __schedule_postcloud_retry();
+        return;
+    }
     __log_heap_snapshot("postcloud_retry.before_postcloud_init");
     if (app_chat_bot_postcloud_init() != OPRT_OK) {
         PR_WARN("post-cloud retry: init returned error");
