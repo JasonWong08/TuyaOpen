@@ -274,7 +274,10 @@ static void __log_heap_snapshot(const char *stage)
 
 static bool __is_mqtt_connected_now(void)
 {
-    return (ai_client.status == TUYA_STATUS_MQTT_CONNECTED);
+    /* `tuya_iot.c` may promote MQTT status slightly after TUYA_EVENT_MQTT_CONNECTED.
+     * Treat "ever connected in this session" as connected for post-cloud retry,
+     * and stop retry only on explicit MQTT_DISCONNECT event. */
+    return (ai_client.status == TUYA_STATUS_MQTT_CONNECTED) || (sg_run_stats.mqtt_connected_count > 0);
 }
 
 static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg);
@@ -309,7 +312,7 @@ static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
     sg_postcloud_retry_scheduled = false;
 
     if (!__is_mqtt_connected_now()) {
-        PR_DEBUG("post-cloud retry skipped: mqtt disconnected");
+        PR_DEBUG("post-cloud retry skipped: mqtt not ready");
         return;
     }
 
@@ -318,6 +321,9 @@ static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
         return;
     }
 
+    /* Retry path must free the lightweight offline prompt player first,
+     * otherwise largest block usually stays below ai_chat_init threshold. */
+    TUYA_CALL_ERR_LOG(app_chat_bot_release_offline_audio());
     __log_heap_snapshot("postcloud_retry.before_postcloud_init");
     if (app_chat_bot_postcloud_init() != OPRT_OK) {
         PR_WARN("post-cloud retry: init returned error");
