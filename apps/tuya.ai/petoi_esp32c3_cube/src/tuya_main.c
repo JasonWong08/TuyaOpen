@@ -147,19 +147,33 @@ static void __ble_release_timer_cleanup(void)
 
 static void __ble_release_force_now(const char *reason)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET stop_rt   = OPRT_OK;
+    OPERATE_RET deinit_rt = OPRT_OK;
 
     if (sg_ble_released) {
         return;
     }
 
     PR_NOTICE("force BLE release: %s", reason ? reason : "unknown");
-    TUYA_CALL_ERR_LOG(netcfg_stop(NETCFG_TUYA_BLE));
+    stop_rt = netcfg_stop(NETCFG_TUYA_BLE);
+    if (stop_rt != OPRT_OK) {
+        PR_WARN("BLE force release: netcfg_stop failed: %d", stop_rt);
+    }
     tuya_ble_disconnect_current();
-    TUYA_CALL_ERR_LOG(tuya_ble_deinit());
+    deinit_rt = tuya_ble_deinit();
+    if (deinit_rt != OPRT_OK) {
+        /* Do not mark released on failure; caller may schedule retry. */
+        sg_ble_released          = false;
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        PR_WARN("BLE force release: deinit failed: %d", deinit_rt);
+        return;
+    }
+
     sg_ble_released          = true;
     sg_ble_release_scheduled = false;
     __ble_release_timer_cleanup();
+    PR_NOTICE("BLE force release done, heap=%d", tal_system_get_free_heap_size());
 }
 
 static void __ble_release_stage1_cb(TIMER_ID timer_id, void *arg)
@@ -194,7 +208,7 @@ static void __ble_release_stage1_cb(TIMER_ID timer_id, void *arg)
 
 static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET deinit_rt = OPRT_OK;
 
     (void)timer_id;
     (void)arg;
@@ -206,7 +220,13 @@ static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg)
     }
 
     PR_NOTICE("BLE release stage2: deinit BLE stack");
-    TUYA_CALL_ERR_LOG(tuya_ble_deinit());
+    deinit_rt = tuya_ble_deinit();
+    if (deinit_rt != OPRT_OK) {
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        PR_WARN("BLE release stage2 failed: %d", deinit_rt);
+        return;
+    }
     sg_ble_released          = true;
     sg_ble_release_scheduled = false;
     __ble_release_timer_cleanup();
@@ -363,7 +383,12 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             }
         }
 #if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
-        __schedule_ble_release_after_bind();
+        /* Token arrived: immediately quiet BLE to keep TLS handshake window clean.
+         * If immediate deinit fails, fallback to staged release retry. */
+        __ble_release_force_now("bind_token_immediate");
+        if (false == sg_ble_released) {
+            __schedule_ble_release_after_bind();
+        }
 #endif
         PR_NOTICE("Bind token received. waiting WiFi->TLS->MQTT");
         break;
