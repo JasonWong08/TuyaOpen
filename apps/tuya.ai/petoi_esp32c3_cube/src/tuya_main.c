@@ -306,6 +306,8 @@ static void __schedule_postcloud_retry(void)
 
 static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
 {
+    OPERATE_RET rt = OPRT_OK;
+
     (void)timer_id;
     (void)arg;
 
