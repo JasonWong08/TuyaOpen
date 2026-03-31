@@ -28,8 +28,10 @@
 #define POSTCLOUD_INIT_HEAP_MIN (20 * 1024)
 /* Audio-priority mode:
  * prioritize full AI audio chain after MQTT if memory allows. */
-#define POSTCLOUD_AUDIO_INIT_HEAP_MIN    (32 * 1024)
-#define POSTCLOUD_AUDIO_LARGEST_HEAP_MIN (20 * 1024)
+#define POSTCLOUD_AUDIO_INIT_HEAP_MIN (32 * 1024)
+/* On C3 field logs, post-BLE-release largest block often stabilizes around 15KB.
+ * Keep this gate low enough so ai_chat_init can start and register Boot key path. */
+#define POSTCLOUD_AUDIO_LARGEST_HEAP_MIN (15 * 1024)
 
 /***********************************************************
 ***********************typedef define***********************
