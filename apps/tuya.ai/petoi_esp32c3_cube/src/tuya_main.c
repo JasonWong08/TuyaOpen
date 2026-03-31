@@ -443,6 +443,18 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 #endif
             if (app_chat_bot_is_ready()) {
                 ai_audio_volume_upload();
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+            } else {
+                /* In degraded path, AI chat mode may be deferred by heap fragmentation.
+                 * Play "network connected" prompt via lightweight offline player so
+                 * users still get bind-success voice feedback. */
+                OPERATE_RET alert_rt =
+                    app_chat_bot_try_recover_audio_alert(24 * 1024, AI_AUDIO_ALERT_NETWORK_CONNECTED);
+                if (alert_rt != OPRT_OK) {
+                    PR_WARN("skip mqtt-connected alert in degraded mode, rt=%d heap=%d", alert_rt,
+                            tal_system_get_free_heap_size());
+                }
+#endif
             }
         }
         break;
