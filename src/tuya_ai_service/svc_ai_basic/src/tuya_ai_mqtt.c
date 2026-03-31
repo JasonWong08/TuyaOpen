@@ -5,7 +5,7 @@
  * @version 0.1
  * @date 2025-05-17
  *
- * @copyright Copyright (c) 2023 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2023-2026 Tuya Inc. All Rights Reserved.
  *
  * Permission is hereby granted, to any person obtaining a copy of this software and
  * associated documentation files (the "Software"), Under the premise of complying
@@ -148,7 +148,8 @@ OPERATE_RET tuya_ai_mq_ser_cfg_req(VOID)
     }
     memset(ai_mqtt_ctx->biz_id, 0, SIZEOF(ai_mqtt_ctx->biz_id));
     memcpy(ai_mqtt_ctx->biz_id, biz_id, AI_UUID_V4_LEN);
-    rt = tal_semaphore_wait(ai_mqtt_ctx->sem, AI_SEM_ACK_TIMEOUT);
+    ai_mqtt_ctx->biz_id[SIZEOF(ai_mqtt_ctx->biz_id) - 1] = '\0';
+    rt                                                   = tal_semaphore_wait(ai_mqtt_ctx->sem, AI_SEM_ACK_TIMEOUT);
     if (rt != OPRT_OK) {
         PR_ERR("mq ser cfg ack timeout %d", rt);
     } else {
@@ -189,6 +190,7 @@ OPERATE_RET tuya_ai_mq_token_req(char *solution_code, AI_AGENT_TOKEN_INFO_T *age
     }
     memset(ai_mqtt_ctx->biz_id, 0, SIZEOF(ai_mqtt_ctx->biz_id));
     memcpy(ai_mqtt_ctx->biz_id, biz_id, AI_UUID_V4_LEN);
+    ai_mqtt_ctx->biz_id[SIZEOF(ai_mqtt_ctx->biz_id) - 1] = '\0';
     rt = tal_semaphore_wait(ai_mqtt_ctx->sem, AI_SEM_ACK_TIMEOUT);
     if (rt != OPRT_OK) {
         PR_ERR("mq token ack timeout %d", rt);
@@ -381,21 +383,33 @@ OPERATE_RET tuya_ai_atop_ser_cfg_req(VOID)
 
 STATIC BOOL_T __ai_mq_is_biz_id_vaild(ty_cJSON *bizId)
 {
-    if (bizId && memcmp(bizId->valuestring, ai_mqtt_ctx->biz_id, AI_UUID_V4_LEN) == 0) {
-        memset(ai_mqtt_ctx->biz_id, 0, SIZEOF(ai_mqtt_ctx->biz_id));
-        return TRUE;
+    /* Cloud bizId is a standard UUID string (36 chars + '\0'). Do not memcmp()
+     * AI_UUID_V4_LEN (38) bytes: that reads past the JSON string terminator and
+     * can spuriously fail matching, leaving tal_semaphore_wait() to time out. */
+    if (!bizId || !bizId->valuestring) {
+        PR_ERR("bizId is null");
+        return FALSE;
     }
-    PR_ERR("bizId is not match, bizId:%s, ctx bizId:%s", bizId ? bizId->valuestring : "null", ai_mqtt_ctx->biz_id);
-    return FALSE;
+    if (ai_mqtt_ctx->biz_id[0] == '\0') {
+        PR_ERR("ctx bizId empty");
+        return FALSE;
+    }
+    if (strcmp(bizId->valuestring, ai_mqtt_ctx->biz_id) != 0) {
+        PR_ERR("bizId is not match, bizId:%s, ctx bizId:%s", bizId->valuestring, ai_mqtt_ctx->biz_id);
+        return FALSE;
+    }
+    memset(ai_mqtt_ctx->biz_id, 0, SIZEOF(ai_mqtt_ctx->biz_id));
+    return TRUE;
 }
 
 STATIC OPERATE_RET __ai_mq_do_ser_cfg(ty_cJSON *root)
 {
-    OPERATE_RET rt = OPRT_OK;
-    ty_cJSON *data = NULL, *success = NULL, *errorCode = NULL;
+    OPERATE_RET rt   = OPRT_OK;
+    ty_cJSON   *data = NULL, *success = NULL, *errorCode = NULL;
     if ((success = ty_cJSON_GetObjectItem(root, "success")) == NULL) {
         PR_ERR("server info success was null");
-        return OPRT_CJSON_PARSE_ERR;
+        rt = OPRT_CJSON_PARSE_ERR;
+        goto finish;
     }
     if (success->type == ty_cJSON_False) {
         PR_ERR("success was false");
@@ -403,14 +417,17 @@ STATIC OPERATE_RET __ai_mq_do_ser_cfg(ty_cJSON *root)
         if (errorCode && (strlen(errorCode->valuestring) > 0)) {
             PR_NOTICE("errorCode: %s", errorCode->valuestring);
         }
-        return OPRT_CJSON_PARSE_ERR;
+        rt = OPRT_CJSON_PARSE_ERR;
+        goto finish;
     }
     if ((data = ty_cJSON_GetObjectItem(root, "data")) == NULL) {
         PR_ERR("server info data was null");
-        return OPRT_CJSON_PARSE_ERR;
+        rt = OPRT_CJSON_PARSE_ERR;
+        goto finish;
     }
 
     rt = __ai_mq_parse_ser_cfg(data);
+finish:
     tal_semaphore_post(ai_mqtt_ctx->sem);
     return rt;
 }
@@ -426,10 +443,10 @@ STATIC OPERATE_RET __ai_mq_parse_biz_cfg(ty_cJSON *root, BOOL_T is_send)
     char *value = NULL;
     if (is_send) {
         ai_mqtt_ctx->agent.biz.send_num = size;
-        value = ai_mqtt_ctx->agent.biz.send;
+        value                           = ai_mqtt_ctx->agent.biz.send;
     } else {
         ai_mqtt_ctx->agent.biz.recv_num = size;
-        value = ai_mqtt_ctx->agent.biz.recv;
+        value                           = ai_mqtt_ctx->agent.biz.recv;
     }
     for (idx = 0; idx < size; idx++) {
         ty_cJSON *item = ty_cJSON_GetArrayItem(root, idx);
@@ -455,17 +472,17 @@ STATIC OPERATE_RET __ai_mq_parse_biz_cfg(ty_cJSON *root, BOOL_T is_send)
 
 STATIC OPERATE_RET __ai_mq_parse_agent_token(ty_cJSON *root)
 {
-    OPERATE_RET rt = OPRT_OK;
-    ty_cJSON *token = NULL, *biz_cfg = NULL;
-    token = ty_cJSON_GetObjectItem(root, "agentToken");
+    OPERATE_RET rt    = OPRT_OK;
+    ty_cJSON   *token = NULL, *biz_cfg = NULL;
+    token   = ty_cJSON_GetObjectItem(root, "agentToken");
     biz_cfg = ty_cJSON_GetObjectItem(root, "bizConfig");
     if (!token || !biz_cfg) {
         PR_ERR("agent token info was null");
         return OPRT_CJSON_PARSE_ERR;
     }
     ty_cJSON *bizcode = ty_cJSON_GetObjectItem(biz_cfg, "bizCode");
-    ty_cJSON *send = ty_cJSON_GetObjectItem(biz_cfg, "sendData");
-    ty_cJSON *recv = ty_cJSON_GetObjectItem(biz_cfg, "revData");
+    ty_cJSON *send    = ty_cJSON_GetObjectItem(biz_cfg, "sendData");
+    ty_cJSON *recv    = ty_cJSON_GetObjectItem(biz_cfg, "revData");
     if (!bizcode || !send || !recv) {
         PR_ERR("agent bizcode was null");
         return OPRT_CJSON_PARSE_ERR;
@@ -477,15 +494,15 @@ STATIC OPERATE_RET __ai_mq_parse_agent_token(ty_cJSON *root)
     memset(ai_mqtt_ctx->agent.token, 0, AI_AGENT_TOKEN_LEN);
     memcpy(ai_mqtt_ctx->agent.token, token->valuestring, strlen(token->valuestring));
     ai_mqtt_ctx->agent.biz.code = bizcode->valueint;
-    rt = __ai_mq_parse_biz_cfg(send, TRUE);
+    rt                          = __ai_mq_parse_biz_cfg(send, TRUE);
     rt += __ai_mq_parse_biz_cfg(recv, FALSE);
     return rt;
 }
 
 STATIC OPERATE_RET __ai_mq_do_agent_token(ty_cJSON *root)
 {
-    OPERATE_RET rt = OPRT_OK;
-    ty_cJSON *data = NULL, *success = NULL, *errorCode = NULL;
+    OPERATE_RET rt   = OPRT_OK;
+    ty_cJSON   *data = NULL, *success = NULL, *errorCode = NULL;
     if ((success = ty_cJSON_GetObjectItem(root, "success")) == NULL) {
         PR_ERR("token success was null");
         return OPRT_CJSON_PARSE_ERR;
@@ -522,8 +539,8 @@ STATIC OPERATE_RET __ai_mq_do_agent_token(ty_cJSON *root)
 
 STATIC OPERATE_RET __ai_mq_handle(ty_cJSON *root)
 {
-    OPERATE_RET rt = OPRT_OK;
-    ty_cJSON *data = NULL, *biz_type = NULL, *type = NULL, *bizId = NULL;
+    OPERATE_RET rt   = OPRT_OK;
+    ty_cJSON   *data = NULL, *biz_type = NULL, *type = NULL, *bizId = NULL;
     AI_PROTO_D("recv ai mqtt msg");
     if ((data = ty_cJSON_GetObjectItem(root, "data")) == NULL) {
         PR_ERR("no 0 data");
@@ -556,10 +573,17 @@ STATIC OPERATE_RET __ai_mq_handle(ty_cJSON *root)
         } else if (strcmp(type->valuestring, "cloudReturnServerInfo") == 0) {
             if (__ai_mq_is_biz_id_vaild(bizId)) {
                 rt = __ai_mq_do_ser_cfg(data);
+            } else if (ai_mqtt_ctx->sem) {
+                /* Unblock tuya_ai_mq_ser_cfg_req waiter; caller validates cfg. */
+                tal_semaphore_post(ai_mqtt_ctx->sem);
+                rt = OPRT_COM_ERROR;
             }
         } else if (strcmp(type->valuestring, "cloudReturnAgentToken") == 0) {
             if (__ai_mq_is_biz_id_vaild(bizId)) {
                 rt = __ai_mq_do_agent_token(data);
+            } else if (ai_mqtt_ctx->sem) {
+                tal_semaphore_post(ai_mqtt_ctx->sem);
+                rt = OPRT_COM_ERROR;
             }
         }
     } else {

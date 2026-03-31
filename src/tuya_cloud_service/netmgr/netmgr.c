@@ -20,7 +20,7 @@
  * maintain a stable and reliable connection to the Tuya cloud services,
  * facilitating device control and data exchange.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  * 2025-07-11   yangjie     Refactored network manager to support management of multiple network connection types
  *
@@ -32,13 +32,6 @@
 #include "tuya_cloud_com_defs.h"
 #include "tuya_error_code.h"
 #include "tuya_lan.h"
-
-#ifdef PLATFORM_ESP32
-extern size_t heap_caps_get_largest_free_block(uint32_t caps);
-#ifndef MALLOC_CAP_8BIT
-#define MALLOC_CAP_8BIT 0x00000008U
-#endif
-#endif
 
 #ifdef ENABLE_WIFI
 #include "netconn_wifi.h"
@@ -123,34 +116,23 @@ void __tuya_lan_init_tm_cb(TIMER_ID timer_id, void *arg)
     if ((type & NETCONN_WIRED || type & NETCONN_WIFI) && client->is_activated) {
 #if OPERATING_SYSTEM <= SYSTEM_SMALL_MEMORY_END
         /* On small-memory targets (e.g. ESP32-C3), LAN sockets can steal heap
-         * from MQTT TLS setup and cause mbedtls_ssl_setup allocation failures.
-         * Defer LAN until MQTT is already online and heap is comfortable.
-         *
-         * C3 field logs show LAN startup around ~56-62KB free can still trip
-         * allocator asserts under BLE->MQTT transition pressure, so keep a
-         * higher margin and reject fragmented windows as well. */
+         * from MQTT TLS setup. Defer LAN until device MQTT is up and a modest
+         * free-heap margin exists (see threshold below). */
         uint32_t free_heap = tal_system_get_free_heap_size();
-#ifdef PLATFORM_ESP32
-        size_t largest_heap = 0;
-#endif
         if (false == client->mqctx.is_connected) {
             PR_DEBUG("Defer LAN init until MQTT connected");
             return;
         }
 
-        if (free_heap < (72 * 1024)) {
+        /* 72KB was unreachable on ESP32-C3 (no PSRAM): LAN never started and logs
+         * suggested false "memory crisis" while the real AI path starved. Use a
+         * smaller free-heap gate only; avoid heap_caps_get_largest_free_block() here
+         * (contention/corruption risk on tiny heaps, see AI chat hot-path policy). */
+        if (free_heap < (28 * 1024)) {
             PR_WARN("Defer LAN init due low heap: %u", (unsigned)free_heap);
             return;
         }
 
-#ifdef PLATFORM_ESP32
-        largest_heap = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        if (largest_heap < (20 * 1024)) {
-            PR_WARN("Defer LAN init due fragmented heap: free=%u largest=%u", (unsigned)free_heap,
-                    (unsigned)largest_heap);
-            return;
-        }
-#endif
 #endif
         PR_DEBUG("Start LAN initialization");
         tuya_lan_init(client);
