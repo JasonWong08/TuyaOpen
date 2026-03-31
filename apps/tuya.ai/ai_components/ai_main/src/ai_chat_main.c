@@ -331,6 +331,11 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
     bool degraded_no_agent = (sg_mqtt_connected && !sg_ai_agent_inited && !sg_ai_agent_init_busy);
 
     if (TDL_BUTTON_PRESS_DOUBLE_CLICK == event) {
+        if (degraded_no_agent) {
+            /* In degraded/no-session state, swallow double-click break to avoid
+             * "event or session id was null" from AI_EVENT_CHAT_BREAK upload path. */
+            return;
+        }
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         ai_audio_player_stop(AI_AUDIO_PLAYER_ALL);
 #endif
