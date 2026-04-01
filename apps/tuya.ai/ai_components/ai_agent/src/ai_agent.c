@@ -230,11 +230,6 @@ OPERATE_RET ai_agent_init(void)
         tal_event_subscribe(EVENT_AI_CLIENT_RUN, "agent_session_init", session_init_cb, SUBSCRIBE_TYPE_NORMAL));
 
 #if defined(ENABLE_AI_MONITOR) && (ENABLE_AI_MONITOR == 1)
-#if defined(PLATFORM_ESP32) && defined(CONFIG_IDF_TARGET_ESP32C3)
-    /* ESP32-C3 (no PSRAM): monitor path allocates extra socket/thread state and
-     * can collapse heap during AI connect/TLS windows. Keep monitor disabled. */
-    PR_NOTICE("ai monitor disabled on ESP32-C3");
-#else
     ai_monitor_config_t monitor_cfg = AI_MONITOR_CFG_DEFAULT;
     /* Monitor is a debug aid and must not block core ai_agent startup
      * on low-memory targets like ESP32-C3 (no PSRAM). */
@@ -243,7 +238,6 @@ OPERATE_RET ai_agent_init(void)
         PR_WARN("ai monitor init failed: %d, continue without monitor", rt);
         rt = OPRT_OK;
     }
-#endif
 #endif
 
     return rt;
