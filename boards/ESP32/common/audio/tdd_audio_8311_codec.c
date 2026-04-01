@@ -58,6 +58,7 @@ static int                          input_sample_rate_  = 0;
 static int                          output_sample_rate_ = 0;
 static int                          output_volume_      = 0;
 static gpio_num_t                   pa_pin_             = 0;
+static bool                         pa_inverted_        = false;
 static i2c_master_bus_handle_t      codec_i2c_bus_      = NULL;
 static const audio_codec_data_if_t *data_if_            = NULL;
 static const audio_codec_ctrl_if_t *ctrl_if_            = NULL;
@@ -65,6 +66,24 @@ static const audio_codec_gpio_if_t *gpio_if_            = NULL;
 static const audio_codec_if_t      *codec_if_           = NULL;
 static esp_codec_dev_handle_t       output_dev_         = NULL;
 static esp_codec_dev_handle_t       input_dev_          = NULL;
+
+static void __codec_configure_pa_gpio(gpio_num_t pin)
+{
+    if (pin == GPIO_NUM_NC) {
+        return;
+    }
+    gpio_config_t io = {
+        .pin_bit_mask = (1ULL << (unsigned)pin),
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    esp_err_t e = gpio_config(&io);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "PA gpio_config pin=%d err=%s", (int)pin, esp_err_to_name(e));
+    }
+}
 
 #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3)
 extern size_t heap_caps_get_free_size(uint32_t caps);
@@ -149,8 +168,14 @@ static void SetOutputVolume(int volume)
 
 static void EnableOutput(bool enable)
 {
+    int pa_level = enable ? 1 : 0;
+    if (pa_inverted_) {
+        pa_level = !pa_level;
+    }
+
     if (enable) {
-        // Play 16bit 1 channel
+        /* Mono PCM from ai_player matches channel=1; opening as 2ch without doubling
+         * samples can yield inaudible output on esp_codec_dev_write paths. */
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = SAMPLE_DATABITS,
             .channel         = 1,
@@ -158,15 +183,18 @@ static void EnableOutput(bool enable)
             .sample_rate     = (uint32_t)output_sample_rate_,
             .mclk_multiple   = 0,
         };
+        PR_NOTICE("[codec-out] open sample_rate=%d bits=%d channel=%d mask=%d vol=%d pa_pin=%d", output_sample_rate_,
+                  SAMPLE_DATABITS, fs.channel, fs.channel_mask, output_volume_, (int)pa_pin_);
         ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
         if (pa_pin_ != GPIO_NUM_NC) {
-            gpio_set_level(pa_pin_, 1);
+            __codec_configure_pa_gpio(pa_pin_);
+            gpio_set_level(pa_pin_, pa_level);
         }
     } else {
         ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
         if (pa_pin_ != GPIO_NUM_NC) {
-            gpio_set_level(pa_pin_, 0);
+            gpio_set_level(pa_pin_, pa_level);
         }
     }
 }
@@ -201,11 +229,15 @@ static void CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws
                                     },
                                 .slot_cfg = {.data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
                                              .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+                                             .slot_mode = I2S_SLOT_MODE_MONO,
+#else
                                              .slot_mode      = I2S_SLOT_MODE_STEREO,
-                                             .slot_mask      = I2S_STD_SLOT_BOTH,
-                                             .ws_width       = I2S_DATA_BIT_WIDTH_16BIT,
-                                             .ws_pol         = false,
-                                             .bit_shift      = true,
+#endif
+                                             .slot_mask = I2S_STD_SLOT_BOTH,
+                                             .ws_width  = I2S_DATA_BIT_WIDTH_16BIT,
+                                             .ws_pol    = false,
+                                             .bit_shift = true,
 #ifdef I2S_HW_VERSION_2
                                              .left_align    = true,
                                              .big_endian    = false,
@@ -233,10 +265,25 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     void       *i2c_master_handle = NULL;
     i2c_port_t  i2c_port          = (i2c_port_t)(i2s_config->i2c_id);
     uint8_t     es8311_addr       = i2s_config->es8311_addr;
-    pa_pin_                       = i2s_config->gpio_output_pa;
-    input_sample_rate_            = i2s_config->mic_sample_rate;
-    output_sample_rate_           = i2s_config->spk_sample_rate;
-    output_volume_                = i2s_config->default_volume;
+
+    /* Re-open without teardown used to call i2s_new_channel again on static handles,
+     * stressing TLSF and risking block_trim_free asserts under low heap. */
+    if (output_dev_ != NULL) {
+        PR_NOTICE("codec_8311_init: idempotent skip (output_dev already created)");
+        return OPRT_OK;
+    }
+    /* If a prior attempt created I2S but failed before output_dev_, a second pass
+     * would call i2s_new_channel again on leaked handles — TLSF corruption. */
+    if (tx_handle_ != NULL || rx_handle_ != NULL) {
+        PR_ERR("codec_8311_init: refuse duplicate init (partial I2S state)");
+        return OPRT_COM_ERROR;
+    }
+
+    pa_pin_             = i2s_config->gpio_output_pa;
+    pa_inverted_        = (i2s_config->pa_output_invert != 0);
+    input_sample_rate_  = i2s_config->mic_sample_rate;
+    output_sample_rate_ = i2s_config->spk_sample_rate;
+    output_volume_      = i2s_config->default_volume;
     __codec_heap_snapshot("codec_8311_init.entry");
     PR_NOTICE("[codec-cfg] i2c_id=%d i2s_id=%d sample_in=%d sample_out=%d volume=%d desc_num=%u frame_num=%u",
               i2s_config->i2c_id, i2s_config->i2s_id, i2s_config->mic_sample_rate, i2s_config->spk_sample_rate,
@@ -288,6 +335,7 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     es8311_cfg.use_mclk                  = ((i2s_config->i2s_mck_io != -1) ? true : false);
     es8311_cfg.hw_gain.pa_voltage        = 5.0;
     es8311_cfg.hw_gain.codec_dac_voltage = 3.3;
+    es8311_cfg.pa_reverted               = pa_inverted_;
     codec_if_                            = es8311_codec_new(&es8311_cfg);
     assert(codec_if_ != NULL);
 
@@ -379,11 +427,20 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
 
     hdl->mic_cb = mic_cb;
 
+    if (hdl->thrd_hdl != NULL) {
+        PR_NOTICE("I2S8311: idempotent open (read task exists), mic_cb updated");
+        return OPRT_OK;
+    }
+
     TDD_AUDIO_8311_CODEC_T *tdd_i2s_cfg = &hdl->cfg;
 
     hdl->i2s_id = TUYA_I2S_NUM_0;
 
-    codec_8311_init(hdl->i2s_id, tdd_i2s_cfg);
+    rt = codec_8311_init(hdl->i2s_id, tdd_i2s_cfg);
+    if (rt != OPRT_OK) {
+        PR_ERR("codec_8311_init failed: %d", rt);
+        return rt;
+    }
 
     PR_NOTICE("I2S 8311 channels created");
 
@@ -427,7 +484,14 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_play(TDD_AUDIO_HANDLE_T handle, uint
     ESP_I2S_8311_HANDLE_T *hdl = (ESP_I2S_8311_HANDLE_T *)handle;
 
     TUYA_CHECK_NULL_RETURN(hdl, OPRT_COM_ERROR);
-    TUYA_CHECK_NULL_RETURN(hdl->mutex_play, OPRT_COM_ERROR);
+    if (NULL == hdl->mutex_play) {
+        PR_WARN("I2S8311: play before open completed, try reopen");
+        rt = __tdd_audio_esp_i2s_8311_open(handle, hdl->mic_cb);
+        if (rt != OPRT_OK || NULL == hdl->mutex_play) {
+            PR_ERR("I2S8311: reopen failed rt=%d", rt);
+            return OPRT_COM_ERROR;
+        }
+    }
 
     if (NULL == data || len == 0) {
         PR_ERR("I2S 8311 play data is NULL");

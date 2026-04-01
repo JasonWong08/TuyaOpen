@@ -19,7 +19,7 @@
  *     when an active session starts, and freed on session end (handled by
  *     ai_components — see app_chat_bot.h for the session lifecycle hooks).
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
 #include "tuya_cloud_types.h"
@@ -51,6 +51,9 @@
 
 #include "app_chat_bot.h"
 #include "reset_netcfg.h"
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#include "ai_audio_player.h"
+#endif
 
 #if defined(ENABLE_BATTERY) && (ENABLE_BATTERY == 1)
 #include "app_battery.h"
@@ -88,12 +91,20 @@ tuya_iot_license_t license;
  * heap is in the 40~70KB range, otherwise mbedtls_ssl_setup may fail. */
 #define OFFLINE_UI_RECOVER_HEAP_MIN    (96 * 1024)
 #define OFFLINE_AUDIO_RECOVER_HEAP_MIN (72 * 1024)
+#define POSTCLOUD_RETRY_INTERVAL_MS    (2000)
 
 static uint8_t  _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
-static bool     sg_cloud_ready            = false;
-static bool     sg_using_fallback_license = false;
-static bool     sg_ble_released           = false;
+static bool     sg_cloud_ready               = false;
+static bool     sg_using_fallback_license    = false;
+static bool     sg_ble_released              = false;
+static bool     sg_ble_release_scheduled     = false;
+static bool     sg_postcloud_retry_scheduled = false;
+static TIMER_ID sg_postcloud_retry_tm        = NULL;
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+static TIMER_ID sg_ble_release_stage1_tm = NULL;
+static TIMER_ID sg_ble_release_stage2_tm = NULL;
+#endif
 
 #ifdef PLATFORM_ESP32
 extern size_t heap_caps_get_free_size(uint32_t caps);
@@ -116,6 +127,141 @@ typedef struct {
 
 static PETOI_RUN_STATS_T sg_run_stats = {0};
 
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+/* Stage BLE teardown around bind token:
+ * 1) stop netcfg/disconnect first, 2) deinit BLE later.
+ * This keeps TLS handshake window cleaner on C3 low-heap path. */
+#define BLE_RELEASE_STAGE1_DELAY_MS (150)
+#define BLE_RELEASE_STAGE2_DELAY_MS (600)
+
+static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg);
+
+static void __ble_release_timer_cleanup(void)
+{
+    if (sg_ble_release_stage1_tm) {
+        tal_sw_timer_stop(sg_ble_release_stage1_tm);
+        tal_sw_timer_delete(sg_ble_release_stage1_tm);
+        sg_ble_release_stage1_tm = NULL;
+    }
+
+    if (sg_ble_release_stage2_tm) {
+        tal_sw_timer_stop(sg_ble_release_stage2_tm);
+        tal_sw_timer_delete(sg_ble_release_stage2_tm);
+        sg_ble_release_stage2_tm = NULL;
+    }
+}
+
+static void __ble_release_force_now(const char *reason)
+{
+    OPERATE_RET stop_rt   = OPRT_OK;
+    OPERATE_RET deinit_rt = OPRT_OK;
+
+    if (sg_ble_released) {
+        return;
+    }
+
+    PR_NOTICE("force BLE release: %s", reason ? reason : "unknown");
+    stop_rt = netcfg_stop(NETCFG_TUYA_BLE);
+    if (stop_rt != OPRT_OK) {
+        PR_WARN("BLE force release: netcfg_stop failed: %d", stop_rt);
+    }
+    tuya_ble_disconnect_current();
+    deinit_rt = tuya_ble_deinit();
+    if (deinit_rt != OPRT_OK) {
+        /* Do not mark released on failure; caller may schedule retry. */
+        sg_ble_released          = false;
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        PR_WARN("BLE force release: deinit failed: %d", deinit_rt);
+        return;
+    }
+
+    sg_ble_released          = true;
+    sg_ble_release_scheduled = false;
+    __ble_release_timer_cleanup();
+    PR_NOTICE("BLE force release done, heap=%d", tal_system_get_free_heap_size());
+}
+
+static void __ble_release_stage1_cb(TIMER_ID timer_id, void *arg)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    (void)timer_id;
+    (void)arg;
+
+    if (sg_ble_released) {
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        return;
+    }
+
+    PR_NOTICE("BLE release stage1: stop netcfg + disconnect peer");
+    TUYA_CALL_ERR_LOG(netcfg_stop(NETCFG_TUYA_BLE));
+    tuya_ble_disconnect_current();
+
+    if (sg_ble_release_stage2_tm == NULL) {
+        if (tal_sw_timer_create(__ble_release_stage2_cb, NULL, &sg_ble_release_stage2_tm) != OPRT_OK) {
+            __ble_release_force_now("stage2 timer create failed");
+            return;
+        }
+    }
+
+    if (tal_sw_timer_start(sg_ble_release_stage2_tm, BLE_RELEASE_STAGE2_DELAY_MS, TAL_TIMER_ONCE) != OPRT_OK) {
+        __ble_release_force_now("stage2 timer start failed");
+        return;
+    }
+}
+
+static void __ble_release_stage2_cb(TIMER_ID timer_id, void *arg)
+{
+    OPERATE_RET deinit_rt = OPRT_OK;
+
+    (void)timer_id;
+    (void)arg;
+
+    if (sg_ble_released) {
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        return;
+    }
+
+    PR_NOTICE("BLE release stage2: deinit BLE stack");
+    deinit_rt = tuya_ble_deinit();
+    if (deinit_rt != OPRT_OK) {
+        sg_ble_release_scheduled = false;
+        __ble_release_timer_cleanup();
+        PR_WARN("BLE release stage2 failed: %d", deinit_rt);
+        return;
+    }
+    sg_ble_released          = true;
+    sg_ble_release_scheduled = false;
+    __ble_release_timer_cleanup();
+}
+
+static void __schedule_ble_release_after_bind(void)
+{
+    if (sg_ble_released || sg_ble_release_scheduled) {
+        return;
+    }
+
+    if (sg_ble_release_stage1_tm == NULL) {
+        if (tal_sw_timer_create(__ble_release_stage1_cb, NULL, &sg_ble_release_stage1_tm) != OPRT_OK) {
+            __ble_release_force_now("stage1 timer create failed");
+            return;
+        }
+    }
+
+    if (tal_sw_timer_start(sg_ble_release_stage1_tm, BLE_RELEASE_STAGE1_DELAY_MS, TAL_TIMER_ONCE) != OPRT_OK) {
+        __ble_release_force_now("stage1 timer start failed");
+        return;
+    }
+
+    sg_ble_release_scheduled = true;
+    PR_NOTICE("BLE release scheduled: stage1=%dms stage2=%dms", BLE_RELEASE_STAGE1_DELAY_MS,
+              BLE_RELEASE_STAGE2_DELAY_MS);
+}
+#endif
+
 static void __log_heap_snapshot(const char *stage)
 {
 #ifdef PLATFORM_ESP32
@@ -127,6 +273,93 @@ static void __log_heap_snapshot(const char *stage)
 #else
     PR_NOTICE("[heap-snap] %s free=%d", stage ? stage : "unknown", tal_system_get_free_heap_size());
 #endif
+}
+
+static bool __is_mqtt_connected_now(void)
+{
+    /* `tuya_iot.c` may promote MQTT status slightly after TUYA_EVENT_MQTT_CONNECTED.
+     * Treat "ever connected in this session" as connected for post-cloud retry,
+     * and stop retry only on explicit MQTT_DISCONNECT event. */
+    return (ai_client.status == TUYA_STATUS_MQTT_CONNECTED) || (sg_run_stats.mqtt_connected_count > 0);
+}
+
+static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg);
+
+static void __schedule_postcloud_retry(void)
+{
+    if (sg_postcloud_retry_scheduled) {
+        return;
+    }
+
+    if (sg_postcloud_retry_tm == NULL) {
+        if (tal_sw_timer_create(__postcloud_retry_tm_cb, NULL, &sg_postcloud_retry_tm) != OPRT_OK) {
+            PR_WARN("post-cloud retry: timer create failed");
+            return;
+        }
+    }
+
+    if (tal_sw_timer_start(sg_postcloud_retry_tm, POSTCLOUD_RETRY_INTERVAL_MS, TAL_TIMER_ONCE) != OPRT_OK) {
+        PR_WARN("post-cloud retry: timer start failed");
+        return;
+    }
+
+    sg_postcloud_retry_scheduled = true;
+    PR_NOTICE("post-cloud retry scheduled in %d ms", POSTCLOUD_RETRY_INTERVAL_MS);
+}
+
+static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    (void)timer_id;
+    (void)arg;
+
+    sg_postcloud_retry_scheduled = false;
+
+    if (!__is_mqtt_connected_now()) {
+        PR_DEBUG("post-cloud retry skipped: mqtt not ready");
+        return;
+    }
+
+    if (app_chat_bot_is_postcloud_inited()) {
+        sg_cloud_ready = true;
+        return;
+    }
+
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    /* Avoid releasing/reinitializing offline player while a local alert is
+     * still draining; this can race with datasink/mutex internals. */
+    if (ai_audio_player_is_playing()) {
+        PR_NOTICE("post-cloud retry postponed: audio player busy");
+        __schedule_postcloud_retry();
+        return;
+    }
+#endif
+
+    /* Retry path must free the lightweight offline prompt player first,
+     * and app layer now does race-safe deferred release when audio is busy. */
+    rt = app_chat_bot_release_offline_audio();
+    if (rt != OPRT_OK) {
+        PR_NOTICE("post-cloud retry postponed: offline audio release deferred rt=%d", rt);
+        __schedule_postcloud_retry();
+        return;
+    }
+    __log_heap_snapshot("postcloud_retry.before_postcloud_init");
+    if (app_chat_bot_postcloud_init() != OPRT_OK) {
+        PR_WARN("post-cloud retry: init returned error");
+    }
+
+    if (app_chat_bot_is_postcloud_inited()) {
+        sg_cloud_ready = true;
+        PR_NOTICE("Post-cloud app init recovered, heap=%d", tal_system_get_free_heap_size());
+        __log_heap_snapshot("postcloud_retry.after_postcloud_init");
+        /* Re-publish after ai_chat_init subscribes EVENT_MQTT_CONNECTED. */
+        tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
+        return;
+    }
+
+    PR_NOTICE("post-cloud init still deferred, heap=%d", tal_system_get_free_heap_size());
+    __schedule_postcloud_retry();
 }
 
 void user_log_output_cb(const char *str)
@@ -208,15 +441,18 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         }
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        /* On ESP32-C3 (no PSRAM) bind-time heap is very tight (~9-10KB).
-         * Starting TTS alert here can consume almost all remaining heap and
-         * starve BLE netcfg + first LVGL text render. */
+        /* Play bind-start prompt via lightweight offline path so first boot can
+         * still have voice feedback even when full post-cloud chain is not ready.
+         * The offline player is released at BIND_TOKEN_ON before TLS heavy path. */
         {
             int bind_heap = tal_system_get_free_heap_size();
-            if (bind_heap >= 16384 && app_chat_bot_is_ready()) {
+            if (app_chat_bot_is_ready()) {
                 ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
             } else {
-                PR_WARN("skip bind alert, heap=%d ready=%d", bind_heap, app_chat_bot_is_ready());
+                OPERATE_RET ar = app_chat_bot_try_recover_audio_alert(20 * 1024, AI_AUDIO_ALERT_NETWORK_CFG);
+                if (ar != OPRT_OK) {
+                    PR_WARN("skip bind alert, heap=%d ready=%d rt=%d", bind_heap, app_chat_bot_is_ready(), ar);
+                }
             }
         }
 #endif
@@ -232,6 +468,21 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     } break;
 
     case TUYA_EVENT_BIND_TOKEN_ON:
+        /* Release offline-only audio player before WiFi->TLS->MQTT heavy path. */
+        {
+            OPERATE_RET release_rt = app_chat_bot_release_offline_audio();
+            if (release_rt != OPRT_OK) {
+                PR_WARN("release offline audio failed: %d", release_rt);
+            }
+        }
+#if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
+        /* Token arrived: immediately quiet BLE to keep TLS handshake window clean.
+         * If immediate deinit fails, fallback to staged release retry. */
+        __ble_release_force_now("bind_token_immediate");
+        if (false == sg_ble_released) {
+            __schedule_ble_release_after_bind();
+        }
+#endif
         PR_NOTICE("Bind token received. waiting WiFi->TLS->MQTT");
         break;
 
@@ -250,9 +501,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
          * post-cloud UI/audio init to pass memory threshold. */
 #if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
         if (false == sg_ble_released) {
-            netcfg_stop(NETCFG_TUYA_BLE);
-            tuya_ble_deinit();
-            sg_ble_released = true;
+            __ble_release_force_now("mqtt_connected_fallback");
             tal_system_sleep(100);
             PR_NOTICE("BLE released after MQTT connect, heap=%d", tal_system_get_free_heap_size());
             __log_heap_snapshot("mqtt_connected.after_ble_release");
@@ -270,9 +519,15 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
                 __log_heap_snapshot("mqtt_connected.postcloud_init_failed");
                 break;
             }
-            sg_cloud_ready = true;
-            PR_NOTICE("Post-cloud app init done, heap=%d", tal_system_get_free_heap_size());
-            __log_heap_snapshot("mqtt_connected.after_postcloud_init");
+            if (app_chat_bot_is_postcloud_inited()) {
+                sg_cloud_ready = true;
+                PR_NOTICE("Post-cloud app init done, heap=%d", tal_system_get_free_heap_size());
+                __log_heap_snapshot("mqtt_connected.after_postcloud_init");
+            } else {
+                sg_cloud_ready = false;
+                PR_WARN("Post-cloud app init deferred, schedule retry");
+                __schedule_postcloud_retry();
+            }
         }
 
         tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
@@ -287,6 +542,18 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 #endif
             if (app_chat_bot_is_ready()) {
                 ai_audio_volume_upload();
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+            } else {
+                /* In degraded path, AI chat mode may be deferred by heap fragmentation.
+                 * Play "network connected" prompt via lightweight offline player so
+                 * users still get bind-success voice feedback. */
+                OPERATE_RET alert_rt =
+                    app_chat_bot_try_recover_audio_alert(24 * 1024, AI_AUDIO_ALERT_NETWORK_CONNECTED);
+                if (alert_rt != OPRT_OK) {
+                    PR_WARN("skip mqtt-connected alert in degraded mode, rt=%d heap=%d", alert_rt,
+                            tal_system_get_free_heap_size());
+                }
+#endif
             }
         }
         break;
@@ -294,6 +561,11 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     case TUYA_EVENT_MQTT_DISCONNECT:
         PR_INFO("Device MQTT DisConnected!");
         sg_run_stats.mqtt_disconnected_count++;
+        sg_cloud_ready = app_chat_bot_is_postcloud_inited();
+        if (sg_postcloud_retry_tm) {
+            tal_sw_timer_stop(sg_postcloud_retry_tm);
+        }
+        sg_postcloud_retry_scheduled = false;
         if (false == sg_cloud_ready) {
             const char *offline_status = CONNECT_SERVER;
             if (sg_using_fallback_license && sg_run_stats.mqtt_connected_count == 0 &&
@@ -382,21 +654,19 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
 {
 #ifdef PLATFORM_ESP32
     size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    size_t min_ever = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
-    size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    PR_INFO("Heap: free=%-6u  min_ever=%-6u  largest_block=%-6u", (unsigned)free_now, (unsigned)min_ever,
-            (unsigned)largest);
+    PR_INFO("Heap: free=%-6u", (unsigned)free_now);
 
     if (free_now < HEAP_WARN_THRESHOLD) {
         PR_WARN("Low heap! free=%u bytes (threshold=%u). "
                 "Consider reducing audio buffer or deferring display init.",
                 (unsigned)free_now, (unsigned)HEAP_WARN_THRESHOLD);
     }
-    if (free_now < HEAP_FREE_CRIT_THRESHOLD || largest < HEAP_LARGEST_CRIT_THRESHOLD) {
-        PR_ERR("Heap critical! free=%u largest=%u (crit_free=%u, crit_largest=%u). "
-               "TLS/WiFi may fail due to fragmentation.",
-               (unsigned)free_now, (unsigned)largest, (unsigned)HEAP_FREE_CRIT_THRESHOLD,
-               (unsigned)HEAP_LARGEST_CRIT_THRESHOLD);
+    /* Keep periodic monitor lightweight on ESP32-C3: walking TLSF pools for
+     * largest-block stats can itself trip when heap metadata is already
+     * damaged by earlier OOM/fragmentation pressure. */
+    if (free_now < HEAP_FREE_CRIT_THRESHOLD) {
+        PR_ERR("Heap critical! free=%u (crit_free=%u). TLS/WiFi may fail due to fragmentation.", (unsigned)free_now,
+               (unsigned)HEAP_FREE_CRIT_THRESHOLD);
     }
 #else
     PR_INFO("Heap: free=%d", tal_system_get_free_heap_size());
@@ -476,6 +746,8 @@ void user_main(void)
     type |= NETCONN_WIRED;
 #endif
     netmgr_init(type);
+    /* No LAN control on this board; drop 500 ms probe to cut heap/log noise vs MQTT/TLS. */
+    netmgr_stop_periodic_lan_init_timer();
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
     /* ESP32-C3 无 PSRAM：BLE + SoftAP 并存时 WiFi 易分配不到 event beacon 缓冲
      *（日志: alloc eb len=752 fail → ieee80211_hostap_attach 崩溃）。仅使用 BLE 配网即可。 */

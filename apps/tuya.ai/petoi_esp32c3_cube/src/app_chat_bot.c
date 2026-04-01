@@ -26,12 +26,12 @@
 /* After MQTT connect, system heap can still dip below 10KB on C3.
  * Starting AI+LVGL in this window easily causes watchdog/reset. */
 #define POSTCLOUD_INIT_HEAP_MIN (20 * 1024)
-/* Display-priority mode:
- * keep UI alive first, and only start full AI/audio when heap has enough
- * continuous space for ringbuffer + mode threads. */
-#define POSTCLOUD_DISPLAY_HEAP_MIN    (16 * 1024)
-#define POSTCLOUD_AI_INIT_HEAP_MIN    (24 * 1024)
-#define POSTCLOUD_AI_LARGEST_HEAP_MIN (16 * 1024)
+/* Audio-priority mode:
+ * prioritize full AI audio chain after MQTT if memory allows. */
+#define POSTCLOUD_AUDIO_INIT_HEAP_MIN (32 * 1024)
+/* On C3 field logs, post-BLE-release largest block can stick near 14.5KB.
+ * Keep this gate low enough so ai_chat_init can start and register Boot key path. */
+#define POSTCLOUD_AUDIO_LARGEST_HEAP_MIN (14 * 1024)
 
 /***********************************************************
 ***********************typedef define***********************
@@ -45,11 +45,12 @@
 ***********************variable define**********************
 ***********************************************************/
 static TIMER_ID sg_printf_heap_tm;
-static bool     sg_precloud_inited      = false;
-static bool     sg_postcloud_inited     = false;
-static bool     sg_ui_inited            = false;
-static bool     sg_postcloud_degraded   = false;
-static bool     sg_offline_audio_inited = false;
+static bool     sg_precloud_inited       = false;
+static bool     sg_postcloud_inited      = false;
+static bool     sg_postcloud_in_progress = false;
+static bool     sg_ui_inited             = false;
+static bool     sg_postcloud_degraded    = false;
+static bool     sg_offline_audio_inited  = false;
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 static AI_UI_WIFI_STATUS_E sg_wifi_status = AI_UI_WIFI_STATUS_DISCONNECTED;
@@ -99,6 +100,7 @@ static void __get_heap_snapshot(uint32_t *free_heap, uint32_t *largest_heap)
     }
 }
 
+/* Display timer helper is shared by normal and degraded paths. */
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 static OPERATE_RET __ensure_display_status_timer(void)
 {
@@ -119,7 +121,7 @@ static OPERATE_RET __ensure_ui_ready(const char *status_text)
     if (false == sg_ui_inited) {
         TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
         sg_ui_inited = true;
-        PR_NOTICE("display-priority: ui init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
+        PR_NOTICE("ui init done, heap=%u", (unsigned)tal_system_get_free_heap_size());
     }
 
     ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&sg_wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
@@ -296,6 +298,14 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         return OPRT_OK;
     }
 
+    /* Prevent nested/concurrent entry (e.g. MQTT/event churn) from running
+     * ai_chat_init + codec_8311_init twice — major TLSF heap corruption risk. */
+    if (sg_postcloud_in_progress) {
+        PR_WARN("postcloud_init: reentry ignored (init in progress)");
+        return OPRT_OK;
+    }
+    sg_postcloud_in_progress = true;
+
     uint32_t postcloud_heap = tal_system_get_free_heap_size();
     __log_heap_snapshot("postcloud_init.entry");
     if (postcloud_heap < POSTCLOUD_INIT_HEAP_MIN) {
@@ -304,29 +314,23 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         PR_WARN("skip post-cloud AI/UI init, heap=%u < %u", (unsigned)postcloud_heap,
                 (unsigned)POSTCLOUD_INIT_HEAP_MIN);
         __log_heap_snapshot("postcloud_init.skip_below_threshold");
-        return OPRT_OK;
+        goto postcloud_exit;
     }
 
-#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
     uint32_t free_heap = 0, largest_heap = 0;
     __get_heap_snapshot(&free_heap, &largest_heap);
-    if ((free_heap < POSTCLOUD_AI_INIT_HEAP_MIN) || (largest_heap < POSTCLOUD_AI_LARGEST_HEAP_MIN)) {
-        if (free_heap >= POSTCLOUD_DISPLAY_HEAP_MIN) {
-            __log_heap_snapshot("postcloud_init.before_ui_init");
-            TUYA_CALL_ERR_RETURN(__ensure_ui_ready(CONNECT_SERVER));
-            __log_heap_snapshot("postcloud_init.after_ui_init");
-        } else {
-            PR_WARN("display-priority: skip ui init, heap=%u < %u", (unsigned)free_heap,
-                    (unsigned)POSTCLOUD_DISPLAY_HEAP_MIN);
-        }
-
+    if ((free_heap < POSTCLOUD_AUDIO_INIT_HEAP_MIN) || (largest_heap < POSTCLOUD_AUDIO_LARGEST_HEAP_MIN)) {
         sg_postcloud_degraded = true;
-        PR_WARN("display-priority: defer ai init, free=%u largest=%u (need free>=%u largest>=%u)", (unsigned)free_heap,
-                (unsigned)largest_heap, (unsigned)POSTCLOUD_AI_INIT_HEAP_MIN, (unsigned)POSTCLOUD_AI_LARGEST_HEAP_MIN);
+        PR_WARN("audio-priority: defer ai init, free=%u largest=%u (need free>=%u largest>=%u)", (unsigned)free_heap,
+                (unsigned)largest_heap, (unsigned)POSTCLOUD_AUDIO_INIT_HEAP_MIN,
+                (unsigned)POSTCLOUD_AUDIO_LARGEST_HEAP_MIN);
         __log_heap_snapshot("postcloud_init.defer_ai");
-        return OPRT_OK;
-    }
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+        /* Degraded path still keeps status visible, but does not block on display. */
+        TUYA_CALL_ERR_LOG(__ensure_ui_ready(CONNECT_SERVER));
 #endif
+        goto postcloud_exit;
+    }
 
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
         .default_mode = AI_CHAT_MODE_WAKEUP,
@@ -335,10 +339,16 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
     };
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
     if (sg_offline_audio_inited) {
-        /* Offline alert path used standalone audio player. Deinit it before
-         * ai_chat_init() takes over audio modules. */
-        TUYA_CALL_ERR_LOG(ai_audio_player_deinit());
-        sg_offline_audio_inited = false;
+        /* Offline alert path used standalone audio player. Release it before
+         * ai_chat_init() takes over audio modules. If still busy, keep deferred
+         * mode and retry later instead of forcing a deinit/play race. */
+        rt = app_chat_bot_release_offline_audio();
+        if (rt != OPRT_OK) {
+            PR_WARN("postcloud_init: offline audio still busy, retry later rt=%d", rt);
+            __log_heap_snapshot("postcloud_init.defer_offline_audio_busy");
+            sg_postcloud_degraded = true;
+            goto postcloud_exit;
+        }
     }
 #endif
     __log_heap_snapshot("postcloud_init.before_ai_chat_init");
@@ -350,8 +360,9 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         TUYA_CALL_ERR_LOG(__ensure_ui_ready(CONNECT_SERVER));
 #endif
         sg_postcloud_degraded = true;
-        return OPRT_OK;
+        goto postcloud_exit;
     }
+    /* ai_chat_init() now owns UI init; mark UI as ready for fallback paths. */
     sg_ui_inited = true;
     __log_heap_snapshot("postcloud_init.after_ai_chat_init");
 
@@ -363,7 +374,12 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
 #endif
 
 #if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
-    TUYA_CALL_ERR_RETURN(ai_mcp_init());
+    rt = ai_mcp_init();
+    if (rt != OPRT_OK) {
+        PR_ERR("ai_mcp_init failed: %d", rt);
+        sg_postcloud_in_progress = false;
+        return rt;
+    }
 #endif
 
 #if defined(ENABLE_COMP_AI_PICTURE) && (ENABLE_COMP_AI_PICTURE == 1)
@@ -372,11 +388,20 @@ OPERATE_RET app_chat_bot_postcloud_init(void)
         .output_cb = __ai_picture_output_cb,
     };
 
-    TUYA_CALL_ERR_RETURN(ai_picture_output_init(&picture_output_cfg));
+    rt = ai_picture_output_init(&picture_output_cfg);
+    if (rt != OPRT_OK) {
+        PR_ERR("ai_picture_output_init failed: %d", rt);
+        sg_postcloud_in_progress = false;
+        return rt;
+    }
 #endif
 
-    sg_postcloud_inited = true;
+    sg_postcloud_inited   = true;
+    sg_postcloud_degraded = false;
     __log_heap_snapshot("postcloud_init.exit");
+
+postcloud_exit:
+    sg_postcloud_in_progress = false;
     return OPRT_OK;
 }
 
@@ -391,6 +416,11 @@ OPERATE_RET app_chat_bot_init(void)
 bool app_chat_bot_is_ready(void)
 {
     return sg_postcloud_inited && (false == sg_postcloud_degraded);
+}
+
+bool app_chat_bot_is_postcloud_inited(void)
+{
+    return sg_postcloud_inited;
 }
 
 OPERATE_RET app_chat_bot_try_recover_ui(uint32_t min_heap_bytes, const char *status_text)
@@ -437,4 +467,37 @@ OPERATE_RET app_chat_bot_try_recover_audio_alert(uint32_t min_heap_bytes, AI_AUD
     (void)alert;
     return OPRT_NOT_SUPPORTED;
 #endif
+}
+
+OPERATE_RET app_chat_bot_release_offline_audio(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    if (sg_offline_audio_inited) {
+        /* Do not deinit while a local alert is still draining.
+         * This can race with player internals and corrupt queue/mutex state. */
+        if (ai_audio_player_is_playing()) {
+            PR_WARN("offline audio release skipped: player still busy");
+            return OPRT_COM_ERROR;
+        }
+
+        /* Deinit may race with still-draining player queue right after alert EOF.
+         * Retry briefly so SERVICE_DEINIT can be posted and resources are freed. */
+        for (int i = 0; i < 3; i++) {
+            rt = ai_audio_player_deinit();
+            if (rt == OPRT_OK) {
+                break;
+            }
+            tal_system_sleep(30);
+        }
+        if (rt != OPRT_OK) {
+            PR_WARN("offline audio recovery release deferred, rt=%d heap=%u", rt,
+                    (unsigned)tal_system_get_free_heap_size());
+            return rt;
+        }
+        sg_offline_audio_inited = false;
+        PR_NOTICE("offline audio recovery released, heap=%u", (unsigned)tal_system_get_free_heap_size());
+    }
+#endif
+    return OPRT_OK;
 }

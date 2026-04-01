@@ -37,7 +37,6 @@
 ***********************typedef define***********************
 ***********************************************************/
 
-
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
@@ -62,7 +61,7 @@ OPERATE_RET __ai_agent_event_cb(AI_EVENT_TYPE type, AI_PACKET_PT ptype, AI_EVENT
         if (AI_PT_AUDIO == ptype) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
             /* Start audio player */
-            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_START, __s_audio_codec_type, (char*)eid, strlen(eid));
+            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_START, __s_audio_codec_type, (char *)eid, strlen(eid));
 #endif
         }
     } else if ((AI_EVENT_CHAT_BREAK == type)) {
@@ -71,13 +70,13 @@ OPERATE_RET __ai_agent_event_cb(AI_EVENT_TYPE type, AI_PACKET_PT ptype, AI_EVENT
         ai_audio_player_stop(AI_AUDIO_PLAYER_FG);
 #endif
         ai_user_event_notify(AI_USER_EVT_CHAT_BREAK, NULL);
-    }else if(AI_EVENT_SERVER_VAD == type) {
-		ai_user_event_notify(AI_USER_EVT_SERVER_VAD, NULL);
-	} else if ((AI_EVENT_END == type)) {
+    } else if (AI_EVENT_SERVER_VAD == type) {
+        ai_user_event_notify(AI_USER_EVT_SERVER_VAD, NULL);
+    } else if ((AI_EVENT_END == type)) {
         if (AI_PT_AUDIO == ptype) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
             /* Stop audio player */
-            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_STOP, __s_audio_codec_type, (char*)eid, strlen(eid));
+            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_STOP, __s_audio_codec_type, (char *)eid, strlen(eid));
 #endif
         }
     } else if (AI_EVENT_CHAT_EXIT == type) {
@@ -100,15 +99,15 @@ OPERATE_RET __ai_agent_media_attr_cb(AI_BIZ_ATTR_INFO_T *attr)
         PR_DEBUG("ai agent -> audio codec type: %d", attr->value.audio.base.codec_type);
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         switch (attr->value.audio.base.codec_type) {
-            case AUDIO_CODEC_MP3:
-                __s_audio_codec_type = AI_AUDIO_CODEC_MP3;
-                break;
-            case AUDIO_CODEC_OPUS:
-                __s_audio_codec_type = AI_AUDIO_CODEC_OPUS;
-                break;
-            default:
-                __s_audio_codec_type = AI_AUDIO_CODEC_MAX;
-                break;
+        case AUDIO_CODEC_MP3:
+            __s_audio_codec_type = AI_AUDIO_CODEC_MP3;
+            break;
+        case AUDIO_CODEC_OPUS:
+            __s_audio_codec_type = AI_AUDIO_CODEC_OPUS;
+            break;
+        default:
+            __s_audio_codec_type = AI_AUDIO_CODEC_MAX;
+            break;
         }
 #endif
     }
@@ -127,15 +126,15 @@ OPERATE_RET __ai_agent_media_data_cb(AI_PACKET_PT type, char *data, uint32_t len
 {
     /* TAL_PR_NOTICE(" ai agent -> recv media type %d", type); */
     OPERATE_RET rt = OPRT_OK;
-    if(type == AI_PT_AUDIO) {
+    if (type == AI_PT_AUDIO) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        rt = ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_DATA, __s_audio_codec_type, (char*)data, len);
+        rt = ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_DATA, __s_audio_codec_type, (char *)data, len);
 #endif
-    } else if(type == AI_PT_VIDEO) {
+    } else if (type == AI_PT_VIDEO) {
         /* TBD */
-    } else if(type == AI_PT_IMAGE) {
+    } else if (type == AI_PT_IMAGE) {
         /* TBD */
-    } else if(type == AI_PT_FILE) {
+    } else if (type == AI_PT_FILE) {
         /* TBD */
     }
     return rt;
@@ -149,7 +148,7 @@ OPERATE_RET __ai_agent_media_data_cb(AI_PACKET_PT type, char *data, uint32_t len
 @return OPERATE_RET Operation result
 */
 OPERATE_RET __ai_agent_text_cb(AI_TEXT_TYPE_E type, cJSON *root, bool eof)
-{    
+{
     return ai_text_process(type, root, eof);
 }
 
@@ -166,7 +165,7 @@ OPERATE_RET __ai_agent_alert_cb(AI_ALERT_TYPE_E type)
         return OPRT_OK;
     }
 
-    ai_user_event_notify(AI_USER_EVT_PLAY_ALERT, (void*)type);   
+    ai_user_event_notify(AI_USER_EVT_PLAY_ALERT, (void *)type);
 
     return OPRT_OK;
 }
@@ -192,7 +191,7 @@ static int session_init_cb(void *data)
 */
 OPERATE_RET ai_agent_init(void)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET    rt           = OPRT_OK;
     AI_AGENT_CFG_T ai_agent_cfg = {0};
 
     memset(&ai_agent_cfg, 0x00, sizeof(AI_AGENT_CFG_T));
@@ -207,16 +206,16 @@ OPERATE_RET ai_agent_init(void)
     ai_agent_cfg.attr.audio.codec_type = AUDIO_CODEC_PCM;
 #endif
 
-    TDL_AUDIO_HANDLE_T audio_hdl = NULL;
-    TDL_AUDIO_INFO_T audio_info = {0};
+    TDL_AUDIO_HANDLE_T audio_hdl  = NULL;
+    TDL_AUDIO_INFO_T   audio_info = {0};
     TUYA_CALL_ERR_RETURN(tdl_audio_find(AUDIO_CODEC_NAME, &audio_hdl));
     TUYA_CALL_ERR_RETURN(tdl_audio_get_info(audio_hdl, &audio_info));
 
     ai_agent_cfg.attr.audio.sample_rate = audio_info.sample_rate;
-    ai_agent_cfg.attr.audio.channels = audio_info.sample_ch_num;
-    ai_agent_cfg.attr.audio.bit_depth = audio_info.sample_bits;
+    ai_agent_cfg.attr.audio.channels    = audio_info.sample_ch_num;
+    ai_agent_cfg.attr.audio.bit_depth   = audio_info.sample_bits;
 
-    ai_agent_cfg.codec_enable         = TRUE;
+    ai_agent_cfg.codec_enable = TRUE;
 #endif
 
     ai_agent_cfg.output.alert_cb      = __ai_agent_alert_cb;
@@ -227,11 +226,24 @@ OPERATE_RET ai_agent_init(void)
 
     TUYA_CALL_ERR_RETURN(tuya_ai_agent_init(&ai_agent_cfg));
 
-    TUYA_CALL_ERR_LOG(tal_event_subscribe(EVENT_AI_CLIENT_RUN, "agent_session_init", session_init_cb, SUBSCRIBE_TYPE_NORMAL));
+    TUYA_CALL_ERR_LOG(
+        tal_event_subscribe(EVENT_AI_CLIENT_RUN, "agent_session_init", session_init_cb, SUBSCRIBE_TYPE_NORMAL));
 
 #if defined(ENABLE_AI_MONITOR) && (ENABLE_AI_MONITOR == 1)
+#if defined(PLATFORM_ESP32) && defined(CONFIG_IDF_TARGET_ESP32C3)
+    /* ESP32-C3 has no PSRAM and very small SRAM headroom after post-cloud init.
+     * Keep monitor path off to avoid extra socket/thread allocations. */
+    PR_NOTICE("ai monitor skipped on ESP32-C3");
+#else
     ai_monitor_config_t monitor_cfg = AI_MONITOR_CFG_DEFAULT;
-    TUYA_CALL_ERR_RETURN(tuya_ai_monitor_init(&monitor_cfg));
+    /* Monitor is a debug aid and must not block core ai_agent startup
+     * on low-memory targets like ESP32-C3 (no PSRAM). */
+    rt = tuya_ai_monitor_init(&monitor_cfg);
+    if (rt != OPRT_OK) {
+        PR_WARN("ai monitor init failed: %d, continue without monitor", rt);
+        rt = OPRT_OK;
+    }
+#endif
 #endif
 
     return rt;
@@ -289,8 +301,8 @@ OPERATE_RET ai_agent_send_file(uint8_t *data, uint32_t len)
 */
 OPERATE_RET ai_agent_send_image(uint8_t *data, uint32_t len)
 {
-    OPERATE_RET rt = OPRT_OK;
-    uint64_t   timestamp = tal_system_get_millisecond();
+    OPERATE_RET rt        = OPRT_OK;
+    uint64_t    timestamp = tal_system_get_millisecond();
 
     tuya_ai_input_start(true);
     TUYA_CALL_ERR_RETURN(tuya_ai_image_input(timestamp, (uint8_t *)data, len, len));
@@ -305,7 +317,7 @@ OPERATE_RET ai_agent_send_image(uint8_t *data, uint32_t len)
 @return OPERATE_RET Operation result
 */
 OPERATE_RET ai_agent_cloud_alert(AI_ALERT_TYPE_E type)
-{    
+{
     char *alert_prompt = NULL;
 
     PR_NOTICE("ai agent -> request cloud request for %d", type);
@@ -347,18 +359,18 @@ OPERATE_RET ai_agent_cloud_alert(AI_ALERT_TYPE_E type)
 */
 OPERATE_RET ai_agent_role_switch(char *role)
 {
-    OPERATE_RET rt = OPRT_OK;
-    cJSON* result = NULL;
+    OPERATE_RET rt     = OPRT_OK;
+    cJSON      *result = NULL;
 
     /* char *print_data = NULL; */
     char post_content[128] = {0};
     snprintf(post_content, sizeof(post_content), "{\"commandInfo\": \"%s\"}", role);
-	
-    TUYA_CALL_ERR_LOG(atop_service_comm_post_simple("thing.ai.agent.switch.role", "1.0",  post_content, NULL, &result));
+
+    TUYA_CALL_ERR_LOG(atop_service_comm_post_simple("thing.ai.agent.switch.role", "1.0", post_content, NULL, &result));
     TUYA_CHECK_NULL_RETURN(result, OPRT_MID_HTTP_GET_RESP_ERROR);
 
     /* Free resources */
     cJSON_Delete(result);
 
-    return OPRT_OK;    
+    return OPRT_OK;
 }

@@ -5,7 +5,7 @@
  * This module implements the main AI chat functionality, including mode management,
  * audio input/output, button handling, and configuration management.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  */
 
@@ -13,6 +13,7 @@
 #include "tkl_kws.h"
 
 #include "cJSON.h"
+#include "tuya_error_code.h"
 #include "tuya_ai_agent.h"
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
@@ -34,20 +35,41 @@
 /***********************************************************
 ************************macro define************************
 ***********************************************************/
-#define AI_CHAT_BUTTON_NAME    "ai_chat_button"
+#define AI_CHAT_BUTTON_NAME "ai_chat_button"
 
-#define TUYA_AI_CHAT_PAR       "ty_ai_chat_par"
+#define TUYA_AI_CHAT_PAR "ty_ai_chat_par"
 
-#define AI_AUDIO_SLICE_TIME         80
+#define AI_AUDIO_SLICE_TIME 80
 /* On no-PSRAM platforms (ESP32-C3) we use pure push-to-talk (VAD_MANUAL).
  * Setting vad_active_ms to 0 reduces the recording ring buffer from
  * (200+300)*32+1 = 16001 B  →  (0+300)*32+1 = 9601 B, saving ~6.4 KB. */
 #ifdef CONFIG_AI_AUDIO_VAD_ACTIVE_MS
-#define AI_AUDIO_VAD_ACTIVE_TIME    CONFIG_AI_AUDIO_VAD_ACTIVE_MS
+#define AI_AUDIO_VAD_ACTIVE_TIME CONFIG_AI_AUDIO_VAD_ACTIVE_MS
 #else
-#define AI_AUDIO_VAD_ACTIVE_TIME    200
+#define AI_AUDIO_VAD_ACTIVE_TIME 200
 #endif
-#define AI_AUDIO_VAD_OFF_TIME       1000
+#define AI_AUDIO_VAD_OFF_TIME 1000
+#ifdef PLATFORM_ESP32
+/* On ESP32-C3 with no PSRAM, keep prompt-audio first: defer cloud AI init when
+ * free heap is low. We intentionally avoid heap_caps_get_largest_free_block() in
+ * hot paths (MQTT / retry loop) after field faults under heap contention. */
+#define AI_AGENT_INIT_HEAP_MIN_STRICT  (28 * 1024)
+#define AI_AGENT_INIT_HEAP_MIN_RELAXED (24 * 1024)
+#define AI_AGENT_INIT_RELAX_DELAY_MS   (15 * 1000U)
+/* Runtime fuse: if cloud AI path drags heap into danger, drop back to local mode
+ * and wait a cooldown window before next init retry. */
+#define AI_AGENT_RUNTIME_HEAP_FUSE_MIN (9 * 1024)
+#define AI_AGENT_RETRY_COOLDOWN_MS     (30 * 1000U)
+/* Grace window after ai_agent_init: thread/socket startup can cause short
+ * heap troughs on C3; avoid immediate false fuse. */
+#define AI_AGENT_FUSE_GRACE_MS (5000U)
+#endif
+#define AI_AGENT_INIT_RETRY_INTERVAL_MS (8000U)
+#ifdef PLATFORM_ESP32
+#define AI_CHAT_MODE_TASK_STACK_SIZE (6144U)
+#else
+#define AI_CHAT_MODE_TASK_STACK_SIZE (2 * 1024U)
+#endif
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
@@ -55,11 +77,27 @@
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
-static AI_USER_EVENT_NOTIFY   sg_evt_notify_cb = NULL;
-static THREAD_HANDLE          sg_ai_chat_mode_task = NULL;
-static AI_CHAT_MODE_E         sg_ai_default_mode = AI_CHAT_MODE_HOLD;
-static int                    sg_ai_default_vol = 70;
-static bool                   sg_ai_agent_inited = false;
+static AI_USER_EVENT_NOTIFY sg_evt_notify_cb        = NULL;
+static THREAD_HANDLE        sg_ai_chat_mode_task    = NULL;
+static AI_CHAT_MODE_E       sg_ai_default_mode      = AI_CHAT_MODE_HOLD;
+static int                  sg_ai_default_vol       = 70;
+static bool                 sg_ai_agent_inited      = false;
+static bool                 sg_ai_agent_init_busy   = false;
+static bool                 sg_mqtt_connected       = false;
+static bool                 sg_ai_agent_retry_now   = false;
+static bool                 sg_ai_ui_ready          = false;
+static bool                 sg_network_alert_played = false;
+static uint64_t             sg_ai_agent_retry_ms    = 0;
+static bool                 sg_ai_mode_inited       = false;
+#ifdef PLATFORM_ESP32
+/* One-shot delay per MQTT session: avoid overlapping AI mq/TLS with meta.save etc. */
+static bool     sg_ai_agent_tls_stagger_done   = false;
+static uint64_t sg_mqtt_connected_ms           = 0;
+static bool     sg_ai_heap_gate_relaxed_logged = false;
+static uint64_t sg_ai_agent_cooldown_until_ms  = 0;
+static bool     sg_ai_agent_auto_retry_enabled = true;
+static uint64_t sg_ai_agent_inited_ms          = 0;
+#endif
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
 static TDL_BUTTON_HANDLE sg_button_hdl = NULL;
@@ -70,7 +108,7 @@ static TDL_BUTTON_HANDLE sg_button_hdl = NULL;
 ***********************************************************/
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
 extern OPERATE_RET ai_chat_ui_init(void);
-extern void ai_chat_ui_handle_event(AI_NOTIFY_EVENT_T *event);
+extern void        ai_chat_ui_handle_event(AI_NOTIFY_EVENT_T *event);
 #endif
 
 /**
@@ -81,8 +119,8 @@ extern void ai_chat_ui_handle_event(AI_NOTIFY_EVENT_T *event);
 */
 static OPERATE_RET __ai_chat_save_config(uint32_t mode, int volume)
 {
-    OPERATE_RET rt = OPRT_OK;
-    char buf[64] = {0};
+    OPERATE_RET rt      = OPRT_OK;
+    char        buf[64] = {0};
 
     memset(buf, 0, sizeof(buf));
     snprintf(buf, sizeof(buf), "{\"volume\": %d, \"chat_mode\":%d}", volume, (int)mode);
@@ -100,13 +138,13 @@ static OPERATE_RET __ai_chat_save_config(uint32_t mode, int volume)
 */
 static OPERATE_RET __ai_chat_load_config(uint32_t *mode, int *volume)
 {
-    OPERATE_RET rt = OPRT_OK;
-    uint8_t *value = NULL;
-    size_t len = 0;
-    uint32_t read_mode = 0;
-    int read_vol = sg_ai_default_vol;
+    OPERATE_RET rt        = OPRT_OK;
+    uint8_t    *value     = NULL;
+    size_t      len       = 0;
+    uint32_t    read_mode = 0;
+    int         read_vol  = sg_ai_default_vol;
 
-    if(NULL == mode || NULL == volume) {
+    if (NULL == mode || NULL == volume) {
         return OPRT_INVALID_PARM;
     }
 
@@ -134,7 +172,7 @@ static OPERATE_RET __ai_chat_load_config(uint32_t *mode, int *volume)
 
     cJSON_Delete(root);
 
-    *mode = read_mode;
+    *mode   = read_mode;
     *volume = read_vol;
 
     return OPRT_OK;
@@ -147,42 +185,40 @@ static OPERATE_RET __ai_chat_load_config(uint32_t *mode, int *volume)
 */
 static void __ai_handle_event(AI_NOTIFY_EVENT_T *event)
 {
-    if(NULL == event) {
+    if (NULL == event) {
         return;
     }
 
     ai_mode_handle_event(event);
 
-    switch(event->type) {
+    switch (event->type) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        case AI_USER_EVT_PLAY_CTL_PLAY:
-        case AI_USER_EVT_PLAY_CTL_RESUME:{
-            ai_audio_player_set_resume(true);
-        }
-        break;
-        case AI_USER_EVT_PLAY_CTL_PAUSE:{
-            ai_audio_player_stop(AI_AUDIO_PLAYER_BG);
-        }
-        break;
-        case AI_USER_EVT_PLAY_CTL_REPLAY:{
-            ai_audio_player_set_replay(true);
-        }
-        break;
-        case AI_USER_EVT_PLAY_ALERT:{
-            ai_audio_player_alert((AI_AUDIO_ALERT_TYPE_E)event->data);
-        }
-        break;
+    case AI_USER_EVT_PLAY_CTL_PLAY:
+    case AI_USER_EVT_PLAY_CTL_RESUME: {
+        ai_audio_player_set_resume(true);
+    } break;
+    case AI_USER_EVT_PLAY_CTL_PAUSE: {
+        ai_audio_player_stop(AI_AUDIO_PLAYER_BG);
+    } break;
+    case AI_USER_EVT_PLAY_CTL_REPLAY: {
+        ai_audio_player_set_replay(true);
+    } break;
+    case AI_USER_EVT_PLAY_ALERT: {
+        ai_audio_player_alert((AI_AUDIO_ALERT_TYPE_E)event->data);
+    } break;
 #endif
-        default:
+    default:
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+        if (sg_ai_ui_ready) {
             ai_chat_ui_handle_event(event);
+        }
 #endif
         break;
     }
 
     if (sg_evt_notify_cb) {
         sg_evt_notify_cb(event);
-    }   
+    }
 }
 
 /**
@@ -192,7 +228,125 @@ static void __ai_handle_event(AI_NOTIFY_EVENT_T *event)
 */
 static void __ai_chat_mode_task(void *args)
 {
-    while(tal_thread_get_state(sg_ai_chat_mode_task) == THREAD_STATE_RUNNING) {
+    while (tal_thread_get_state(sg_ai_chat_mode_task) == THREAD_STATE_RUNNING) {
+        uint64_t now_ms = tal_system_get_millisecond();
+#ifdef PLATFORM_ESP32
+        if (sg_mqtt_connected && sg_ai_agent_inited && !sg_ai_agent_init_busy) {
+            uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
+            bool     fuse_grace_passed =
+                (sg_ai_agent_inited_ms > 0) && ((now_ms - sg_ai_agent_inited_ms) >= AI_AGENT_FUSE_GRACE_MS);
+            if (fuse_grace_passed && free_now < AI_AGENT_RUNTIME_HEAP_FUSE_MIN) {
+                OPERATE_RET de_rt = OPRT_OK;
+                PR_WARN("ai_agent fuse: free=%u < %u, deinit and cooldown %u ms", (unsigned)free_now,
+                        (unsigned)AI_AGENT_RUNTIME_HEAP_FUSE_MIN, (unsigned)AI_AGENT_RETRY_COOLDOWN_MS);
+                sg_ai_agent_init_busy = true;
+                de_rt                 = ai_agent_deinit();
+                sg_ai_agent_init_busy = false;
+                if (de_rt != OPRT_OK) {
+                    PR_WARN("ai_agent_deinit failed rt=%d", de_rt);
+                }
+                sg_ai_agent_inited             = false;
+                sg_ai_agent_retry_now          = false;
+                sg_ai_agent_retry_ms           = now_ms;
+                sg_ai_agent_cooldown_until_ms  = now_ms + AI_AGENT_RETRY_COOLDOWN_MS;
+                sg_ai_agent_tls_stagger_done   = false;
+                sg_ai_heap_gate_relaxed_logged = false;
+                sg_ai_agent_inited_ms          = 0;
+                /* Stop timer-driven retries after fuse trip. Keep manual retry
+                 * path (button-triggered sg_ai_agent_retry_now) available. */
+                sg_ai_agent_auto_retry_enabled = false;
+            }
+        }
+#endif
+        if (sg_mqtt_connected && !sg_ai_agent_inited && !sg_ai_agent_init_busy) {
+            bool should_retry =
+                sg_ai_agent_retry_now || (sg_ai_agent_auto_retry_enabled && (now_ms >= sg_ai_agent_retry_ms) &&
+                                          ((now_ms - sg_ai_agent_retry_ms) >= AI_AGENT_INIT_RETRY_INTERVAL_MS));
+            if (should_retry) {
+#ifdef PLATFORM_ESP32
+                if (!sg_ai_agent_retry_now && (sg_ai_agent_cooldown_until_ms > now_ms)) {
+                    ai_mode_task_running(args);
+                    tal_system_sleep(20);
+                    continue;
+                }
+#endif
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+                if (ai_audio_player_is_playing()) {
+                    /* Keep prompt playback priority; retry immediately after playback. */
+                    sg_ai_agent_retry_ms  = now_ms;
+                    sg_ai_agent_retry_now = true;
+                    ai_mode_task_running(args);
+                    tal_system_sleep(20);
+                    continue;
+                }
+#endif
+#ifdef PLATFORM_ESP32
+                uint32_t required_heap = AI_AGENT_INIT_HEAP_MIN_STRICT;
+                if (sg_mqtt_connected_ms > 0 && (now_ms - sg_mqtt_connected_ms) >= AI_AGENT_INIT_RELAX_DELAY_MS) {
+                    required_heap = AI_AGENT_INIT_HEAP_MIN_RELAXED;
+                    if (!sg_ai_heap_gate_relaxed_logged) {
+                        PR_NOTICE("ai_agent: relax heap gate to %u after %u ms mqtt stable", (unsigned)required_heap,
+                                  (unsigned)AI_AGENT_INIT_RELAX_DELAY_MS);
+                        sg_ai_heap_gate_relaxed_logged = true;
+                    }
+                }
+                uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
+                if (free_now >= required_heap) {
+                    OPERATE_RET rt = OPRT_OK;
+                    if (!sg_ai_agent_tls_stagger_done) {
+                        PR_NOTICE("ai_agent: stagger 2.5s before first init (vs device MQTT/meta TLS)");
+                        tal_system_sleep(2500);
+                        sg_ai_agent_tls_stagger_done = true;
+                        free_now                     = (uint32_t)tal_system_get_free_heap_size();
+                        if (free_now < required_heap) {
+                            PR_WARN("ai_agent: post-stagger heap low free=%u need>=%u, defer init", (unsigned)free_now,
+                                    (unsigned)required_heap);
+                            sg_ai_agent_retry_ms  = now_ms;
+                            sg_ai_agent_retry_now = true;
+                            ai_mode_task_running(args);
+                            tal_system_sleep(20);
+                            continue;
+                        }
+                    }
+                    sg_ai_agent_init_busy = true;
+                    rt                    = ai_agent_init();
+                    sg_ai_agent_init_busy = false;
+                    if (rt == OPRT_OK) {
+                        sg_ai_agent_inited    = true;
+                        sg_ai_agent_inited_ms = tal_system_get_millisecond();
+                        PR_NOTICE("ai_agent_init recovered by retry");
+                    } else {
+                        PR_WARN("ai_agent_init retry failed rt=%d, keep local-audio only", rt);
+#ifdef PLATFORM_ESP32
+                        /* Avoid endless create/deinit churn on low-memory C3 when
+                         * ai_agent_init fails (e.g. thread create -26624). Keep
+                         * manual retry path only (button-triggered retry_now). */
+                        sg_ai_agent_auto_retry_enabled = false;
+                        sg_ai_agent_cooldown_until_ms  = now_ms + AI_AGENT_RETRY_COOLDOWN_MS;
+                        sg_ai_agent_inited_ms          = 0;
+                        PR_WARN("ai_agent auto retry disabled after init failure, manual retry only");
+#endif
+                    }
+                } else {
+                    PR_DEBUG("skip ai_agent_init retry: free=%u need>=%u", (unsigned)free_now, (unsigned)required_heap);
+                }
+#else
+                OPERATE_RET rt        = OPRT_OK;
+                sg_ai_agent_init_busy = true;
+                rt                    = ai_agent_init();
+                sg_ai_agent_init_busy = false;
+                if (rt == OPRT_OK) {
+                    sg_ai_agent_inited = true;
+                    PR_NOTICE("ai_agent_init recovered by retry");
+                } else {
+                    PR_WARN("ai_agent_init retry failed rt=%d, keep local-audio only", rt);
+                }
+#endif
+                sg_ai_agent_retry_ms  = now_ms;
+                sg_ai_agent_retry_now = false;
+            }
+        }
+
         ai_mode_task_running(args);
         tal_system_sleep(20);
     }
@@ -207,19 +361,19 @@ static void __ai_chat_mode_task(void *args)
 */
 static int __ai_audio_output(uint8_t *data, uint16_t datalen)
 {
-    OPERATE_RET rt = OPRT_OK;
-    uint64_t   pts = 0;
-    uint64_t   timestamp = 0;
+    OPERATE_RET rt        = OPRT_OK;
+    uint64_t    pts       = 0;
+    uint64_t    timestamp = 0;
 
-    if(false == sg_ai_agent_inited) {
+    if (false == sg_ai_agent_inited) {
         return OPRT_OK;
     }
 
 #if defined(ENABLE_AUDIO_AEC) && (ENABLE_AUDIO_AEC == 1)
     timestamp = pts = tal_system_get_millisecond();
     TUYA_CALL_ERR_LOG(tuya_ai_audio_input(timestamp, pts, data, datalen, datalen));
-#else 
-    if(false == ai_audio_player_is_playing()) {
+#else
+    if (false == ai_audio_player_is_playing()) {
         timestamp = pts = tal_system_get_millisecond();
         TUYA_CALL_ERR_LOG(tuya_ai_audio_input(timestamp, pts, data, datalen, datalen));
     }
@@ -259,11 +413,20 @@ int __ai_vad_change_evt(void *data)
 static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, void *arg)
 {
     PR_DEBUG("ai chat button event: %d", event);
+    (void)name;
+    /* Treat "agent inited but no cloud session" like degraded: local prompts only,
+     * no invalid tuya_ai_agent_event uploads (e.g. after mq cfg timeout). */
+    bool degraded_no_agent = sg_mqtt_connected && !sg_ai_agent_init_busy && !ai_chat_is_cloud_talk_ready();
 
-    if(TDL_BUTTON_PRESS_DOUBLE_CLICK == event) {
-        #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    if (TDL_BUTTON_PRESS_DOUBLE_CLICK == event) {
+        if (degraded_no_agent) {
+            /* In degraded/no-session state, swallow double-click break to avoid
+             * "event or session id was null" from AI_EVENT_CHAT_BREAK upload path. */
+            return;
+        }
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         ai_audio_player_stop(AI_AUDIO_PLAYER_ALL);
-        #endif
+#endif
 
         /* AI agent interrupt */
         tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
@@ -273,16 +436,40 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
         /* Save trigger mode */
         int volume = sg_ai_default_vol;
 
-        #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         ai_audio_player_get_vol(&volume);
-        #endif
+#endif
         __ai_chat_save_config(nxt_mode, volume);
 
-        #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         /* Player alert */
         ai_audio_player_alert(AI_AUDIO_ALERT_LONG_KEY_TALK + nxt_mode);
-        #endif
+#endif
 
+        return;
+    }
+
+    if ((TDL_BUTTON_PRESS_DOWN == event) && degraded_no_agent) {
+        /* Try cloud agent init immediately after user asks to talk. */
+        sg_ai_agent_retry_now = true;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+        /* In degraded mode on C3, ai_agent_init may keep failing due to low heap.
+         * Still provide an immediate local wakeup cue on key down. */
+        ai_audio_player_alert(AI_AUDIO_ALERT_WAKEUP);
+#endif
+    }
+
+    if (degraded_no_agent && TDL_BUTTON_PRESS_SINGLE_CLICK == event) {
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+        /* Short press often ends here without a reliable separate DOWN path; keep local cue. */
+        ai_audio_player_alert(AI_AUDIO_ALERT_WAKEUP);
+#endif
+        return;
+    }
+
+    if (degraded_no_agent && (TDL_BUTTON_PRESS_UP == event || TDL_BUTTON_LONG_PRESS_START == event)) {
+        /* When cloud agent is not ready, suppress hold/upload path to avoid
+         * invalid session uploads and noisy "event or session id was null". */
         return;
     }
 
@@ -299,11 +486,11 @@ static OPERATE_RET __ai_chat_mode_open_button(void)
 
     tdl_button_set_task_stack_size(2048);
 
-    TDL_BUTTON_CFG_T button_cfg = {.long_start_valid_time = 400,
-                                   .long_keep_timer = 0,
-                                   .button_debounce_time = 50,
+    TDL_BUTTON_CFG_T button_cfg = {.long_start_valid_time     = 400,
+                                   .long_keep_timer           = 0,
+                                   .button_debounce_time      = 50,
                                    .button_repeat_valid_count = 2,
-                                   .button_repeat_valid_time = 300};
+                                   .button_repeat_valid_time  = 300};
     TUYA_CALL_ERR_RETURN(tdl_button_create(AI_CHAT_BUTTON_NAME, &button_cfg, &sg_button_hdl));
 
     tdl_button_event_register(sg_button_hdl, TDL_BUTTON_PRESS_DOWN, __ai_button_function_cb);
@@ -323,19 +510,101 @@ static OPERATE_RET __ai_chat_mode_open_button(void)
 */
 static int __ai_mqtt_connected_evt(void *data)
 {
-    OPERATE_RET rt = OPRT_OK;
-    uint32_t mode = sg_ai_default_mode;
-    int vol = sg_ai_default_vol;
+    OPERATE_RET rt   = OPRT_OK;
+    uint32_t    mode = sg_ai_default_mode;
+    int         vol  = sg_ai_default_vol;
 
-    TUYA_CALL_ERR_RETURN(ai_agent_init());
+    (void)data;
+    sg_mqtt_connected = true;
+#ifdef PLATFORM_ESP32
+    sg_mqtt_connected_ms           = tal_system_get_millisecond();
+    sg_ai_heap_gate_relaxed_logged = false;
+    sg_ai_agent_cooldown_until_ms  = 0;
+    sg_ai_agent_auto_retry_enabled = true;
+    sg_ai_agent_inited_ms          = 0;
+#endif
 
     __ai_chat_load_config(&mode, &vol);
 
-    ai_mode_init(mode);
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    /* Play prompt first to guarantee audible feedback on tiny-memory windows. */
+    if (false == sg_network_alert_played) {
+        TUYA_CALL_ERR_LOG(ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CONNECTED));
+        sg_network_alert_played = true;
+        PR_NOTICE("play network-connected alert before ai_agent_init");
+        /* On ESP32-C3, mode switch may restart recorder task and contend with
+         * prompt playback; give audio path a short head start first. */
+        tal_system_sleep(120);
+    }
+#endif
+    if (!sg_ai_mode_inited) {
+        rt = ai_mode_init(mode);
+        if (rt != OPRT_OK) {
+            PR_WARN("ai_mode_init failed rt=%d", rt);
+        } else {
+            sg_ai_mode_inited = true;
+        }
+    }
 
-    sg_ai_agent_inited = true;
+#ifdef PLATFORM_ESP32
+    /* Avoid heap_caps_get_largest_free_block() in MQTT/event path: it walks the
+     * heap and has triggered Load faults under contention; retry task uses same policy. */
+    uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
+    if (free_now < AI_AGENT_INIT_HEAP_MIN_STRICT) {
+        PR_WARN("defer ai_agent_init (mqtt evt): free=%u need_free>=%u (largest not checked here)", (unsigned)free_now,
+                (unsigned)AI_AGENT_INIT_HEAP_MIN_STRICT);
+        sg_ai_agent_inited    = false;
+        sg_ai_agent_retry_ms  = tal_system_get_millisecond();
+        sg_ai_agent_retry_now = true;
+        return OPRT_OK;
+    }
+#endif
 
-    return rt;
+    /* On ESP32-C3, avoid running ai_agent_init() in MQTT callback window:
+     * prompt playback + mode startup can temporarily drive heap near floor and
+     * cause tuya_ai_input_init() OOM (-3). Defer init to retry task with guards. */
+#ifdef PLATFORM_ESP32
+    sg_ai_agent_inited    = false;
+    sg_ai_agent_retry_ms  = tal_system_get_millisecond();
+    sg_ai_agent_retry_now = true;
+    PR_NOTICE("defer ai_agent_init to retry task (audio/heap guard)");
+    return OPRT_OK;
+#endif
+
+    /* Do not abort this handler on failure: local audio/modes must still run when
+     * heap is too low for the cloud AI protocol (~10KB contiguous). */
+    sg_ai_agent_init_busy = true;
+    rt                    = ai_agent_init();
+    sg_ai_agent_init_busy = false;
+    if (rt != OPRT_OK) {
+        PR_WARN("ai_agent_init failed rt=%d, cloud AI disabled until next reconnect", rt);
+        sg_ai_agent_inited    = false;
+        sg_ai_agent_retry_ms  = tal_system_get_millisecond();
+        sg_ai_agent_retry_now = true;
+    } else {
+        sg_ai_agent_inited    = true;
+        sg_ai_agent_retry_now = false;
+    }
+
+    return OPRT_OK;
+}
+
+static int __ai_mqtt_disconnected_evt(void *data)
+{
+    (void)data;
+    sg_mqtt_connected     = false;
+    sg_ai_agent_inited    = false;
+    sg_ai_agent_init_busy = false;
+    sg_ai_agent_retry_now = false;
+#ifdef PLATFORM_ESP32
+    sg_ai_agent_tls_stagger_done   = false;
+    sg_mqtt_connected_ms           = 0;
+    sg_ai_heap_gate_relaxed_logged = false;
+    sg_ai_agent_cooldown_until_ms  = 0;
+    sg_ai_agent_auto_retry_enabled = true;
+    sg_ai_agent_inited_ms          = 0;
+#endif
+    return OPRT_OK;
 }
 
 static OPERATE_RET __ai_chat_mode_register(void)
@@ -361,7 +630,6 @@ static OPERATE_RET __ai_chat_mode_register(void)
     return rt;
 }
 
-
 /**
 @brief Initialize AI chat module
 @param cfg Chat mode configuration
@@ -369,12 +637,12 @@ static OPERATE_RET __ai_chat_mode_register(void)
 */
 OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
 {
-    OPERATE_RET rt = OPRT_OK;
-    uint32_t mode = 0;
-    int vol = 0;
-    bool is_need_save = false;
+    OPERATE_RET rt           = OPRT_OK;
+    uint32_t    mode         = 0;
+    int         vol          = 0;
+    bool        is_need_save = false;
 
-    if(NULL == cfg) {
+    if (NULL == cfg) {
         return OPRT_INVALID_PARM;
     }
 
@@ -383,24 +651,20 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
     sg_ai_default_mode = cfg->default_mode;
     sg_ai_default_vol  = cfg->default_vol;
 
-#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
-    TUYA_CALL_ERR_RETURN(ai_chat_ui_init());
-#endif
-
     rt = __ai_chat_load_config(&mode, &vol);
     if (OPRT_OK != rt) {
-        mode = sg_ai_default_mode;
-        vol  = sg_ai_default_vol;
+        mode         = sg_ai_default_mode;
+        vol          = sg_ai_default_vol;
         is_need_save = true;
     }
 
-    if(false ==ai_mode_is_in_register_list(mode)) {
+    if (false == ai_mode_is_in_register_list(mode)) {
         TUYA_CALL_ERR_RETURN(ai_get_first_mode(&sg_ai_default_mode));
-        mode = sg_ai_default_mode;
+        mode         = sg_ai_default_mode;
         is_need_save = true;
     }
 
-    if(is_need_save) {
+    if (is_need_save) {
         __ai_chat_save_config(mode, vol);
     }
 
@@ -408,16 +672,20 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
 
     ai_user_event_notify_register(__ai_handle_event);
 
-    TUYA_CALL_ERR_RETURN(tal_event_subscribe(EVENT_MQTT_CONNECTED, "ai_agent_init", __ai_mqtt_connected_evt, SUBSCRIBE_TYPE_EMERGENCY));
-    TUYA_CALL_ERR_RETURN(tal_event_subscribe(EVENT_AI_CLIENT_RUN, "client_run", ai_mode_client_run, SUBSCRIBE_TYPE_NORMAL));
+    TUYA_CALL_ERR_RETURN(
+        tal_event_subscribe(EVENT_MQTT_CONNECTED, "ai_agent_init", __ai_mqtt_connected_evt, SUBSCRIBE_TYPE_EMERGENCY));
+    TUYA_CALL_ERR_RETURN(tal_event_subscribe(EVENT_MQTT_DISCONNECTED, "ai_agent_state_reset",
+                                             __ai_mqtt_disconnected_evt, SUBSCRIBE_TYPE_NORMAL));
+    TUYA_CALL_ERR_RETURN(
+        tal_event_subscribe(EVENT_AI_CLIENT_RUN, "client_run", ai_mode_client_run, SUBSCRIBE_TYPE_NORMAL));
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-    AI_AUDIO_INPUT_CFG_T input_cfg= {
+    AI_AUDIO_INPUT_CFG_T input_cfg = {
         .vad_mode      = AI_AUDIO_VAD_MANUAL,
         .vad_off_ms    = AI_AUDIO_VAD_OFF_TIME,
         .vad_active_ms = AI_AUDIO_VAD_ACTIVE_TIME,
         .slice_ms      = AI_AUDIO_SLICE_TIME,
-        .output_cb     = __ai_audio_output,  
+        .output_cb     = __ai_audio_output,
     };
     TUYA_CALL_ERR_RETURN(ai_audio_input_init(&input_cfg));
 
@@ -426,24 +694,39 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
     TUYA_CALL_ERR_RETURN(tkl_kws_init());
 
     TUYA_CALL_ERR_LOG(ai_audio_player_set_vol(vol));
+    /* Network-connected prompt is played from __ai_mqtt_connected_evt() before
+     * ai_agent_init() on C3, and cloud init is retried later when heap recovers. */
 
-    TUYA_CALL_ERR_RETURN(tal_event_subscribe(EVENT_AUDIO_VAD, "vad_change", __ai_vad_change_evt, SUBSCRIBE_TYPE_NORMAL));
+    TUYA_CALL_ERR_RETURN(
+        tal_event_subscribe(EVENT_AUDIO_VAD, "vad_change", __ai_vad_change_evt, SUBSCRIBE_TYPE_NORMAL));
 #endif
 
     THREAD_CFG_T thrd_cfg = {
-        .priority = THREAD_PRIO_5,
-        .stackDepth = 2 * 1024,
-        .thrdname = "ai_chat_mode",
-        #ifdef ENABLE_EXT_RAM
+        .priority   = THREAD_PRIO_5,
+        .stackDepth = AI_CHAT_MODE_TASK_STACK_SIZE,
+        .thrdname   = "ai_chat_mode",
+#ifdef ENABLE_EXT_RAM
         .psram_mode = 1,
-        #endif            
+#endif
     };
 
-    TUYA_CALL_ERR_RETURN(tal_thread_create_and_start(&sg_ai_chat_mode_task, NULL, NULL,\
-                                                     __ai_chat_mode_task, NULL, &thrd_cfg));
+    TUYA_CALL_ERR_RETURN(
+        tal_thread_create_and_start(&sg_ai_chat_mode_task, NULL, NULL, __ai_chat_mode_task, NULL, &thrd_cfg));
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
     TUYA_CALL_ERR_LOG(__ai_chat_mode_open_button());
+#endif
+
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+    /* Audio-priority: initialize UI after audio path, and don't block
+     * full AI init when UI is short on memory. */
+    rt = ai_chat_ui_init();
+    if (rt == OPRT_OK) {
+        sg_ai_ui_ready = true;
+    } else {
+        sg_ai_ui_ready = false;
+        PR_WARN("audio-priority: ui init deferred, err=%d", rt);
+    }
 #endif
     PR_DEBUG("ai chat mode init mode %d success", mode);
 
@@ -473,6 +756,15 @@ OPERATE_RET ai_chat_set_volume(int volume)
 }
 
 /**
+@brief Cloud voice path usable (MQTT + agent inited + valid session sid).
+*/
+BOOL_T ai_chat_is_cloud_talk_ready(void)
+{
+    return (BOOL_T)(sg_mqtt_connected && sg_ai_agent_inited && !sg_ai_agent_init_busy &&
+                    tuya_ai_agent_is_session_ready());
+}
+
+/**
 @brief Get chat volume
 @return int Volume value (0-100)
 */
@@ -488,4 +780,3 @@ int ai_chat_get_volume(void)
 
     return volume;
 }
-
