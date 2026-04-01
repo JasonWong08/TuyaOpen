@@ -56,6 +56,10 @@
 #define AI_AGENT_INIT_HEAP_MIN_STRICT  (28 * 1024)
 #define AI_AGENT_INIT_HEAP_MIN_RELAXED (24 * 1024)
 #define AI_AGENT_INIT_RELAX_DELAY_MS   (15 * 1000U)
+/* Runtime fuse: if cloud AI path drags heap into danger, drop back to local mode
+ * and wait a cooldown window before next init retry. */
+#define AI_AGENT_RUNTIME_HEAP_FUSE_MIN (12 * 1024)
+#define AI_AGENT_RETRY_COOLDOWN_MS     (30 * 1000U)
 #endif
 #define AI_AGENT_INIT_RETRY_INTERVAL_MS (8000U)
 #ifdef PLATFORM_ESP32
@@ -87,6 +91,7 @@ static bool                 sg_ai_mode_inited       = false;
 static bool     sg_ai_agent_tls_stagger_done   = false;
 static uint64_t sg_mqtt_connected_ms           = 0;
 static bool     sg_ai_heap_gate_relaxed_logged = false;
+static uint64_t sg_ai_agent_cooldown_until_ms  = 0;
 #endif
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
@@ -219,12 +224,41 @@ static void __ai_handle_event(AI_NOTIFY_EVENT_T *event)
 static void __ai_chat_mode_task(void *args)
 {
     while (tal_thread_get_state(sg_ai_chat_mode_task) == THREAD_STATE_RUNNING) {
+        uint64_t now_ms = tal_system_get_millisecond();
+#ifdef PLATFORM_ESP32
+        if (sg_mqtt_connected && sg_ai_agent_inited && !sg_ai_agent_init_busy) {
+            uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
+            if (free_now < AI_AGENT_RUNTIME_HEAP_FUSE_MIN) {
+                OPERATE_RET de_rt = OPRT_OK;
+                PR_WARN("ai_agent fuse: free=%u < %u, deinit and cooldown %u ms", (unsigned)free_now,
+                        (unsigned)AI_AGENT_RUNTIME_HEAP_FUSE_MIN, (unsigned)AI_AGENT_RETRY_COOLDOWN_MS);
+                sg_ai_agent_init_busy = true;
+                de_rt                 = ai_agent_deinit();
+                sg_ai_agent_init_busy = false;
+                if (de_rt != OPRT_OK) {
+                    PR_WARN("ai_agent_deinit failed rt=%d", de_rt);
+                }
+                sg_ai_agent_inited             = false;
+                sg_ai_agent_retry_now          = false;
+                sg_ai_agent_retry_ms           = now_ms;
+                sg_ai_agent_cooldown_until_ms  = now_ms + AI_AGENT_RETRY_COOLDOWN_MS;
+                sg_ai_agent_tls_stagger_done   = false;
+                sg_ai_heap_gate_relaxed_logged = false;
+            }
+        }
+#endif
         if (sg_mqtt_connected && !sg_ai_agent_inited && !sg_ai_agent_init_busy) {
-            uint64_t now_ms = tal_system_get_millisecond();
-            bool     should_retry =
+            bool should_retry =
                 sg_ai_agent_retry_now || ((now_ms >= sg_ai_agent_retry_ms) &&
                                           ((now_ms - sg_ai_agent_retry_ms) >= AI_AGENT_INIT_RETRY_INTERVAL_MS));
             if (should_retry) {
+#ifdef PLATFORM_ESP32
+                if (sg_ai_agent_cooldown_until_ms > now_ms) {
+                    ai_mode_task_running(args);
+                    tal_system_sleep(20);
+                    continue;
+                }
+#endif
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
                 if (ai_audio_player_is_playing()) {
                     /* Keep prompt playback priority; retry immediately after playback. */
@@ -464,6 +498,7 @@ static int __ai_mqtt_connected_evt(void *data)
 #ifdef PLATFORM_ESP32
     sg_mqtt_connected_ms           = tal_system_get_millisecond();
     sg_ai_heap_gate_relaxed_logged = false;
+    sg_ai_agent_cooldown_until_ms  = 0;
 #endif
 
     __ai_chat_load_config(&mode, &vol);
@@ -542,6 +577,7 @@ static int __ai_mqtt_disconnected_evt(void *data)
     sg_ai_agent_tls_stagger_done   = false;
     sg_mqtt_connected_ms           = 0;
     sg_ai_heap_gate_relaxed_logged = false;
+    sg_ai_agent_cooldown_until_ms  = 0;
 #endif
     return OPRT_OK;
 }
