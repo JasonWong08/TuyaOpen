@@ -317,6 +317,15 @@ static void __ai_chat_mode_task(void *args)
                         PR_NOTICE("ai_agent_init recovered by retry");
                     } else {
                         PR_WARN("ai_agent_init retry failed rt=%d, keep local-audio only", rt);
+#ifdef PLATFORM_ESP32
+                        /* Avoid endless create/deinit churn on low-memory C3 when
+                         * ai_agent_init fails (e.g. thread create -26624). Keep
+                         * manual retry path only (button-triggered retry_now). */
+                        sg_ai_agent_auto_retry_enabled = false;
+                        sg_ai_agent_cooldown_until_ms  = now_ms + AI_AGENT_RETRY_COOLDOWN_MS;
+                        sg_ai_agent_inited_ms          = 0;
+                        PR_WARN("ai_agent auto retry disabled after init failure, manual retry only");
+#endif
                     }
                 } else {
                     PR_DEBUG("skip ai_agent_init retry: free=%u need>=%u", (unsigned)free_now, (unsigned)required_heap);
