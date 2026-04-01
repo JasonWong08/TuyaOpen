@@ -5,6 +5,7 @@ import os
 import sys
 import click
 import shutil
+import re
 
 from tools.cli_command.util import (
     get_logger, get_global_params, check_proj_dir,
@@ -170,6 +171,114 @@ def build_setup(platform, project_name, framework, chip=""):
     ret = do_subprocess(cmd)
     if 0 != ret:
         return False
+    return True
+
+
+def _parse_simple_kv_config(config_file):
+    data = {}
+    if not os.path.exists(config_file):
+        return data
+
+    with open(config_file, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if (not line) or line.startswith("#") or ("=" not in line):
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key.startswith("CONFIG_"):
+                continue
+            data[key] = value
+
+    return data
+
+
+def _patch_kv_file(target_file, overrides):
+    if (not os.path.exists(target_file)) or (not overrides):
+        return False
+
+    with open(target_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    touched = set()
+    for key, value in overrides.items():
+        pattern = rf"^{re.escape(key)}=.*$"
+        repl = f"{key}={value}"
+        new_content, count = re.subn(pattern, repl, content, flags=re.MULTILINE)
+        if count > 0:
+            content = new_content
+            touched.add(key)
+
+    append_keys = [k for k in overrides.keys() if k not in touched]
+    if append_keys:
+        if not content.endswith("\n"):
+            content += "\n"
+        for key in append_keys:
+            content += f"{key}={overrides[key]}\n"
+
+    with open(target_file, "w", encoding="utf-8") as f:
+        f.write(content)
+    return True
+
+
+def apply_esp32_build_overrides(using_data):
+    """
+    Keep ESP-IDF wifi/mbedtls knobs in sync with app_default.config.
+
+    These keys are consumed by ESP-IDF sdkconfig but are not always present in
+    TuyaOpen catalog Kconfig output, so patch the platform defaults directly
+    before ninja invokes platform build scripts.
+    """
+    logger = get_logger()
+    params = get_global_params()
+
+    if using_data.get("CONFIG_PLATFORM_CHOICE", "") != "ESP32":
+        return True
+
+    app_cfg = _parse_simple_kv_config(params["app_default_config"])
+    if not app_cfg:
+        return True
+
+    overrides = {}
+    wifi_rx = app_cfg.get("CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM", "")
+    wifi_tx = app_cfg.get("CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM", "")
+    wifi_mgmt = app_cfg.get("CONFIG_ESP_WIFI_MGMT_SBUF_NUM", "")
+    tls_len = app_cfg.get("CONFIG_ENABLE_MBEDTLS_SSL_MAX_CONTENT_LEN", "")
+
+    if wifi_rx:
+        overrides["CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM"] = wifi_rx
+        overrides["CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM"] = wifi_rx
+    if wifi_tx:
+        overrides["CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM"] = wifi_tx
+        overrides["CONFIG_ESP32_WIFI_DYNAMIC_TX_BUFFER_NUM"] = wifi_tx
+    if wifi_mgmt:
+        overrides["CONFIG_ESP_WIFI_MGMT_SBUF_NUM"] = wifi_mgmt
+        overrides["CONFIG_ESP32_WIFI_MGMT_SBUF_NUM"] = wifi_mgmt
+    if tls_len:
+        overrides["CONFIG_MBEDTLS_SSL_MAX_CONTENT_LEN"] = tls_len
+
+    if not overrides:
+        return True
+
+    platform_root = os.path.join(params["platforms_root"], "ESP32")
+    chip = using_data.get("CONFIG_CHIP_CHOICE", "")
+    suffix = ""
+    if chip == "esp32c3" and using_data.get("CONFIG_PLATFORM_FLASHSIZE_16M", False):
+        suffix = "_16m"
+
+    sdk_root = os.path.join(platform_root, "tuya_open_sdk")
+    sdkconfig_chip = os.path.join(sdk_root, f"sdkconfig_{chip}{suffix}")
+    sdkconfig_defaults = os.path.join(sdk_root, "sdkconfig.defaults")
+
+    patched = False
+    patched = _patch_kv_file(sdkconfig_chip, overrides) or patched
+    patched = _patch_kv_file(sdkconfig_defaults, overrides) or patched
+
+    if patched:
+        logger.info("Applied ESP32 sdkconfig overrides from app_default.config.")
+    else:
+        logger.warning("Skip ESP32 sdkconfig overrides: target files not found.")
     return True
 
 
@@ -340,6 +449,10 @@ def build_project(verbose=False, log_file=None, log_file_append=False):
             logger.error("Build setup error.")
             return False
         logger.info(f"Build setup for [{project_name}] success.")
+
+        if not apply_esp32_build_overrides(using_data):
+            logger.error("Apply ESP32 sdkconfig overrides error.")
+            return False
 
         if not cmake_configure(using_data, verbose):
             logger.error("Cmake configure error.")
