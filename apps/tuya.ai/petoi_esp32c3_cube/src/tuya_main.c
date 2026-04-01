@@ -92,6 +92,12 @@ tuya_iot_license_t license;
 #define OFFLINE_UI_RECOVER_HEAP_MIN    (96 * 1024)
 #define OFFLINE_AUDIO_RECOVER_HEAP_MIN (72 * 1024)
 #define POSTCLOUD_RETRY_INTERVAL_MS    (2000)
+/* Startup guard:
+ * If device is already activated but MQTT/TLS repeatedly fails right after boot,
+ * force BLE netcfg fallback so user can re-pair instead of being stuck offline. */
+#define STARTUP_MQTT_FAIL_FALLBACK_MAX  5
+#define STARTUP_MQTT_FAIL_WINDOW_MS     (90 * 1000U)
+#define STARTUP_MQTT_FAIL_MIN_UPTIME_MS (5 * 1000U)
 
 static uint8_t  _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
@@ -101,6 +107,8 @@ static bool     sg_ble_released              = false;
 static bool     sg_ble_release_scheduled     = false;
 static bool     sg_postcloud_retry_scheduled = false;
 static TIMER_ID sg_postcloud_retry_tm        = NULL;
+static uint32_t sg_startup_mqtt_fail_count   = 0;
+static bool     sg_startup_netcfg_fallback   = false;
 #if defined(ENABLE_BLUETOOTH) && (ENABLE_BLUETOOTH == 1)
 static TIMER_ID sg_ble_release_stage1_tm = NULL;
 static TIMER_ID sg_ble_release_stage2_tm = NULL;
@@ -281,6 +289,43 @@ static bool __is_mqtt_connected_now(void)
      * Treat "ever connected in this session" as connected for post-cloud retry,
      * and stop retry only on explicit MQTT_DISCONNECT event. */
     return (ai_client.status == TUYA_STATUS_MQTT_CONNECTED) || (sg_run_stats.mqtt_connected_count > 0);
+}
+
+static void __startup_mqtt_fail_fallback_try(const char *reason)
+{
+    uint64_t now_ms = tal_system_get_millisecond();
+
+    if (sg_startup_netcfg_fallback) {
+        return;
+    }
+    if (sg_run_stats.mqtt_connected_count > 0) {
+        return;
+    }
+    if (!ai_client.is_activated) {
+        return;
+    }
+    if (now_ms < STARTUP_MQTT_FAIL_MIN_UPTIME_MS) {
+        return;
+    }
+    if ((now_ms - sg_run_stats.boot_ms) > STARTUP_MQTT_FAIL_WINDOW_MS) {
+        return;
+    }
+    if (sg_startup_mqtt_fail_count < STARTUP_MQTT_FAIL_FALLBACK_MAX) {
+        return;
+    }
+
+    sg_startup_netcfg_fallback = true;
+    PR_ERR("startup mqtt fail fallback: count=%u reason=%s", (unsigned)sg_startup_mqtt_fail_count,
+           reason ? reason : "unknown");
+
+    /* Clear activation so stack enters bind path and BLE scanner can discover it. */
+    TUYA_CALL_ERR_LOG(tuya_iot_activated_data_remove(&ai_client));
+    ai_client.is_activated = false;
+    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_RESET, NULL);
+    netcfg_start(NETCFG_TUYA_BLE, NULL, NULL);
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    TUYA_CALL_ERR_LOG(app_chat_bot_try_recover_audio_alert(20 * 1024, AI_AUDIO_ALERT_NETWORK_CFG));
+#endif
 }
 
 static void __postcloud_retry_tm_cb(TIMER_ID timer_id, void *arg);
@@ -489,6 +534,8 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     case TUYA_EVENT_MQTT_CONNECTED:
         PR_INFO("Device MQTT Connected!");
         __log_heap_snapshot("mqtt_connected.entry");
+        sg_startup_mqtt_fail_count = 0;
+        sg_startup_netcfg_fallback = false;
         sg_run_stats.mqtt_connected_count++;
         sg_run_stats.mqtt_connected_ms = tal_system_get_millisecond();
         if (sg_run_stats.bind_start_ms > 0 && sg_run_stats.mqtt_connected_ms >= sg_run_stats.bind_start_ms) {
@@ -560,6 +607,10 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 
     case TUYA_EVENT_MQTT_DISCONNECT:
         PR_INFO("Device MQTT DisConnected!");
+        if (sg_run_stats.mqtt_connected_count == 0) {
+            sg_startup_mqtt_fail_count++;
+            __startup_mqtt_fail_fallback_try("mqtt_disconnect_before_first_connect");
+        }
         sg_run_stats.mqtt_disconnected_count++;
         sg_cloud_ready = app_chat_bot_is_postcloud_inited();
         if (sg_postcloud_retry_tm) {
