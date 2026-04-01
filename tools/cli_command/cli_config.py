@@ -67,13 +67,7 @@ def init_using_config(force=False):
         pass
 
     using_config = params["using_config"]
-    need_refresh = force or (not os.path.exists(using_config))
-    if (not need_refresh) and os.path.exists(app_default_config):
-        # Keep build behavior deterministic: if app_default.config changed since
-        # last generated using.config, regenerate it automatically.
-        need_refresh = os.path.getmtime(app_default_config) > os.path.getmtime(using_config)
-
-    if need_refresh:
+    if force or not os.path.exists(using_config):
         _defconfig(app_default_config, using_config, catalog_kconfig)
     pass
 
