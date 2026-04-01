@@ -53,7 +53,9 @@
 /* On ESP32-C3 with no PSRAM, keep prompt-audio first: defer cloud AI init when
  * free heap is low. We intentionally avoid heap_caps_get_largest_free_block() in
  * hot paths (MQTT / retry loop) after field faults under heap contention. */
-#define AI_AGENT_INIT_HEAP_MIN (28 * 1024)
+#define AI_AGENT_INIT_HEAP_MIN_STRICT  (28 * 1024)
+#define AI_AGENT_INIT_HEAP_MIN_RELAXED (24 * 1024)
+#define AI_AGENT_INIT_RELAX_DELAY_MS   (15 * 1000U)
 #endif
 #define AI_AGENT_INIT_RETRY_INTERVAL_MS (8000U)
 #ifdef PLATFORM_ESP32
@@ -82,7 +84,9 @@ static uint64_t             sg_ai_agent_retry_ms    = 0;
 static bool                 sg_ai_mode_inited       = false;
 #ifdef PLATFORM_ESP32
 /* One-shot delay per MQTT session: avoid overlapping AI mq/TLS with meta.save etc. */
-static bool sg_ai_agent_tls_stagger_done = false;
+static bool     sg_ai_agent_tls_stagger_done   = false;
+static uint64_t sg_mqtt_connected_ms           = 0;
+static bool     sg_ai_heap_gate_relaxed_logged = false;
 #endif
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
@@ -232,16 +236,26 @@ static void __ai_chat_mode_task(void *args)
                 }
 #endif
 #ifdef PLATFORM_ESP32
+                uint32_t required_heap = AI_AGENT_INIT_HEAP_MIN_STRICT;
+                if (sg_mqtt_connected_ms > 0 && (now_ms - sg_mqtt_connected_ms) >= AI_AGENT_INIT_RELAX_DELAY_MS) {
+                    required_heap = AI_AGENT_INIT_HEAP_MIN_RELAXED;
+                    if (!sg_ai_heap_gate_relaxed_logged) {
+                        PR_NOTICE("ai_agent: relax heap gate to %u after %u ms mqtt stable", (unsigned)required_heap,
+                                  (unsigned)AI_AGENT_INIT_RELAX_DELAY_MS);
+                        sg_ai_heap_gate_relaxed_logged = true;
+                    }
+                }
                 uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
-                if (free_now >= AI_AGENT_INIT_HEAP_MIN) {
+                if (free_now >= required_heap) {
                     OPERATE_RET rt = OPRT_OK;
                     if (!sg_ai_agent_tls_stagger_done) {
                         PR_NOTICE("ai_agent: stagger 2.5s before first init (vs device MQTT/meta TLS)");
                         tal_system_sleep(2500);
                         sg_ai_agent_tls_stagger_done = true;
-                        free_now = (uint32_t)tal_system_get_free_heap_size();
-                        if (free_now < AI_AGENT_INIT_HEAP_MIN) {
-                            PR_WARN("ai_agent: post-stagger heap low free=%u, defer init", (unsigned)free_now);
+                        free_now                     = (uint32_t)tal_system_get_free_heap_size();
+                        if (free_now < required_heap) {
+                            PR_WARN("ai_agent: post-stagger heap low free=%u need>=%u, defer init", (unsigned)free_now,
+                                    (unsigned)required_heap);
                             sg_ai_agent_retry_ms  = now_ms;
                             sg_ai_agent_retry_now = true;
                             ai_mode_task_running(args);
@@ -259,8 +273,7 @@ static void __ai_chat_mode_task(void *args)
                         PR_WARN("ai_agent_init retry failed rt=%d, keep local-audio only", rt);
                     }
                 } else {
-                    PR_DEBUG("skip ai_agent_init retry: free=%u need>=%u", (unsigned)free_now,
-                             (unsigned)AI_AGENT_INIT_HEAP_MIN);
+                    PR_DEBUG("skip ai_agent_init retry: free=%u need>=%u", (unsigned)free_now, (unsigned)required_heap);
                 }
 #else
                 OPERATE_RET rt        = OPRT_OK;
@@ -448,6 +461,10 @@ static int __ai_mqtt_connected_evt(void *data)
 
     (void)data;
     sg_mqtt_connected = true;
+#ifdef PLATFORM_ESP32
+    sg_mqtt_connected_ms           = tal_system_get_millisecond();
+    sg_ai_heap_gate_relaxed_logged = false;
+#endif
 
     __ai_chat_load_config(&mode, &vol);
 
@@ -475,9 +492,9 @@ static int __ai_mqtt_connected_evt(void *data)
     /* Avoid heap_caps_get_largest_free_block() in MQTT/event path: it walks the
      * heap and has triggered Load faults under contention; retry task uses same policy. */
     uint32_t free_now = (uint32_t)tal_system_get_free_heap_size();
-    if (free_now < AI_AGENT_INIT_HEAP_MIN) {
+    if (free_now < AI_AGENT_INIT_HEAP_MIN_STRICT) {
         PR_WARN("defer ai_agent_init (mqtt evt): free=%u need_free>=%u (largest not checked here)", (unsigned)free_now,
-                (unsigned)AI_AGENT_INIT_HEAP_MIN);
+                (unsigned)AI_AGENT_INIT_HEAP_MIN_STRICT);
         sg_ai_agent_inited    = false;
         sg_ai_agent_retry_ms  = tal_system_get_millisecond();
         sg_ai_agent_retry_now = true;
@@ -522,7 +539,9 @@ static int __ai_mqtt_disconnected_evt(void *data)
     sg_ai_agent_init_busy = false;
     sg_ai_agent_retry_now = false;
 #ifdef PLATFORM_ESP32
-    sg_ai_agent_tls_stagger_done = false;
+    sg_ai_agent_tls_stagger_done   = false;
+    sg_mqtt_connected_ms           = 0;
+    sg_ai_heap_gate_relaxed_logged = false;
 #endif
     return OPRT_OK;
 }
