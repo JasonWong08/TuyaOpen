@@ -293,8 +293,7 @@ static bool __is_mqtt_connected_now(void)
 
 static void __startup_mqtt_fail_fallback_try(const char *reason)
 {
-    OPERATE_RET rt     = OPRT_OK;
-    uint64_t    now_ms = tal_system_get_millisecond();
+    uint64_t now_ms = tal_system_get_millisecond();
 
     if (sg_startup_netcfg_fallback) {
         return;
