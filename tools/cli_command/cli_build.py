@@ -270,14 +270,10 @@ def apply_esp32_build_overrides(using_data):
     sdk_root = os.path.join(platform_root, "tuya_open_sdk")
     sdkconfig_chip = os.path.join(sdk_root, f"sdkconfig_{chip}{suffix}")
     sdkconfig_defaults = os.path.join(sdk_root, "sdkconfig.defaults")
-    sdkconfig_active = os.path.join(sdk_root, "sdkconfig")
 
     patched = False
     patched = _patch_kv_file(sdkconfig_chip, overrides) or patched
     patched = _patch_kv_file(sdkconfig_defaults, overrides) or patched
-    # If sdkconfig already exists from previous builds, patch it as well so
-    # current build uses overrides immediately (without forcing set-target).
-    patched = _patch_kv_file(sdkconfig_active, overrides) or patched
 
     if patched:
         logger.info("Applied ESP32 sdkconfig overrides from app_default.config.")
