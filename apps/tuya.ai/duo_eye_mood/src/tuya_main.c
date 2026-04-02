@@ -108,7 +108,7 @@ OPERATE_RET audio_dp_obj_proc(dp_obj_recv_t *dpobj)
             uint8_t volume = dp->value.dp_value;
             PR_DEBUG("volume:%d", volume);
             ai_chat_set_volume(volume);
-#if defined(ENABLE_CHAT_DISPLAY) && (ENABLE_CHAT_DISPLAY == 1)
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
             char volume_str[20] = {0};
             snprintf(volume_str, sizeof(volume_str), "%s%d", VOLUME, volume);
             ai_ui_disp_msg(AI_UI_DISP_NOTIFICATION, (uint8_t *)volume_str, strlen(volume_str));
@@ -126,12 +126,12 @@ OPERATE_RET audio_dp_obj_proc(dp_obj_recv_t *dpobj)
 OPERATE_RET ai_audio_volume_upload(void)
 {
     tuya_iot_client_t *client = tuya_iot_client_get();
-    dp_obj_t dp_obj = {0};
+    dp_obj_t           dp_obj = {0};
 
     uint8_t volume = ai_chat_get_volume();
 
-    dp_obj.id = DPID_VOLUME;
-    dp_obj.type = PROP_VALUE;
+    dp_obj.id             = DPID_VOLUME;
+    dp_obj.type           = PROP_VALUE;
     dp_obj.value.dp_value = volume;
 
     PR_DEBUG("DP upload volume:%d", volume);
@@ -159,10 +159,10 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             tal_system_reset();
         }
 
-        #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
-        #endif
-        
+#endif
+
         break;
 
     /* Print the QRCode for Tuya APP bind */
@@ -186,9 +186,9 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         if (first) {
             first = 0;
 
-#if defined(ENABLE_CHAT_DISPLAY) && (ENABLE_CHAT_DISPLAY == 1)
-            UI_WIFI_STATUS_E wifi_status = UI_WIFI_STATUS_GOOD;
-            ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&wifi_status, sizeof(UI_WIFI_STATUS_E));
+#if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
+            AI_UI_WIFI_STATUS_E wifi_status = AI_UI_WIFI_STATUS_GOOD;
+            ai_ui_disp_msg(AI_UI_DISP_NETWORK, (uint8_t *)&wifi_status, sizeof(AI_UI_WIFI_STATUS_E));
 #endif
             ai_audio_volume_upload();
         }
@@ -240,8 +240,8 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             PR_DEBUG("devid.%s", dpraw->devid);
         }
 
-        uint32_t index = 0;
-        dp_raw_t *dp = &dpraw->dp;
+        uint32_t  index = 0;
+        dp_raw_t *dp    = &dpraw->dp;
         PR_DEBUG("dpid:%d type:RAW len:%d data:", dp->id, dp->len);
         for (index = 0; index < dp->len; index++) {
             PR_DEBUG_RAW("%02x", dp->data[index]);
@@ -277,7 +277,7 @@ void user_main(void)
     //! open iot development kit runtim init
 #if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
     cJSON_InitHooks(&(cJSON_Hooks){.malloc_fn = tal_psram_malloc, .free_fn = tal_psram_free});
-#else 
+#else
     cJSON_InitHooks(&(cJSON_Hooks){.malloc_fn = tal_malloc, .free_fn = tal_free});
 #endif
 
@@ -295,7 +295,7 @@ void user_main(void)
 
     tal_kv_init(&(tal_kv_cfg_t){
         .seed = "vmlkasdh93dlvlcy",
-        .key = "dflfuap134ddlduq",
+        .key  = "dflfuap134ddlduq",
     });
     tal_sw_timer_init();
     tal_workq_init();
@@ -306,7 +306,7 @@ void user_main(void)
     reset_netconfig_start();
 
     if (OPRT_OK != tuya_authorize_read(&license)) {
-        license.uuid = TUYA_OPENSDK_UUID;
+        license.uuid    = TUYA_OPENSDK_UUID;
         license.authkey = TUYA_OPENSDK_AUTHKEY;
         PR_WARN("Replace the TUYA_OPENSDK_UUID and TUYA_OPENSDK_AUTHKEY contents, otherwise the demo cannot work.\n \
                 Visit https://platform.tuya.com/purchase/index?type=6 to get the open-sdk uuid and authkey.");
@@ -315,9 +315,9 @@ void user_main(void)
     /* Initialize Tuya device configuration */
     ret = tuya_iot_init(&ai_client, &(const tuya_iot_config_t){
                                         .software_ver = PROJECT_VERSION,
-                                        .productkey = TUYA_PRODUCT_ID,
-                                        .uuid = license.uuid,
-                                        .authkey = license.authkey,
+                                        .productkey   = TUYA_PRODUCT_ID,
+                                        .uuid         = license.uuid,
+                                        .authkey      = license.authkey,
                                         // .firmware_key      = TUYA_DEVICE_FIRMWAREKEY,
                                         .event_handler = user_event_handler_on,
                                         .network_check = user_network_check,
@@ -407,9 +407,9 @@ static void tuya_app_thread(void *arg)
 void tuya_app_main(void)
 {
     THREAD_CFG_T thrd_param = {0};
-    thrd_param.stackDepth = 4096;
-    thrd_param.priority = 4;
-    thrd_param.thrdname = "tuya_app_main";
+    thrd_param.stackDepth   = 4096;
+    thrd_param.priority     = 4;
+    thrd_param.thrdname     = "tuya_app_main";
     tal_thread_create_and_start(&ty_app_thread, NULL, NULL, tuya_app_thread, NULL, &thrd_param);
 }
 #endif
