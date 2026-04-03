@@ -314,7 +314,11 @@ void user_main(void)
     cJSON_InitHooks(&(cJSON_Hooks){.malloc_fn = tal_malloc, .free_fn = tal_free});
 #endif
 
+#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
     tal_log_init(TAL_LOG_LEVEL_DEBUG, 1024, (TAL_LOG_OUTPUT_CB)tkl_log_output);
+#else
+    tal_log_init(TAL_LOG_LEVEL_DEBUG, 512, (TAL_LOG_OUTPUT_CB)tkl_log_output);
+#endif
 
     PR_NOTICE("Application information:");
     PR_NOTICE("Project name:        %s", PROJECT_NAME);
@@ -339,6 +343,8 @@ void user_main(void)
     tuya_authorize_init();
 
     reset_netconfig_start();
+
+    PR_INFO("[Phase-1 done] Heap after bootstrap: %d", tal_system_get_free_heap_size());
 
     if (OPRT_OK != tuya_authorize_read(&license)) {
         license.uuid    = TUYA_OPENSDK_UUID;
@@ -376,12 +382,14 @@ void user_main(void)
     netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_BLE | NETCFG_TUYA_WIFI_AP});
 #endif
 
-    PR_DEBUG("tuya_iot_init success");
+    PR_INFO("[Phase-2 done] Heap after cloud/net init: %d", tal_system_get_free_heap_size());
 
     ret = board_register_hardware();
     if (ret != OPRT_OK) {
         PR_ERR("board_register_hardware failed");
     }
+
+    PR_INFO("[Phase-3 done] Heap after hardware init: %d", tal_system_get_free_heap_size());
 
     ret = app_chat_bot_init();
     if (ret != OPRT_OK) {
@@ -395,7 +403,8 @@ void user_main(void)
     }
 #endif
 
-    /* Start tuya iot task */
+    PR_INFO("[Phase-4 done] Heap after app init: %d", tal_system_get_free_heap_size());
+
     tuya_iot_start(&ai_client);
 
     tkl_wifi_set_lp_mode(0, 0);
@@ -442,9 +451,13 @@ static void tuya_app_thread(void *arg)
 void tuya_app_main(void)
 {
     THREAD_CFG_T thrd_param = {0};
-    thrd_param.stackDepth   = 4096;
-    thrd_param.priority     = 4;
-    thrd_param.thrdname     = "tuya_app_main";
+#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
+    thrd_param.stackDepth = 4096;
+#else
+    thrd_param.stackDepth = 3072;
+#endif
+    thrd_param.priority = 4;
+    thrd_param.thrdname = "tuya_app_main";
     tal_thread_create_and_start(&ty_app_thread, NULL, NULL, tuya_app_thread, NULL, &thrd_param);
 }
 #endif
