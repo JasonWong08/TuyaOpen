@@ -1,8 +1,8 @@
 /**
  * @file tdd_audio_no_codec.c
- * @brief tdd_audio_no_codec module is used to
- * @version 0.1
- * @date 2025-04-08
+ * @brief I2S audio driver without external codec for ESP32 platforms.
+ *
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 #include "math.h"
 
@@ -31,13 +31,13 @@
 ***********************************************************/
 typedef struct {
     TDD_AUDIO_NO_CODEC_T cfg;
-    TDL_AUDIO_MIC_CB mic_cb;
+    TDL_AUDIO_MIC_CB     mic_cb;
 
     TUYA_I2S_NUM_E i2s_tx_id;
     TUYA_I2S_NUM_E i2s_rx_id;
 
     THREAD_HANDLE thrd_hdl;
-    MUTEX_HANDLE mutex_play;
+    MUTEX_HANDLE  mutex_play;
 
     uint8_t play_volume;
 
@@ -81,13 +81,13 @@ static void esp32_i2s_read_task(void *args)
 
         // 32bit to 16bit
         int32_t *p_raw_data = (int32_t *)(hdl->raw_data_buf);
-        int16_t *p_data = (int16_t *)(hdl->data_buf);
+        int16_t *p_data     = (int16_t *)(hdl->data_buf);
         for (int i = 0; i < samples; i++) {
             // Convert 32bit to 16bit
             int32_t tmp_value = p_raw_data[i] >> 14;
-            p_data[i] = (tmp_value > INT16_MAX)    ? INT16_MAX
-                        : (tmp_value < -INT16_MAX) ? -INT16_MAX
-                                                   : (int16_t)tmp_value;
+            p_data[i]         = (tmp_value > INT16_MAX)    ? INT16_MAX
+                                : (tmp_value < -INT16_MAX) ? -INT16_MAX
+                                                           : (int16_t)tmp_value;
         }
 
         if (hdl->mic_cb) {
@@ -104,7 +104,7 @@ static void esp32_i2s_read_task(void *args)
 
 static OPERATE_RET __tdd_audio_no_codec_open(TDD_AUDIO_HANDLE_T handle, TDL_AUDIO_MIC_CB mic_cb)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET       rt  = OPRT_OK;
     ESP_I2S_HANDLE_T *hdl = (ESP_I2S_HANDLE_T *)handle;
 
     if (NULL == hdl) {
@@ -121,15 +121,15 @@ static OPERATE_RET __tdd_audio_no_codec_open(TDD_AUDIO_HANDLE_T handle, TDL_AUDI
     hdl->i2s_tx_id = TUYA_I2S_NUM_1;
 
     TUYA_I2S_BASE_CFG_T i2s_rx_cfg = {0};
-    i2s_rx_cfg.mode = TUYA_I2S_MODE_MASTER | TUYA_I2S_MODE_RX;
-    i2s_rx_cfg.sample_rate = 16000;
-    i2s_rx_cfg.bits_per_sample = TUYA_I2S_BITS_PER_SAMPLE_32BIT;
+    i2s_rx_cfg.mode                = TUYA_I2S_MODE_MASTER | TUYA_I2S_MODE_RX;
+    i2s_rx_cfg.sample_rate         = 16000;
+    i2s_rx_cfg.bits_per_sample     = TUYA_I2S_BITS_PER_SAMPLE_32BIT;
     tkl_i2s_init(hdl->i2s_rx_id, &i2s_rx_cfg);
 
     TUYA_I2S_BASE_CFG_T i2s_tx_cfg = {0};
-    i2s_tx_cfg.mode = TUYA_I2S_MODE_MASTER | TUYA_I2S_MODE_TX;
-    i2s_tx_cfg.sample_rate = 16000;
-    i2s_tx_cfg.bits_per_sample = TUYA_I2S_BITS_PER_SAMPLE_32BIT;
+    i2s_tx_cfg.mode                = TUYA_I2S_MODE_MASTER | TUYA_I2S_MODE_TX;
+    i2s_tx_cfg.sample_rate         = 16000;
+    i2s_tx_cfg.bits_per_sample     = TUYA_I2S_BITS_PER_SAMPLE_32BIT;
     tkl_i2s_init(hdl->i2s_tx_id, &i2s_tx_cfg);
 
     PR_NOTICE("I2S channels created");
@@ -157,21 +157,19 @@ static OPERATE_RET __tdd_audio_no_codec_open(TDD_AUDIO_HANDLE_T handle, TDL_AUDI
     }
 
     rt = audio_afe_processor_init();
-    if(rt != OPRT_OK) {
-        PR_ERR("audio_afe_processor_init err:%d",  rt);
-        return rt;
+    if (rt != OPRT_OK) {
+        PR_WARN("audio_afe_processor_init failed (err:%d), VAD/wakeword disabled", rt);
+        rt = OPRT_OK;
     }
 
     const THREAD_CFG_T thread_cfg = {
-        .thrdname = "esp32_i2s_read",
+        .thrdname   = "esp32_i2s_read",
         .stackDepth = 3 * 1024,
-        .priority = THREAD_PRIO_1,
+        .priority   = THREAD_PRIO_1,
     };
     PR_DEBUG("I2S read task args: %p", hdl);
-    TUYA_CALL_ERR_LOG(tal_thread_create_and_start(&hdl->thrd_hdl, NULL, NULL,\
-                                                 esp32_i2s_read_task, \
-                                                 (void *)hdl, &thread_cfg));
-
+    TUYA_CALL_ERR_LOG(
+        tal_thread_create_and_start(&hdl->thrd_hdl, NULL, NULL, esp32_i2s_read_task, (void *)hdl, &thread_cfg));
 
     return rt;
 }
@@ -193,7 +191,7 @@ static OPERATE_RET __tdd_audio_no_codec_play(TDD_AUDIO_HANDLE_T handle, uint8_t 
 
     tal_mutex_lock(hdl->mutex_play);
 
-    int16_t *p_data = (int16_t *)data;
+    int16_t *p_data   = (int16_t *)data;
     uint32_t send_len = len / sizeof(int16_t);
 
     int32_t *p_send_data = tal_malloc(send_len * sizeof(int32_t));
@@ -279,10 +277,10 @@ static OPERATE_RET __tdd_audio_no_codec_close(TDD_AUDIO_HANDLE_T handle)
 
 OPERATE_RET tdd_audio_no_codec_register(char *name, TDD_AUDIO_NO_CODEC_T cfg)
 {
-    OPERATE_RET rt = OPRT_OK;
-    ESP_I2S_HANDLE_T *_hdl = NULL;
+    OPERATE_RET       rt    = OPRT_OK;
+    ESP_I2S_HANDLE_T *_hdl  = NULL;
     TDD_AUDIO_INTFS_T intfs = {0};
-    TDD_AUDIO_INFO_T info = {0};
+    TDD_AUDIO_INFO_T  info  = {0};
 
     _hdl = (ESP_I2S_HANDLE_T *)tal_malloc(sizeof(ESP_I2S_HANDLE_T));
     TUYA_CHECK_NULL_RETURN(_hdl, OPRT_MALLOC_FAILED);
@@ -291,19 +289,19 @@ OPERATE_RET tdd_audio_no_codec_register(char *name, TDD_AUDIO_NO_CODEC_T cfg)
     // default play volume
     _hdl->play_volume = 80;
 
-    info.sample_rate    = cfg.mic_sample_rate;
-    info.sample_ch_num  = 1;
-    info.sample_bits    = SAMPLE_DATABITS;
-    info.sample_tm_ms   = I2S_READ_TIME_MS;
+    info.sample_rate   = cfg.mic_sample_rate;
+    info.sample_ch_num = 1;
+    info.sample_bits   = SAMPLE_DATABITS;
+    info.sample_tm_ms  = I2S_READ_TIME_MS;
 
     memcpy(&_hdl->cfg, &cfg, sizeof(TDD_AUDIO_NO_CODEC_T));
 
-    intfs.open = __tdd_audio_no_codec_open;
-    intfs.play = __tdd_audio_no_codec_play;
+    intfs.open   = __tdd_audio_no_codec_open;
+    intfs.play   = __tdd_audio_no_codec_play;
     intfs.config = __tdd_audio_no_codec_config;
-    intfs.close = __tdd_audio_no_codec_close;
+    intfs.close  = __tdd_audio_no_codec_close;
 
-    TUYA_CALL_ERR_GOTO(tdl_audio_driver_register(name, (TDD_AUDIO_HANDLE_T)_hdl,  &intfs, &info), __ERR);
+    TUYA_CALL_ERR_GOTO(tdl_audio_driver_register(name, (TDD_AUDIO_HANDLE_T)_hdl, &intfs, &info), __ERR);
 
     return rt;
 

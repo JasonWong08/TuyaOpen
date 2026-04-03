@@ -3,7 +3,7 @@
  * @author Tuya Inc.
  * @brief ES8389 audio codec driver implementation for ESP32
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
 #include <stdio.h>
@@ -40,27 +40,27 @@
 
 typedef struct {
     TDD_AUDIO_ES8389_CODEC_T cfg;
-    TDL_AUDIO_MIC_CB mic_cb;
-    TUYA_I2S_NUM_E i2s_id;
-    THREAD_HANDLE thrd_hdl;
-    MUTEX_HANDLE mutex_play;
-    uint8_t play_volume;
+    TDL_AUDIO_MIC_CB         mic_cb;
+    TUYA_I2S_NUM_E           i2s_id;
+    THREAD_HANDLE            thrd_hdl;
+    MUTEX_HANDLE             mutex_play;
+    uint8_t                  play_volume;
 
     // data buffer
     uint8_t *data_buf;
     uint32_t data_buf_len;
 } ESP_I2S_ES8389_HANDLE_T;
 
-static int input_sample_rate_ = 0;
-static int output_sample_rate_ = 0;
-static int output_volume_ = 0;
-static gpio_num_t pa_pin_ = 0;
+static int        input_sample_rate_  = 0;
+static int        output_sample_rate_ = 0;
+static int        output_volume_      = 0;
+static gpio_num_t pa_pin_             = 0;
 
-static const audio_codec_gpio_if_t *gpio_if_ = NULL;
-static const audio_codec_ctrl_if_t *ctrl_if_ = NULL;
-static const audio_codec_data_if_t *data_if_ = NULL;
-static esp_codec_dev_handle_t output_dev_ = NULL;
-static esp_codec_dev_handle_t input_dev_ = NULL;
+static const audio_codec_gpio_if_t *gpio_if_    = NULL;
+static const audio_codec_ctrl_if_t *ctrl_if_    = NULL;
+static const audio_codec_data_if_t *data_if_    = NULL;
+static esp_codec_dev_handle_t       output_dev_ = NULL;
+static esp_codec_dev_handle_t       input_dev_  = NULL;
 
 /***********************************************************
 ***********************function define**********************
@@ -71,10 +71,10 @@ static void enable_input_device(bool enable)
     if (enable) {
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
-            .channel = 1,
-            .channel_mask = 0,
-            .sample_rate = (uint32_t)input_sample_rate_,
-            .mclk_multiple = 0,
+            .channel         = 1,
+            .channel_mask    = 0,
+            .sample_rate     = (uint32_t)input_sample_rate_,
+            .mclk_multiple   = 0,
         };
         ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, 36.0)); // 36dB is the max gain
@@ -96,10 +96,10 @@ static void enable_output_device(bool enable)
         // Play 16bit 1 channel
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
-            .channel = 1,
-            .channel_mask = 0,
-            .sample_rate = (uint32_t)output_sample_rate_,
-            .mclk_multiple = 0,
+            .channel         = 1,
+            .channel_mask    = 0,
+            .sample_rate     = (uint32_t)output_sample_rate_,
+            .mclk_multiple   = 0,
         };
         PR_DEBUG("output sample rete:%d", output_sample_rate_);
         ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
@@ -118,10 +118,10 @@ static void enable_output_device(bool enable)
 
 OPERATE_RET codec_es8389_init(TDD_AUDIO_ES8389_CODEC_T *cfg)
 {
-    pa_pin_ = cfg->pa_pin;
-    input_sample_rate_ = cfg->mic_sample_rate;
+    pa_pin_             = cfg->pa_pin;
+    input_sample_rate_  = cfg->mic_sample_rate;
     output_sample_rate_ = cfg->spk_sample_rate;
-    output_volume_ = cfg->default_volume;
+    output_volume_      = cfg->default_volume;
 
     if (cfg->i2c_handle == NULL || cfg->i2s_tx_handle == NULL || cfg->i2s_rx_handle == NULL) {
         PR_ERR("i2c_handle/i2s_tx_handle/i2s_rx_handle is NULL");
@@ -130,7 +130,7 @@ OPERATE_RET codec_es8389_init(TDD_AUDIO_ES8389_CODEC_T *cfg)
 
     // Initialize data_if and ctrl_if
     audio_codec_i2s_cfg_t i2s_cfg = {
-        .port = cfg->i2s_id,
+        .port      = cfg->i2s_id,
         .rx_handle = cfg->i2s_rx_handle,
         .tx_handle = cfg->i2s_tx_handle,
     };
@@ -138,8 +138,8 @@ OPERATE_RET codec_es8389_init(TDD_AUDIO_ES8389_CODEC_T *cfg)
     assert(data_if_ != NULL);
 
     audio_codec_i2c_cfg_t i2c_cfg = {
-        .port = cfg->i2c_id,
-        .addr = cfg->es8389_addr,
+        .port       = cfg->i2c_id,
+        .addr       = cfg->es8389_addr,
         .bus_handle = cfg->i2c_handle,
     };
     ctrl_if_ = audio_codec_new_i2c_ctrl(&i2c_cfg);
@@ -149,14 +149,14 @@ OPERATE_RET codec_es8389_init(TDD_AUDIO_ES8389_CODEC_T *cfg)
         gpio_if_ = audio_codec_new_gpio();
         assert(gpio_if_ != NULL);
     }
-    es8389_codec_cfg_t es8389_cfg = {};
-    es8389_cfg.ctrl_if = ctrl_if_;
-    es8389_cfg.gpio_if = gpio_if_;
-    es8389_cfg.pa_pin = cfg->pa_pin;
-    es8389_cfg.codec_mode = ESP_CODEC_DEV_WORK_MODE_BOTH;
-    es8389_cfg.hw_gain.pa_voltage = 5.0;
+    es8389_codec_cfg_t es8389_cfg        = {};
+    es8389_cfg.ctrl_if                   = ctrl_if_;
+    es8389_cfg.gpio_if                   = gpio_if_;
+    es8389_cfg.pa_pin                    = cfg->pa_pin;
+    es8389_cfg.codec_mode                = ESP_CODEC_DEV_WORK_MODE_BOTH;
+    es8389_cfg.hw_gain.pa_voltage        = 5.0;
     es8389_cfg.hw_gain.codec_dac_voltage = 3.3;
-    es8389_cfg.use_mclk = true;
+    es8389_cfg.use_mclk                  = true;
 
     const audio_codec_if_t *codec_if = es8389_codec_new(&es8389_cfg);
     assert(codec_if != NULL);
@@ -165,14 +165,14 @@ OPERATE_RET codec_es8389_init(TDD_AUDIO_ES8389_CODEC_T *cfg)
     esp_codec_dev_cfg_t dev_cfg = {
         .dev_type = ESP_CODEC_DEV_TYPE_OUT,
         .codec_if = codec_if,
-        .data_if = data_if_,
+        .data_if  = data_if_,
     };
     output_dev_ = esp_codec_dev_new(&dev_cfg);
     assert(output_dev_ != NULL);
 
     // Input device
     dev_cfg.dev_type = ESP_CODEC_DEV_TYPE_IN;
-    input_dev_ = esp_codec_dev_new(&dev_cfg);
+    input_dev_       = esp_codec_dev_new(&dev_cfg);
     assert(input_dev_ != NULL);
 
     esp_codec_set_disable_when_closed(output_dev_, false);
@@ -190,7 +190,7 @@ static OPERATE_RET tkl_i2s_es8389_send(void *buff, uint32_t len)
 {
     // len -> data len
     esp_err_t ret = ESP_OK;
-    ret = esp_codec_dev_write(output_dev_, (void *)buff, len);
+    ret           = esp_codec_dev_write(output_dev_, (void *)buff, len);
     if (ret != ESP_OK) {
         PR_ERR("i2s write failed: %d", ret);
         return OPRT_COM_ERROR;
@@ -203,7 +203,7 @@ static int tkl_i2s_es8389_recv(void *buff, uint32_t len)
 {
     // len -> data len
     esp_err_t ret = ESP_OK;
-    ret = esp_codec_dev_read(input_dev_, (void *)buff, len);
+    ret           = esp_codec_dev_read(input_dev_, (void *)buff, len);
     if (ret != ESP_OK) {
         PR_ERR("i2s read failed: %d", ret);
         return 0;
@@ -246,7 +246,7 @@ static void esp32_i2s_es8389_read_task(void *args)
 
 static OPERATE_RET __tdd_audio_esp_i2s_es8389_open(TDD_AUDIO_HANDLE_T handle, TDL_AUDIO_MIC_CB mic_cb)
 {
-    OPERATE_RET rt = OPRT_OK;
+    OPERATE_RET              rt  = OPRT_OK;
     ESP_I2S_ES8389_HANDLE_T *hdl = (ESP_I2S_ES8389_HANDLE_T *)handle;
 
     if (NULL == hdl) {
@@ -278,15 +278,15 @@ static OPERATE_RET __tdd_audio_esp_i2s_es8389_open(TDD_AUDIO_HANDLE_T handle, TD
     }
 
     rt = audio_afe_processor_init();
-    if(rt != OPRT_OK) {
-        PR_ERR("audio_afe_processor_init err:%d",  rt);
-        return rt;
+    if (rt != OPRT_OK) {
+        PR_WARN("audio_afe_processor_init failed (err:%d), VAD/wakeword disabled", rt);
+        rt = OPRT_OK;
     }
 
     const THREAD_CFG_T thread_cfg = {
-        .thrdname = "esp32_i2s_es8389_read",
+        .thrdname   = "esp32_i2s_es8389_read",
         .stackDepth = 3 * 1024,
-        .priority = THREAD_PRIO_1,
+        .priority   = THREAD_PRIO_1,
     };
     PR_DEBUG("I2S es8389 read task args: %p", hdl);
     TUYA_CALL_ERR_LOG(
@@ -355,10 +355,10 @@ static OPERATE_RET __tdd_audio_esp_i2s_es8389_close(TDD_AUDIO_HANDLE_T handle)
 
 OPERATE_RET tdd_audio_es8389_codec_register(char *name, TDD_AUDIO_ES8389_CODEC_T cfg)
 {
-    OPERATE_RET rt = OPRT_OK;
-    ESP_I2S_ES8389_HANDLE_T *_hdl = NULL;
-    TDD_AUDIO_INTFS_T intfs = {0};
-    TDD_AUDIO_INFO_T info = {0};
+    OPERATE_RET              rt    = OPRT_OK;
+    ESP_I2S_ES8389_HANDLE_T *_hdl  = NULL;
+    TDD_AUDIO_INTFS_T        intfs = {0};
+    TDD_AUDIO_INFO_T         info  = {0};
 
     _hdl = (ESP_I2S_ES8389_HANDLE_T *)tal_malloc(sizeof(ESP_I2S_ES8389_HANDLE_T));
     TUYA_CHECK_NULL_RETURN(_hdl, OPRT_MALLOC_FAILED);
@@ -367,19 +367,19 @@ OPERATE_RET tdd_audio_es8389_codec_register(char *name, TDD_AUDIO_ES8389_CODEC_T
     // default play volume
     _hdl->play_volume = 80;
 
-    info.sample_rate    = cfg.mic_sample_rate;
-    info.sample_ch_num  = 1;
-    info.sample_bits    = SAMPLE_DATABITS;
-    info.sample_tm_ms   = I2S_READ_TIME_MS;
+    info.sample_rate   = cfg.mic_sample_rate;
+    info.sample_ch_num = 1;
+    info.sample_bits   = SAMPLE_DATABITS;
+    info.sample_tm_ms  = I2S_READ_TIME_MS;
 
     memcpy(&_hdl->cfg, &cfg, sizeof(TDD_AUDIO_ES8389_CODEC_T));
 
-    intfs.open = __tdd_audio_esp_i2s_es8389_open;
-    intfs.play = __tdd_audio_esp_i2s_es8389_play;
+    intfs.open   = __tdd_audio_esp_i2s_es8389_open;
+    intfs.play   = __tdd_audio_esp_i2s_es8389_play;
     intfs.config = __tdd_audio_esp_i2s_es8389_config;
-    intfs.close = __tdd_audio_esp_i2s_es8389_close;
+    intfs.close  = __tdd_audio_esp_i2s_es8389_close;
 
-    TUYA_CALL_ERR_GOTO(tdl_audio_driver_register(name, (TDD_AUDIO_HANDLE_T)_hdl,  &intfs, &info), __ERR);
+    TUYA_CALL_ERR_GOTO(tdl_audio_driver_register(name, (TDD_AUDIO_HANDLE_T)_hdl, &intfs, &info), __ERR);
 
     return rt;
 
