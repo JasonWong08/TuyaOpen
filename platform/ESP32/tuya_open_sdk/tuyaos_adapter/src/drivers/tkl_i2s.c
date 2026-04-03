@@ -54,7 +54,7 @@ static TKL_I2S_GPIO_CFG_T sg_i2s_gpio_cfg[TUYA_I2S_NUM_MAX] = {
 };
 #elif defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32C6)
 static TKL_I2S_GPIO_CFG_T sg_i2s_gpio_cfg[TUYA_I2S_NUM_MAX] = {
-    {GPIO_NUM_12, GPIO_NUM_8, GPIO_NUM_7}, // I2S0: BCK=12, WS=8, DATA=7
+    {GPIO_NUM_11, GPIO_NUM_8, GPIO_NUM_7}, // I2S0: BCK=11, WS=8, DATA=7
 };
 #else
 static TKL_I2S_GPIO_CFG_T sg_i2s_gpio_cfg[TUYA_I2S_NUM_MAX] = {0};
