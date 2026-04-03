@@ -16,29 +16,29 @@
 /***********************************************************
 ************************macro define************************
 ***********************************************************/
-#define STREAM_BUFF_MAX_LEN          1024
-#define STREAM_TEXT_SHOW_WORD_NUM    10
-#define ONE_WORD_MAX_LEN             4
+#define STREAM_BUFF_MAX_LEN       1024
+#define STREAM_TEXT_SHOW_WORD_NUM 10
+#define ONE_WORD_MAX_LEN          4
 
-#define STREAM_READ_TEXT_BUF_LEN    (STREAM_TEXT_SHOW_WORD_NUM * ONE_WORD_MAX_LEN + 1)
+#define STREAM_READ_TEXT_BUF_LEN (STREAM_TEXT_SHOW_WORD_NUM * ONE_WORD_MAX_LEN + 1)
 
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
 typedef struct {
-    bool                is_init;
-    bool                is_start;
-    MUTEX_HANDLE        rb_mutex;
-    TUYA_RINGBUFF_T     text_ringbuff;
-    TIMER_ID            timer;
-}AI_TEXT_STREAM_T;
+    bool            is_init;
+    bool            is_start;
+    MUTEX_HANDLE    rb_mutex;
+    TUYA_RINGBUFF_T text_ringbuff;
+    TIMER_ID        timer;
+} AI_TEXT_STREAM_T;
 
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
-static AI_TEXT_STREAM_T sg_text_stream;
+static AI_TEXT_STREAM_T          sg_text_stream;
 static AI_UI_STREAM_TEXT_DISP_CB sg_disp_cb = NULL;
-static char sg_read_text_buf[STREAM_READ_TEXT_BUF_LEN];
+static char                      sg_read_text_buf[STREAM_READ_TEXT_BUF_LEN];
 
 /***********************************************************
 ***********************function define**********************
@@ -53,8 +53,8 @@ static char sg_read_text_buf[STREAM_READ_TEXT_BUF_LEN];
 static uint8_t __get_one_word_from_stream_ringbuff(AI_TEXT_STREAM_T *stream, char *result)
 {
     uint32_t rb_used_size = 0, read_len = 0;
-    uint8_t word_len = 0;
-    char tmp = 0;
+    uint8_t  word_len = 0;
+    char     tmp      = 0;
 
     tal_mutex_lock(stream->rb_mutex);
     rb_used_size = tuya_ring_buff_used_size_get(stream->text_ringbuff);
@@ -111,9 +111,8 @@ static uint8_t __get_one_word_from_stream_ringbuff(AI_TEXT_STREAM_T *stream, cha
  */
 static uint8_t __get_words_from_stream_ringbuff(AI_TEXT_STREAM_T *stream, uint8_t word_num, char *result)
 {
-    uint8_t word_len = 0, i = 0, get_num = 0;
+    uint8_t  word_len = 0, i = 0, get_num = 0;
     uint32_t result_len = 0;
-    
 
     for (i = 0; i < word_num; i++) {
         word_len = __get_one_word_from_stream_ringbuff(stream, &result[result_len]);
@@ -137,23 +136,23 @@ static uint8_t __get_words_from_stream_ringbuff(AI_TEXT_STREAM_T *stream, uint8_
  */
 static void __ui_stream_text_timer_cb(TIMER_ID timer_id, void *arg)
 {
-    AI_TEXT_STREAM_T *stream = (AI_TEXT_STREAM_T*)arg;
-    uint8_t word_num = 0;
+    AI_TEXT_STREAM_T *stream   = (AI_TEXT_STREAM_T *)arg;
+    uint8_t           word_num = 0;
 
     memset(sg_read_text_buf, 0x00, STREAM_READ_TEXT_BUF_LEN);
     word_num = __get_words_from_stream_ringbuff(stream, STREAM_TEXT_SHOW_WORD_NUM, sg_read_text_buf);
     if (0 == word_num) {
-        if(false == stream->is_start) {
+        if (false == stream->is_start) {
             tal_sw_timer_stop(stream->timer);
-            if(sg_disp_cb) {
+            if (sg_disp_cb) {
                 sg_disp_cb(NULL);
             }
         }
-    }else {
-        if(sg_disp_cb) {
+    } else {
+        if (sg_disp_cb) {
             sg_disp_cb(sg_read_text_buf);
         }
-    }    
+    }
 
     return;
 }
@@ -168,15 +167,19 @@ OPERATE_RET ai_ui_stream_text_init(AI_UI_STREAM_TEXT_DISP_CB disp_cb)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    if(sg_text_stream.is_init) {
+    if (sg_text_stream.is_init) {
         PR_DEBUG("ai ui stream text has been init");
         return OPRT_OK;
     }
 
     if (NULL == sg_text_stream.text_ringbuff) {
-        TUYA_CALL_ERR_RETURN(tuya_ring_buff_create(STREAM_BUFF_MAX_LEN, \
-                                                   OVERFLOW_PSRAM_STOP_TYPE, \
-                                                   &sg_text_stream.text_ringbuff));
+#if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
+        TUYA_CALL_ERR_RETURN(
+            tuya_ring_buff_create(STREAM_BUFF_MAX_LEN, OVERFLOW_PSRAM_STOP_TYPE, &sg_text_stream.text_ringbuff));
+#else
+        TUYA_CALL_ERR_RETURN(
+            tuya_ring_buff_create(STREAM_BUFF_MAX_LEN, OVERFLOW_STOP_TYPE, &sg_text_stream.text_ringbuff));
+#endif
     }
 
     tuya_ring_buff_reset(sg_text_stream.text_ringbuff);
@@ -185,13 +188,11 @@ OPERATE_RET ai_ui_stream_text_init(AI_UI_STREAM_TEXT_DISP_CB disp_cb)
         TUYA_CALL_ERR_RETURN(tal_mutex_create_init(&sg_text_stream.rb_mutex));
     }
 
-    if(sg_text_stream.timer == NULL) {
-        TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__ui_stream_text_timer_cb, \
-                                                 &sg_text_stream, \
-                                                 &sg_text_stream.timer));
+    if (sg_text_stream.timer == NULL) {
+        TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__ui_stream_text_timer_cb, &sg_text_stream, &sg_text_stream.timer));
     }
 
-    sg_disp_cb = disp_cb;
+    sg_disp_cb             = disp_cb;
     sg_text_stream.is_init = true;
 
     return OPRT_OK;
@@ -202,7 +203,7 @@ OPERATE_RET ai_ui_stream_text_init(AI_UI_STREAM_TEXT_DISP_CB disp_cb)
  */
 void ai_ui_stream_text_start(void)
 {
-    if(false == sg_text_stream.is_init) {
+    if (false == sg_text_stream.is_init) {
         return;
     }
 
@@ -218,11 +219,11 @@ void ai_ui_stream_text_start(void)
  */
 void ai_ui_stream_text_write(const char *text)
 {
-    if(false == sg_text_stream.is_init || false == sg_text_stream.is_start) {
+    if (false == sg_text_stream.is_init || false == sg_text_stream.is_start) {
         return;
     }
 
-    if(text == NULL) {
+    if (text == NULL) {
         return;
     }
 
@@ -235,26 +236,25 @@ void ai_ui_stream_text_write(const char *text)
  */
 void ai_ui_stream_text_end(void)
 {
-    if(false == sg_text_stream.is_init || false == sg_text_stream.is_start) {
+    if (false == sg_text_stream.is_init || false == sg_text_stream.is_start) {
         return;
     }
-    
+
     sg_text_stream.is_start = false;
 }
-
 
 /**
  * @brief Reset stream text display state.
  */
 void ai_ui_stream_text_reset(void)
 {
-    if(false == sg_text_stream.is_init) {
+    if (false == sg_text_stream.is_init) {
         return;
     }
 
-    if(sg_text_stream.text_ringbuff) {
+    if (sg_text_stream.text_ringbuff) {
         tal_mutex_lock(sg_text_stream.rb_mutex);
         tuya_ring_buff_reset(sg_text_stream.text_ringbuff);
         tal_mutex_unlock(sg_text_stream.rb_mutex);
     }
-} 
+}
