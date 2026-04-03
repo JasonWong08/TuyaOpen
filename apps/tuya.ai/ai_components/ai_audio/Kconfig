@@ -4,6 +4,10 @@ menuconfig ENABLE_COMP_AI_AUDIO
     default y
 
 if (ENABLE_COMP_AI_AUDIO)
+    config ENABLE_AI_AUDIO_TTS_PLAY
+        bool "enable TTS audio playback through speaker"
+        default y
+
     choice
         prompt "select ai audio input codec"
         default ENABLE_COMP_AI_AUDIO_CODEC_PCM
