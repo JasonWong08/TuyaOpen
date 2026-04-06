@@ -115,12 +115,6 @@ choice
             rsource "./PETOI_ESP32C3_CUBE/Kconfig"
         endif
 
-    config BOARD_CHOICE_DNESP32C3_BOX
-        bool "DNESP32C3_BOX"
-        if (BOARD_CHOICE_DNESP32C3_BOX)
-            rsource "./DNESP32C3_BOX/Kconfig"
-        endif
-
 # <new-board-add: This line cannot be deleted or modified>
 
 endchoice
