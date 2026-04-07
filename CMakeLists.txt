@@ -113,12 +113,20 @@ project(opensdk)
 # add platform
 include("${PLATFORM_PATH}/platform_config.cmake")
 
-# ESP-IDF mbedtls port headers depend on esp_rom component; append its include
-# paths when building against an IDF-backed platform (e.g. ESP32/ESP32-S3).
+# ESP-IDF mbedtls port headers transitively depend on several IDF components
+# (esp_rom, hal, esp_hw_support) that are not listed in the platform's
+# PLATFORM_PUBINC.  Append them here whenever IDF_PATH is available so that
+# headers such as esp_rom_md5.h, hal/sha_types.h, and esp_cpu.h can be found.
 if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
     list(APPEND PLATFORM_PUBINC
         "${IDF_PATH}/components/esp_rom/include"
         "${IDF_PATH}/components/esp_rom/include/${TOS_PROJECT_CHIP}"
+        "${IDF_PATH}/components/hal/include"
+        "${IDF_PATH}/components/hal/${TOS_PROJECT_CHIP}/include"
+        "${IDF_PATH}/components/esp_hw_support/include"
+        "${IDF_PATH}/components/esp_hw_support/include/soc"
+        "${IDF_PATH}/components/esp_hw_support/port/${TOS_PROJECT_CHIP}"
+        "${IDF_PATH}/components/esp_hw_support/port/${TOS_PROJECT_CHIP}/include"
     )
 endif()
 
