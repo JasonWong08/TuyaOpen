@@ -120,22 +120,23 @@ include("${PLATFORM_PATH}/platform_config.cmake")
 #   mbedtls port -> esp_rom_md5.h, sha_types.h, ets_sys.h, soc.h,
 #                   esp_assert.h, esp_attr.h, esp_bit_defs.h, ...
 if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
-    # Locate reg_base.h by scanning the soc component tree at configure time.
-    # Its parent directory (the one containing the soc/ sub-directory that has
-    # reg_base.h) must be on the include path.  The header was moved between
-    # ESP-IDF releases so we do a glob to find it rather than hard-coding the path.
-    file(GLOB_RECURSE _reg_base_candidates
-         "${IDF_PATH}/components/soc/*/include/soc/reg_base.h")
-    list(GET _reg_base_candidates 0 _reg_base_first)
-    if(_reg_base_first)
-        get_filename_component(_reg_base_soc_dir "${_reg_base_first}" DIRECTORY)
-        get_filename_component(_reg_base_inc_dir "${_reg_base_soc_dir}" DIRECTORY)
-        list(APPEND PLATFORM_PUBINC "${_reg_base_inc_dir}")
-    else()
-        # Fallback: add both known locations
+    # Locate the directory that makes "soc/reg_base.h" resolvable.
+    # The header has been placed in different sub-directories across IDF versions;
+    # probe the two known locations and add whichever one exists.
+    foreach(_soc_inc_candidate
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include"
+            "${IDF_PATH}/components/soc/include")
+        if(EXISTS "${_soc_inc_candidate}/soc/reg_base.h")
+            list(APPEND PLATFORM_PUBINC "${_soc_inc_candidate}")
+            break()
+        endif()
+    endforeach()
+    # If neither candidate has the file, add both so the error surfaces clearly.
+    if(NOT EXISTS "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include/soc/reg_base.h"
+       AND NOT EXISTS "${IDF_PATH}/components/soc/include/soc/reg_base.h")
         list(APPEND PLATFORM_PUBINC
-            "${IDF_PATH}/components/soc/include"
-            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include")
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include"
+            "${IDF_PATH}/components/soc/include")
     endif()
 
     list(APPEND PLATFORM_PUBINC
