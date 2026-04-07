@@ -120,13 +120,29 @@ include("${PLATFORM_PATH}/platform_config.cmake")
 #   mbedtls port -> esp_rom_md5.h, sha_types.h, ets_sys.h, soc.h,
 #                   esp_assert.h, esp_attr.h, esp_bit_defs.h, ...
 if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
+    # Locate reg_base.h by scanning the soc component tree at configure time.
+    # Its parent directory (the one containing the soc/ sub-directory that has
+    # reg_base.h) must be on the include path.  The header was moved between
+    # ESP-IDF releases so we do a glob to find it rather than hard-coding the path.
+    file(GLOB_RECURSE _reg_base_candidates
+         "${IDF_PATH}/components/soc/*/include/soc/reg_base.h")
+    list(GET _reg_base_candidates 0 _reg_base_first)
+    if(_reg_base_first)
+        get_filename_component(_reg_base_soc_dir "${_reg_base_first}" DIRECTORY)
+        get_filename_component(_reg_base_inc_dir "${_reg_base_soc_dir}" DIRECTORY)
+        list(APPEND PLATFORM_PUBINC "${_reg_base_inc_dir}")
+    else()
+        # Fallback: add both known locations
+        list(APPEND PLATFORM_PUBINC
+            "${IDF_PATH}/components/soc/include"
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include")
+    endif()
+
     list(APPEND PLATFORM_PUBINC
         # esp_rom (MD5, SHA, ETS ROM stubs)
         "${IDF_PATH}/components/esp_rom/include"
         "${IDF_PATH}/components/esp_rom/include/${TOS_PROJECT_CHIP}"
         "${IDF_PATH}/components/esp_rom/${TOS_PROJECT_CHIP}/include"
-        # soc generic headers (reg_base.h, etc. - used by soc/<chip>/include/soc/soc.h)
-        "${IDF_PATH}/components/soc/include"
         # hal (sha_types.h, etc.)
         "${IDF_PATH}/components/hal/include"
         "${IDF_PATH}/components/hal/${TOS_PROJECT_CHIP}/include"
