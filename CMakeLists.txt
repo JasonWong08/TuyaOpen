@@ -121,6 +121,7 @@ if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
     list(APPEND PLATFORM_PUBINC
         "${IDF_PATH}/components/esp_rom/include"
         "${IDF_PATH}/components/esp_rom/include/${TOS_PROJECT_CHIP}"
+        "${IDF_PATH}/components/esp_rom/${TOS_PROJECT_CHIP}/include"
         "${IDF_PATH}/components/hal/include"
         "${IDF_PATH}/components/hal/${TOS_PROJECT_CHIP}/include"
         "${IDF_PATH}/components/esp_hw_support/include"
