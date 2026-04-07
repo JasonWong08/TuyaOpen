@@ -125,6 +125,8 @@ if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
         "${IDF_PATH}/components/esp_rom/include"
         "${IDF_PATH}/components/esp_rom/include/${TOS_PROJECT_CHIP}"
         "${IDF_PATH}/components/esp_rom/${TOS_PROJECT_CHIP}/include"
+        # soc generic headers (reg_base.h, etc. - used by soc/<chip>/include/soc/soc.h)
+        "${IDF_PATH}/components/soc/include"
         # hal (sha_types.h, etc.)
         "${IDF_PATH}/components/hal/include"
         "${IDF_PATH}/components/hal/${TOS_PROJECT_CHIP}/include"
