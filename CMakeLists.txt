@@ -113,6 +113,61 @@ project(opensdk)
 # add platform
 include("${PLATFORM_PATH}/platform_config.cmake")
 
+# When building against an IDF-backed platform (e.g. ESP32/ESP32-S3), the
+# mbedtls port headers pull in a deep chain of IDF component headers that are
+# not included in the platform's PLATFORM_PUBINC.  Collect all the standard
+# IDF component include directories that are needed to satisfy this chain:
+#   mbedtls port -> esp_rom_md5.h, sha_types.h, ets_sys.h, soc.h,
+#                   esp_assert.h, esp_attr.h, esp_bit_defs.h, ...
+if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
+    # Locate the directory that makes "soc/reg_base.h" resolvable.
+    # The header has been placed in different sub-directories across IDF versions;
+    # probe the two known locations and add whichever one exists.
+    foreach(_soc_inc_candidate
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include"
+            "${IDF_PATH}/components/soc/include")
+        if(EXISTS "${_soc_inc_candidate}/soc/reg_base.h")
+            list(APPEND PLATFORM_PUBINC "${_soc_inc_candidate}")
+            break()
+        endif()
+    endforeach()
+    # If neither candidate has the file, add both so the error surfaces clearly.
+    if(NOT EXISTS "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include/soc/reg_base.h"
+       AND NOT EXISTS "${IDF_PATH}/components/soc/include/soc/reg_base.h")
+        list(APPEND PLATFORM_PUBINC
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include"
+            "${IDF_PATH}/components/soc/include")
+    endif()
+
+    list(APPEND PLATFORM_PUBINC
+        # esp_rom (MD5, SHA, ETS ROM stubs)
+        "${IDF_PATH}/components/esp_rom/include"
+        "${IDF_PATH}/components/esp_rom/include/${TOS_PROJECT_CHIP}"
+        "${IDF_PATH}/components/esp_rom/${TOS_PROJECT_CHIP}/include"
+        # hal (sha_types.h, etc.)
+        "${IDF_PATH}/components/hal/include"
+        "${IDF_PATH}/components/hal/${TOS_PROJECT_CHIP}/include"
+        # esp_hw_support (esp_cpu.h, etc.)
+        "${IDF_PATH}/components/esp_hw_support/include"
+        "${IDF_PATH}/components/esp_hw_support/include/soc"
+        "${IDF_PATH}/components/esp_hw_support/port/${TOS_PROJECT_CHIP}"
+        "${IDF_PATH}/components/esp_hw_support/port/${TOS_PROJECT_CHIP}/include"
+        # esp_common (esp_assert.h, esp_attr.h, esp_bit_defs.h, etc.)
+        "${IDF_PATH}/components/esp_common/include"
+        # xtensa / riscv toolchain support headers
+        "${IDF_PATH}/components/xtensa/include"
+        "${IDF_PATH}/components/xtensa/${TOS_PROJECT_CHIP}/include"
+        "${IDF_PATH}/components/riscv/include"
+        # newlib / libc overrides (esp_err.h etc.)
+        "${IDF_PATH}/components/newlib/platform_include"
+        # freertos (for portmacro.h used by some hal headers)
+        "${IDF_PATH}/components/freertos/FreeRTOS-Kernel/include"
+        "${IDF_PATH}/components/freertos/esp_additions/include"
+        "${IDF_PATH}/components/freertos/config/include"
+        "${IDF_PATH}/components/freertos/config/${TOS_PROJECT_CHIP}/include"
+    )
+endif()
+
 
 ########################################
 # add src
