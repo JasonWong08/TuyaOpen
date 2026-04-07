@@ -121,21 +121,25 @@ include("${PLATFORM_PATH}/platform_config.cmake")
 #                   esp_assert.h, esp_attr.h, esp_bit_defs.h, ...
 if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
     # Locate the directory that makes "soc/reg_base.h" resolvable.
-    # The header has been placed in different sub-directories across IDF versions;
-    # probe the two known locations and add whichever one exists.
+    # The header has been placed in different sub-directories across IDF versions:
+    #   - IDF <  v5.4: components/soc/<chip>/include/soc/reg_base.h
+    #   - IDF >= v5.4: components/soc/<chip>/register/soc/reg_base.h  (generated from CSV)
+    #   - Fallback:    components/soc/include/soc/reg_base.h
+    set(_soc_reg_base_found FALSE)
     foreach(_soc_inc_candidate
             "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include"
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/register"
             "${IDF_PATH}/components/soc/include")
         if(EXISTS "${_soc_inc_candidate}/soc/reg_base.h")
             list(APPEND PLATFORM_PUBINC "${_soc_inc_candidate}")
+            set(_soc_reg_base_found TRUE)
             break()
         endif()
     endforeach()
-    # If neither candidate has the file, add both so the error surfaces clearly.
-    if(NOT EXISTS "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include/soc/reg_base.h"
-       AND NOT EXISTS "${IDF_PATH}/components/soc/include/soc/reg_base.h")
+    if(NOT _soc_reg_base_found)
         list(APPEND PLATFORM_PUBINC
             "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/include"
+            "${IDF_PATH}/components/soc/${TOS_PROJECT_CHIP}/register"
             "${IDF_PATH}/components/soc/include")
     endif()
 
@@ -166,6 +170,11 @@ if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
         "${IDF_PATH}/components/freertos/config/include"
         "${IDF_PATH}/components/freertos/config/${TOS_PROJECT_CHIP}/include"
     )
+
+    # ESP-IDF's mbedtls is compiled with -DMBEDTLS_CONFIG_FILE="mbedtls/esp_config.h".
+    # TuyaOpen sources that include mbedtls headers must use the same config so that
+    # struct layouts and ALT-function mappings match the pre-built IDF mbedtls libraries.
+    add_compile_definitions(MBEDTLS_CONFIG_FILE="mbedtls/esp_config.h")
 endif()
 
 
