@@ -170,6 +170,11 @@ if(DEFINED IDF_PATH AND IS_DIRECTORY "${IDF_PATH}/components/esp_rom")
         "${IDF_PATH}/components/freertos/config/include"
         "${IDF_PATH}/components/freertos/config/${TOS_PROJECT_CHIP}/include"
     )
+
+    # ESP-IDF's mbedtls is compiled with -DMBEDTLS_CONFIG_FILE="mbedtls/esp_config.h".
+    # TuyaOpen sources that include mbedtls headers must use the same config so that
+    # struct layouts and ALT-function mappings match the pre-built IDF mbedtls libraries.
+    add_compile_definitions(MBEDTLS_CONFIG_FILE="mbedtls/esp_config.h")
 endif()
 
 
