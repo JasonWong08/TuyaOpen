@@ -1,0 +1,33 @@
+config CHIP_CHOICE
+    string
+    default "esp32s3"
+
+config BOARD_CHOICE
+    string
+    default "AI_BOARD"
+
+config UART_NUM0_TX_PIN
+    int "UART_NUM0_TX_PIN"
+    range 0 48
+    default 35
+    ---help---
+        esp32-s3 default 35
+
+config UART_NUM0_RX_PIN
+    int "UART_NUM0_RX_PIN"
+    range 0 48
+    default 36
+    ---help---
+        esp32-s3 default 36
+
+config AI_BOARD_ENABLE_LCD
+    bool "Enable AI_BOARD LCD support"
+    default n
+    select ENABLE_ESP_DISPLAY
+
+config BOARD_CONFIG
+    bool
+    default y
+    select ENABLE_AUDIO
+    select PLATFORM_FLASHSIZE_16M
+    select ENABLE_AUDIO_CODECS
