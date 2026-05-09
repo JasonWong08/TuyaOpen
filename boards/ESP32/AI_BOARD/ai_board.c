@@ -1,0 +1,115 @@
+/**
+ * @file ai_board.c
+ * @brief Board-level hardware initialization for AI_BOARD (ESP32S3).
+ *
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
+ */
+
+#include "tuya_cloud_types.h"
+
+#include "tal_api.h"
+
+#include "board_config.h"
+#include "board_com_api.h"
+
+#include "tdd_audio_8311_codec.h"
+
+#if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
+#include "tdd_button_gpio.h"
+#endif
+
+#if (AI_BOARD_ENABLE_LCD == 1)
+#include "lcd_st7789_spi.h"
+#endif
+
+/***********************************************************
+***********************function define**********************
+***********************************************************/
+static OPERATE_RET __board_register_button(void)
+{
+#if !defined(ENABLE_BUTTON) || (ENABLE_BUTTON != 1)
+    return OPRT_OK;
+#else
+    OPERATE_RET rt = OPRT_OK;
+
+#if defined(BUTTON_NAME)
+    BUTTON_GPIO_CFG_T button_hw_cfg = {
+        .pin                = BOARD_BUTTON_PIN,
+        .level              = BOARD_BUTTON_ACTIVE_LV,
+        .mode               = BUTTON_TIMER_SCAN_MODE,
+        .pin_type.gpio_pull = TUYA_GPIO_PULLUP,
+    };
+
+    TUYA_CALL_ERR_RETURN(tdd_gpio_button_register(BUTTON_NAME, &button_hw_cfg));
+#endif
+
+    return rt;
+#endif
+}
+
+static OPERATE_RET __board_register_audio(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+#if defined(AUDIO_CODEC_NAME)
+    TDD_AUDIO_8311_CODEC_T cfg = {0};
+
+    cfg.i2c_id          = I2C_NUM;
+    cfg.i2c_scl_io      = I2C_SCL_IO;
+    cfg.i2c_sda_io      = I2C_SDA_IO;
+    cfg.mic_sample_rate = I2S_INPUT_SAMPLE_RATE;
+    cfg.spk_sample_rate = I2S_OUTPUT_SAMPLE_RATE;
+    cfg.i2s_id          = I2S_NUM;
+    cfg.i2s_mck_io      = I2S_MCK_IO;
+    cfg.i2s_bck_io      = I2S_BCK_IO;
+    cfg.i2s_ws_io       = I2S_WS_IO;
+    cfg.i2s_do_io       = I2S_DO_IO;
+    cfg.i2s_di_io       = I2S_DI_IO;
+    cfg.gpio_output_pa  = GPIO_OUTPUT_PA;
+    cfg.es8311_addr     = AUDIO_CODEC_ES8311_ADDR;
+    cfg.dma_desc_num    = AUDIO_CODEC_DMA_DESC_NUM;
+    cfg.dma_frame_num   = AUDIO_CODEC_DMA_FRAME_NUM;
+    cfg.default_volume  = 80;
+
+    TUYA_CALL_ERR_RETURN(tdd_audio_8311_codec_register(AUDIO_CODEC_NAME, cfg));
+#endif
+
+    return rt;
+}
+
+OPERATE_RET board_register_hardware(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    TUYA_CALL_ERR_LOG(__board_register_button());
+    TUYA_CALL_ERR_LOG(__board_register_audio());
+
+    return rt;
+}
+
+int board_display_init(void)
+{
+#if (AI_BOARD_ENABLE_LCD == 1)
+    return lcd_st7789_spi_init();
+#else
+    return OPRT_NOT_SUPPORTED;
+#endif
+}
+
+void *board_display_get_panel_io_handle(void)
+{
+#if (AI_BOARD_ENABLE_LCD == 1)
+    return lcd_st7789_spi_get_panel_io_handle();
+#else
+    return NULL;
+#endif
+}
+
+void *board_display_get_panel_handle(void)
+{
+#if (AI_BOARD_ENABLE_LCD == 1)
+    return lcd_st7789_spi_get_panel_handle();
+#else
+    return NULL;
+#endif
+}
