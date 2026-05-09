@@ -34,6 +34,12 @@ Standard flow:
 3. `tos.py build`
 4. Use binaries from `<project>/dist/` (LINUX target produces native ELF)
 
+**Important:** All examples ship with `CONFIG_BOARD_CHOICE_T5AI=y` in `app_default.config`. To build for the LINUX/Ubuntu target (native execution on Cloud VM), overwrite the config:
+```bash
+echo "CONFIG_BOARD_CHOICE_UBUNTU=y" > app_default.config
+```
+The first build for a platform will clone its SDK from GitHub (e.g. `TuyaOpen-ubuntu` → `platform/LINUX/`). Subsequent builds reuse the cached platform.
+
 ### Non-interactive configuration guidance
 
 - `tos.py config choice` and `tos.py config menu` are interactive TTY flows. Avoid them in non-interactive cloud runs.
