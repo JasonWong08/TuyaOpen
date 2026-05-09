@@ -3,6 +3,8 @@
  * @brief AI_BOARD hardware pin and peripheral configuration
  * @version 0.1
  * @date 2026-05-09
+ *
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
 #ifndef __BOARD_CONFIG_H__
@@ -49,8 +51,13 @@ extern "C" {
  * This board also exposes Kconfig options UART_NUM0_TX_PIN/UART_NUM0_RX_PIN
  * so the platform layer can consume these values when available.
  */
+#ifndef UART_NUM0_TX_PIN
 #define UART_NUM0_TX_PIN (35)
+#endif
+
+#ifndef UART_NUM0_RX_PIN
 #define UART_NUM0_RX_PIN (36)
+#endif
 
 #if defined(CONFIG_AI_BOARD_ENABLE_LCD) && (CONFIG_AI_BOARD_ENABLE_LCD == 1)
 #define AI_BOARD_ENABLE_LCD 1

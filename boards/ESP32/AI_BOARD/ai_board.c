@@ -2,7 +2,7 @@
  * @file ai_board.c
  * @brief Board-level hardware initialization for AI_BOARD (ESP32S3).
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
 #include "tuya_cloud_types.h"
@@ -28,22 +28,22 @@ static OPERATE_RET __board_register_audio(void)
 #if defined(AUDIO_CODEC_NAME)
     TDD_AUDIO_8311_CODEC_T cfg = {0};
 
-    cfg.i2c_id = I2C_NUM;
-    cfg.i2c_scl_io = I2C_SCL_IO;
-    cfg.i2c_sda_io = I2C_SDA_IO;
+    cfg.i2c_id          = I2C_NUM;
+    cfg.i2c_scl_io      = I2C_SCL_IO;
+    cfg.i2c_sda_io      = I2C_SDA_IO;
     cfg.mic_sample_rate = I2S_INPUT_SAMPLE_RATE;
     cfg.spk_sample_rate = I2S_OUTPUT_SAMPLE_RATE;
-    cfg.i2s_id = I2S_NUM;
-    cfg.i2s_mck_io = I2S_MCK_IO;
-    cfg.i2s_bck_io = I2S_BCK_IO;
-    cfg.i2s_ws_io = I2S_WS_IO;
-    cfg.i2s_do_io = I2S_DO_IO;
-    cfg.i2s_di_io = I2S_DI_IO;
-    cfg.gpio_output_pa = GPIO_OUTPUT_PA;
-    cfg.es8311_addr = AUDIO_CODEC_ES8311_ADDR;
-    cfg.dma_desc_num = AUDIO_CODEC_DMA_DESC_NUM;
-    cfg.dma_frame_num = AUDIO_CODEC_DMA_FRAME_NUM;
-    cfg.default_volume = 80;
+    cfg.i2s_id          = I2S_NUM;
+    cfg.i2s_mck_io      = I2S_MCK_IO;
+    cfg.i2s_bck_io      = I2S_BCK_IO;
+    cfg.i2s_ws_io       = I2S_WS_IO;
+    cfg.i2s_do_io       = I2S_DO_IO;
+    cfg.i2s_di_io       = I2S_DI_IO;
+    cfg.gpio_output_pa  = GPIO_OUTPUT_PA;
+    cfg.es8311_addr     = AUDIO_CODEC_ES8311_ADDR;
+    cfg.dma_desc_num    = AUDIO_CODEC_DMA_DESC_NUM;
+    cfg.dma_frame_num   = AUDIO_CODEC_DMA_FRAME_NUM;
+    cfg.default_volume  = 80;
 
     TUYA_CALL_ERR_RETURN(tdd_audio_8311_codec_register(AUDIO_CODEC_NAME, cfg));
 #endif
