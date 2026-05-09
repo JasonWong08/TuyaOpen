@@ -43,6 +43,19 @@ extern "C" {
 #define AUDIO_CODEC_ES8311_ADDR   (0x30)
 
 /*
+ * Buttons:
+ * - BOOT is available as a GPIO key (commonly GPIO0, active low)
+ * - RESET is a chip reset pin, not used as an application button
+ */
+#ifndef BOARD_BUTTON_PIN
+#define BOARD_BUTTON_PIN TUYA_GPIO_NUM_0
+#endif
+
+#ifndef BOARD_BUTTON_ACTIVE_LV
+#define BOARD_BUTTON_ACTIVE_LV TUYA_GPIO_LEVEL_LOW
+#endif
+
+/*
  * UART0 pin mapping used by AI_BOARD:
  * TX -> GPIO35, RX -> GPIO36
  *

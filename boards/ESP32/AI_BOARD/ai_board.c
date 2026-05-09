@@ -14,6 +14,10 @@
 
 #include "tdd_audio_8311_codec.h"
 
+#if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
+#include "tdd_button_gpio.h"
+#endif
+
 #if (AI_BOARD_ENABLE_LCD == 1)
 #include "lcd_st7789_spi.h"
 #endif
@@ -21,6 +25,28 @@
 /***********************************************************
 ***********************function define**********************
 ***********************************************************/
+static OPERATE_RET __board_register_button(void)
+{
+#if !defined(ENABLE_BUTTON) || (ENABLE_BUTTON != 1)
+    return OPRT_OK;
+#else
+    OPERATE_RET rt = OPRT_OK;
+
+#if defined(BUTTON_NAME)
+    BUTTON_GPIO_CFG_T button_hw_cfg = {
+        .pin                = BOARD_BUTTON_PIN,
+        .level              = BOARD_BUTTON_ACTIVE_LV,
+        .mode               = BUTTON_TIMER_SCAN_MODE,
+        .pin_type.gpio_pull = TUYA_GPIO_PULLUP,
+    };
+
+    TUYA_CALL_ERR_RETURN(tdd_gpio_button_register(BUTTON_NAME, &button_hw_cfg));
+#endif
+
+    return rt;
+#endif
+}
+
 static OPERATE_RET __board_register_audio(void)
 {
     OPERATE_RET rt = OPRT_OK;
@@ -55,6 +81,7 @@ OPERATE_RET board_register_hardware(void)
 {
     OPERATE_RET rt = OPRT_OK;
 
+    TUYA_CALL_ERR_LOG(__board_register_button());
     TUYA_CALL_ERR_LOG(__board_register_audio());
 
     return rt;
