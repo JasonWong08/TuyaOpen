@@ -1,7 +1,8 @@
 /**
  * @file ai_mcp_tools.c
+ * @brief MCP tools for exposing local AI device capabilities.
  * @version 0.1
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  */
 
@@ -12,7 +13,7 @@
 #include "ai_manage_mode.h"
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-#include "ai_audio_player.h"
+#include "ai_chat_main.h"
 #endif
 
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
@@ -26,21 +27,19 @@
 ************************macro define************************
 ***********************************************************/
 
-
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
-
 
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
 
-
 /***********************************************************
 ***********************function define**********************
 ***********************************************************/
-static OPERATE_RET __get_device_info(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val, void *user_data)
+static OPERATE_RET __get_device_info(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val,
+                                     void *user_data)
 {
     cJSON *json = NULL;
 
@@ -64,9 +63,9 @@ static OPERATE_RET __get_device_info(const MCP_PROPERTY_LIST_T *properties, MCP_
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
 static OPERATE_RET __take_photo(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val, void *user_data)
 {
-    OPERATE_RET rt = OPRT_OK;
-    uint8_t *image_data = NULL;
-    uint32_t image_size = 0;
+    OPERATE_RET rt         = OPRT_OK;
+    uint8_t    *image_data = NULL;
+    uint32_t    image_size = 0;
 
     TUYA_CALL_ERR_LOG(ai_video_display_start());
 
@@ -94,9 +93,24 @@ static OPERATE_RET __take_photo(const MCP_PROPERTY_LIST_T *properties, MCP_RETUR
 #endif
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+static OPERATE_RET __get_volume(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val, void *user_data)
+{
+    (void)properties;
+    (void)user_data;
+
+    int volume = ai_chat_get_volume();
+
+    PR_DEBUG("get volume %d", volume);
+
+    ai_mcp_return_value_set_int(ret_val, volume);
+
+    return OPRT_OK;
+}
+
 static OPERATE_RET __set_volume(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val, void *user_data)
 {
-    uint32_t volume = 50; // default volume
+    OPERATE_RET rt     = OPRT_OK;
+    uint32_t    volume = 50; // default volume
 
     PR_DEBUG("__set_volume enter");
 
@@ -109,12 +123,11 @@ static OPERATE_RET __set_volume(const MCP_PROPERTY_LIST_T *properties, MCP_RETUR
         }
     }
 
-    // FIXME: Implement actual volume setting logic here
-    ai_audio_player_set_vol(volume);
-    PR_DEBUG("set volume to %d", volume);
+    rt = ai_chat_set_volume(volume);
+    PR_DEBUG("set volume to %d rt:%d", volume, rt);
 
     // Set return value
-    ai_mcp_return_value_set_bool(ret_val, TRUE);
+    ai_mcp_return_value_set_bool(ret_val, (rt == OPRT_OK) ? TRUE : FALSE);
 
     PR_DEBUG("__set_volume exit");
 
@@ -124,7 +137,7 @@ static OPERATE_RET __set_volume(const MCP_PROPERTY_LIST_T *properties, MCP_RETUR
 static OPERATE_RET __set_mode(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val, void *user_data)
 {
     AI_CHAT_MODE_E mode = 0;
-    
+
     ai_mode_get_curr_mode(&mode);
 
     // Parse properties to get volume
@@ -152,55 +165,58 @@ static OPERATE_RET __ai_mcp_tools_register(void)
     OPERATE_RET rt = OPRT_OK;
 
     // device info get tool
-    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD(
-        "device_info_get",
-        "Get device information such as model, serial number, and firmware version.",
-        __get_device_info,
-        NULL
-    ), err);
+    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD("device_info_get",
+                                       "Get device information such as model, serial number, and firmware version.",
+                                       __get_device_info, NULL),
+                       err);
 
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
     // device camera take photo tool
-    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD(
-        "device_camera_take_photo",
-        "Captures one or more photos using the device camera. Use when picture or scene "
-        "change is detected, for visitor detection, or when the user asks for a photo.\n"
-        "Parameters:\n"
-        "- count (int): Number of photos to capture (1-10).\n"
-        "Returns: Captured image(s) in Base64 format.",
-        __take_photo,
-        NULL,
-        MCP_PROP_STR("question", "The question prompting the photo capture."),
-        MCP_PROP_INT_DEF_RANGE("count", "Number of photos to capture (1-10).", 1, 1, 10)
-    ), err);
+    TUYA_CALL_ERR_GOTO(
+        AI_MCP_TOOL_ADD("device_camera_take_photo",
+                        "Captures one or more photos using the device camera. Use when picture or scene "
+                        "change is detected, for visitor detection, or when the user asks for a photo.\n"
+                        "Parameters:\n"
+                        "- count (int): Number of photos to capture (1-10).\n"
+                        "Returns: Captured image(s) in Base64 format.",
+                        __take_photo, NULL, MCP_PROP_STR("question", "The question prompting the photo capture."),
+                        MCP_PROP_INT_DEF_RANGE("count", "Number of photos to capture (1-10).", 1, 1, 10)),
+        err);
 #endif
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+    // get volume tool
+    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD("device_audio_volume_get",
+                                       "Gets the device's current volume level.\n"
+                                       "Parameters:\n"
+                                       "- None.\n"
+                                       "Response:\n"
+                                       "- Returns the current volume level (0-100).",
+                                       __get_volume, NULL),
+                       err);
+
     // set volume tool
-    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD(
-        "device_audio_volume_set",
-        "Sets the device's volume level.\n"
-        "Parameters:\n"
-        "- volume (int): The volume level to set (0-100).\n"
-        "Response:\n"
-        "- Returns true if the volume was set successfully.",
-        __set_volume,
-        NULL,
-        MCP_PROP_INT_RANGE("volume", "The volume level to set (0-100).", 0, 100)
-    ), err);
+    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD("device_audio_volume_set",
+                                       "Sets the device's volume level.\n"
+                                       "Parameters:\n"
+                                       "- volume (int): The volume level to set (0-100).\n"
+                                       "Response:\n"
+                                       "- Returns true if the volume was set successfully.",
+                                       __set_volume, NULL,
+                                       MCP_PROP_INT_RANGE("volume", "The volume level to set (0-100).", 0, 100)),
+                       err);
 #endif
 
-    TUYA_CALL_ERR_GOTO(AI_MCP_TOOL_ADD(
-        "device_audio_mode_set",
-        "Sets the device's chat mode.\n"
-        "Parameters:\n"
-        "- mode (integer): The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free).\n"
-        "Response:\n"
-        "- Returns true if the mode was set successfully.",
-        __set_mode,
-        NULL,
-        MCP_PROP_INT_RANGE("mode", "The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free)", 0, 3)
-    ), err);
+    TUYA_CALL_ERR_GOTO(
+        AI_MCP_TOOL_ADD("device_audio_mode_set",
+                        "Sets the device's chat mode.\n"
+                        "Parameters:\n"
+                        "- mode (integer): The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free).\n"
+                        "Response:\n"
+                        "- Returns true if the mode was set successfully.",
+                        __set_mode, NULL,
+                        MCP_PROP_INT_RANGE("mode", "The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free)", 0, 3)),
+        err);
 
     return OPRT_OK;
 
