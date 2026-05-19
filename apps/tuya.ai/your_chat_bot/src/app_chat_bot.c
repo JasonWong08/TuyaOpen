@@ -12,6 +12,10 @@
 #include "ai_chat_main.h"
 #include "app_chat_bot.h"
 
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+#include "robot_uart_voice.h"
+#endif
+
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
 #include "tkl_wifi.h"
 #endif
@@ -153,11 +157,6 @@ void __ai_picture_output_cb(uint8_t *data, uint32_t len, bool is_eof)
 #endif
 
 
-static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
-{
-    (void)event;
-}
-
 OPERATE_RET app_chat_bot_init(void)
 {
     OPERATE_RET rt = OPRT_OK;
@@ -165,7 +164,7 @@ OPERATE_RET app_chat_bot_init(void)
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
         .default_mode = AI_CHAT_MODE_WAKEUP,
         .default_vol  = 70,
-        .evt_cb       = __ai_chat_handle_event,
+        .evt_cb       = NULL,
     };
     TUYA_CALL_ERR_RETURN(ai_chat_init(&ai_chat_cfg));
 
@@ -179,6 +178,10 @@ OPERATE_RET app_chat_bot_init(void)
 
 #if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
     TUYA_CALL_ERR_RETURN(ai_mcp_init());
+#endif
+
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+    TUYA_CALL_ERR_RETURN(robot_uart_voice_init());
 #endif
 
 #if defined(ENABLE_COMP_AI_PICTURE) && (ENABLE_COMP_AI_PICTURE == 1)

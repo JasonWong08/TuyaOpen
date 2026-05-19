@@ -15,6 +15,11 @@
 #include "ai_user_event.h"
 #include "skill_emotion.h"
 
+__attribute__((weak)) void ai_app_on_asr_result(const char *text)
+{
+    (void)text;
+}
+
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
 #include "ai_audio_player.h"
 #include "skill_music_story.h"
@@ -106,6 +111,10 @@ static OPERATE_RET __ai_asr_process(cJSON *root, bool eof)
     PR_NOTICE("text -> ASR result: %s", content);
     if (!content) {
         content = "";
+    }
+
+    if (content[0] != '\0') {
+        ai_app_on_asr_result(content);
     }
 
     AI_NOTIFY_TEXT_T text;

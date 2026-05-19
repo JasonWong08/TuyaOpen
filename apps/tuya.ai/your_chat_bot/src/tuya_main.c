@@ -39,7 +39,9 @@
 #include "lwip_init.h"
 #endif
 
+#if defined(ENABLE_ESP_DISPLAY) && (ENABLE_ESP_DISPLAY == 1)
 #include "board_com_api.h"
+#endif
 
 #include "app_chat_bot.h"
 #include "reset_netcfg.h"
@@ -378,10 +380,12 @@ void user_main(void)
 
     PR_DEBUG("tuya_iot_init success");
 
+#if defined(ENABLE_ESP_DISPLAY) && (ENABLE_ESP_DISPLAY == 1)
     ret = board_register_hardware();
     if (ret != OPRT_OK) {
         PR_ERR("board_register_hardware failed");
     }
+#endif
 
     ret = app_chat_bot_init();
     if (ret != OPRT_OK) {

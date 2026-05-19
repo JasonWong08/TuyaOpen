@@ -113,6 +113,12 @@ void ai_user_event_notify_register(AI_USER_EVENT_NOTIFY cb);
 */
 void ai_user_event_notify(AI_USER_EVT_TYPE_E type, void *data);
 
+/**
+ * Optional hook when ASR text is received (before user events).
+ * Apps such as your_chat_bot may override with a strong symbol for local UART control.
+ */
+void ai_app_on_asr_result(const char *text);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1127,6 +1127,7 @@ static OPERATE_RET __handle_tools_call(cJSON *params, const char *id)
         goto err;
     }
     tool_name = tool_name_json->valuestring;
+    PR_NOTICE("MCP tools/call: %s", tool_name);
 
     tool_arguments = cJSON_GetObjectItem(params, "arguments");
     if (tool_arguments && !cJSON_IsObject(tool_arguments)) {
