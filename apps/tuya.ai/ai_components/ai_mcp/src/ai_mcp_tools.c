@@ -6,6 +6,8 @@
  *
  */
 
+#include <string.h>
+
 #include "tal_api.h"
 
 #include "tuya_ai_agent.h"
@@ -160,6 +162,15 @@ static OPERATE_RET __set_mode(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_
     return OPRT_OK;
 }
 
+/**
+ * Optional app-specific MCP tools (e.g. your_chat_bot robot UART).
+ * Weak default is no-op; your_chat_bot provides a strong override in ai_mcp_robot_tools.c.
+ */
+__attribute__((weak)) OPERATE_RET ai_mcp_app_tools_register(void)
+{
+    return OPRT_OK;
+}
+
 static OPERATE_RET __ai_mcp_tools_register(void)
 {
     OPERATE_RET rt = OPRT_OK;
@@ -217,6 +228,8 @@ static OPERATE_RET __ai_mcp_tools_register(void)
                         __set_mode, NULL,
                         MCP_PROP_INT_RANGE("mode", "The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free)", 0, 3)),
         err);
+
+    TUYA_CALL_ERR_GOTO(ai_mcp_app_tools_register(), err);
 
     return OPRT_OK;
 

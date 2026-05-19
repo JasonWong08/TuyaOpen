@@ -8,6 +8,15 @@ config ENABLE_BATTERY
     bool "enable the battery module"
     default n
 
+config ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+    bool "Robot second UART (UART1 TX17/RX18) + MCP self.robot.send_command"
+    depends on ENABLE_COMP_AI_MCP
+    default n
+    help
+      Second serial to lower MCU over UART_NUM_1 (default GPIO TX17/RX18, DNESP32S3 BOX / MW53).
+      Links your_chat_bot-only MCP tool self.robot.send_command (see robot_uart_ai_system_prompt.h).
+      Does not affect other AI apps under apps/tuya.ai.
+
 rsource "../ai_components/Kconfig"
 
 endmenu

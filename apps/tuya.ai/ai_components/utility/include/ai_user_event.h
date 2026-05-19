@@ -7,7 +7,7 @@
  * to communicate AI-related events such as ASR results, TTS playback,
  * emotion detection, and skill execution.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  */
 
@@ -112,6 +112,12 @@ void ai_user_event_notify_register(AI_USER_EVENT_NOTIFY cb);
 @return None
 */
 void ai_user_event_notify(AI_USER_EVT_TYPE_E type, void *data);
+
+/**
+ * Optional hook when ASR text is received (before user events).
+ * Apps such as your_chat_bot may override with a strong symbol for local UART control.
+ */
+void ai_app_on_asr_result(const char *text);
 
 #ifdef __cplusplus
 }

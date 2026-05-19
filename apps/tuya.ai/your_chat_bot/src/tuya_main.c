@@ -10,7 +10,7 @@
  * working on IoT applications that require audio capabilities and integration
  * with the Tuya IoT ecosystem.
  *
- * @copyright Copyright (c) 2021-2025 Tuya Inc. All Rights Reserved.
+ * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
  */
 
@@ -39,7 +39,9 @@
 #include "lwip_init.h"
 #endif
 
+#if defined(ENABLE_ESP_DISPLAY) && (ENABLE_ESP_DISPLAY == 1)
 #include "board_com_api.h"
+#endif
 
 #include "app_chat_bot.h"
 #include "reset_netcfg.h"
@@ -67,7 +69,7 @@ tuya_iot_license_t license;
 /* Periodic free-heap log interval (ms) */
 #define PRINTF_FREE_HEAP_TIME (10 * 1000)
 
-static uint8_t _need_reset = 0;
+static uint8_t  _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
 
 /**
@@ -130,12 +132,12 @@ OPERATE_RET audio_dp_obj_proc(dp_obj_recv_t *dpobj)
 OPERATE_RET ai_audio_volume_upload(void)
 {
     tuya_iot_client_t *client = tuya_iot_client_get();
-    dp_obj_t dp_obj = {0};
+    dp_obj_t           dp_obj = {0};
 
     uint8_t volume = ai_chat_get_volume();
 
-    dp_obj.id = DPID_VOLUME;
-    dp_obj.type = PROP_VALUE;
+    dp_obj.id             = DPID_VOLUME;
+    dp_obj.type           = PROP_VALUE;
     dp_obj.value.dp_value = volume;
 
     PR_DEBUG("DP upload volume:%d", volume);
@@ -163,10 +165,10 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             tal_system_reset();
         }
 
-        #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
-        #endif
-        
+#endif
+
         break;
 
     /* Print the QRCode for Tuya APP bind */
@@ -244,8 +246,8 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
             PR_DEBUG("devid.%s", dpraw->devid);
         }
 
-        uint32_t index = 0;
-        dp_raw_t *dp = &dpraw->dp;
+        uint32_t  index = 0;
+        dp_raw_t *dp    = &dpraw->dp;
         PR_DEBUG("dpid:%d type:RAW len:%d data:", dp->id, dp->len);
         for (index = 0; index < dp->len; index++) {
             PR_DEBUG_RAW("%02x", dp->data[index]);
@@ -296,8 +298,8 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
     size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     size_t min_ever = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
     size_t largest  = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    PR_INFO("Heap: free=%-6u  min_ever=%-6u  largest_block=%-6u",
-            (unsigned)free_now, (unsigned)min_ever, (unsigned)largest);
+    PR_INFO("Heap: free=%-6u  min_ever=%-6u  largest_block=%-6u", (unsigned)free_now, (unsigned)min_ever,
+            (unsigned)largest);
 #else
     PR_INFO("Heap: free=%d", tal_system_get_free_heap_size());
 #endif
@@ -310,7 +312,7 @@ void user_main(void)
     //! open iot development kit runtim init
 #if defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)
     cJSON_InitHooks(&(cJSON_Hooks){.malloc_fn = tal_psram_malloc, .free_fn = tal_psram_free});
-#else 
+#else
     cJSON_InitHooks(&(cJSON_Hooks){.malloc_fn = tal_malloc, .free_fn = tal_free});
 #endif
 
@@ -328,7 +330,7 @@ void user_main(void)
 
     tal_kv_init(&(tal_kv_cfg_t){
         .seed = "vmlkasdh93dlvlcy",
-        .key = "dflfuap134ddlduq",
+        .key  = "dflfuap134ddlduq",
     });
     tal_sw_timer_init();
     tal_sw_timer_create(__printf_heap_tm_cb, NULL, &sg_printf_heap_tm);
@@ -341,7 +343,7 @@ void user_main(void)
     reset_netconfig_start();
 
     if (OPRT_OK != tuya_authorize_read(&license)) {
-        license.uuid = TUYA_OPENSDK_UUID;
+        license.uuid    = TUYA_OPENSDK_UUID;
         license.authkey = TUYA_OPENSDK_AUTHKEY;
         PR_WARN("Replace the TUYA_OPENSDK_UUID and TUYA_OPENSDK_AUTHKEY contents, otherwise the demo cannot work.\n \
                 Visit https://platform.tuya.com/purchase/index?type=6 to get the open-sdk uuid and authkey.");
@@ -350,9 +352,9 @@ void user_main(void)
     /* Initialize Tuya device configuration */
     ret = tuya_iot_init(&ai_client, &(const tuya_iot_config_t){
                                         .software_ver = PROJECT_VERSION,
-                                        .productkey = TUYA_PRODUCT_ID,
-                                        .uuid = license.uuid,
-                                        .authkey = license.authkey,
+                                        .productkey   = TUYA_PRODUCT_ID,
+                                        .uuid         = license.uuid,
+                                        .authkey      = license.authkey,
                                         // .firmware_key      = TUYA_DEVICE_FIRMWAREKEY,
                                         .event_handler = user_event_handler_on,
                                         .network_check = user_network_check,
@@ -378,10 +380,12 @@ void user_main(void)
 
     PR_DEBUG("tuya_iot_init success");
 
+#if defined(ENABLE_ESP_DISPLAY) && (ENABLE_ESP_DISPLAY == 1)
     ret = board_register_hardware();
     if (ret != OPRT_OK) {
         PR_ERR("board_register_hardware failed");
     }
+#endif
 
     ret = app_chat_bot_init();
     if (ret != OPRT_OK) {
@@ -442,9 +446,9 @@ static void tuya_app_thread(void *arg)
 void tuya_app_main(void)
 {
     THREAD_CFG_T thrd_param = {0};
-    thrd_param.stackDepth = 4096;
-    thrd_param.priority = 4;
-    thrd_param.thrdname = "tuya_app_main";
+    thrd_param.stackDepth   = 4096;
+    thrd_param.priority     = 4;
+    thrd_param.thrdname     = "tuya_app_main";
     tal_thread_create_and_start(&ty_app_thread, NULL, NULL, tuya_app_thread, NULL, &thrd_param);
 }
 #endif
