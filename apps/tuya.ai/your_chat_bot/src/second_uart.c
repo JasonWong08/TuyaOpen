@@ -9,7 +9,6 @@
 
 #include "tal_api.h"
 #include "tal_uart.h"
-#include "tkl_uart.h"
 
 #include "second_uart.h"
 
@@ -71,8 +70,6 @@ OPERATE_RET second_uart_init(void)
     cfg.base_cfg.databits = TUYA_UART_DATA_LEN_8BIT;
     cfg.base_cfg.stopbits = TUYA_UART_STOP_LEN_1BIT;
     cfg.base_cfg.flowctrl = TUYA_UART_FLOWCTRL_NONE;
-
-    tkl_uart1_set_pins((int)SECOND_UART_TX_PIN, (int)SECOND_UART_RX_PIN);
 
     OPERATE_RET rt = tal_uart_init(ROBOT_UART_PORT, &cfg);
     if (rt == OPRT_INVALID_PARM) {

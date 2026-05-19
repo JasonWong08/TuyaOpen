@@ -12,7 +12,6 @@
 
 #include "tal_api.h"
 #include "tal_uart.h"
-#include "tkl_uart.h"
 #include "tkl_output.h"
 
 /***********************************************************
@@ -50,8 +49,6 @@ static OPERATE_RET __uart1_test_init(void)
     cfg.base_cfg.stopbits = TUYA_UART_STOP_LEN_1BIT;
     cfg.base_cfg.parity   = TUYA_UART_PARITY_TYPE_NONE;
     cfg.base_cfg.flowctrl = TUYA_UART_FLOWCTRL_NONE;
-
-    tkl_uart1_set_pins((int)UART1_TEST_TX_PIN, (int)UART1_TEST_RX_PIN);
 
     return tal_uart_init(UART1_TEST_PORT, &cfg);
 }
