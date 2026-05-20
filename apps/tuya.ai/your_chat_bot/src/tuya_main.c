@@ -65,10 +65,14 @@ tuya_iot_license_t license;
 #define DPID_VOLUME 3
 
 /* Periodic free-heap log interval (ms) */
-#define PRINTF_FREE_HEAP_TIME (10 * 1000)
+#define PRINTF_FREE_HEAP_TIME      (10 * 1000)
+#define NETWORK_CFG_ALERT_DELAY_MS (1500)
 
 static uint8_t  _need_reset = 0;
 static TIMER_ID sg_printf_heap_tm;
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+static TIMER_ID sg_network_cfg_alert_tm;
+#endif
 
 /**
  * @brief user defined log output api, in this demo, it will use uart0 as log-tx
@@ -143,6 +147,31 @@ OPERATE_RET ai_audio_volume_upload(void)
     return tuya_iot_dp_obj_report(client, client->activate.devid, &dp_obj, 1, 0);
 }
 
+#if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
+static void __network_cfg_alert_tm_cb(TIMER_ID timer_id, void *arg)
+{
+    (void)timer_id;
+    (void)arg;
+
+    PR_NOTICE("Play delayed network configuration alert");
+    ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
+}
+
+static void __schedule_network_cfg_alert(void)
+{
+    OPERATE_RET rt = OPRT_OK;
+
+    if (sg_network_cfg_alert_tm == NULL) {
+        TUYA_CALL_ERR_LOG(tal_sw_timer_create(__network_cfg_alert_tm_cb, NULL, &sg_network_cfg_alert_tm));
+    }
+
+    if (sg_network_cfg_alert_tm) {
+        tal_sw_timer_stop(sg_network_cfg_alert_tm);
+        TUYA_CALL_ERR_LOG(tal_sw_timer_start(sg_network_cfg_alert_tm, NETWORK_CFG_ALERT_DELAY_MS, TAL_TIMER_ONCE));
+    }
+}
+#endif
+
 /**
  * @brief user defined event handler
  *
@@ -164,7 +193,7 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
         }
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        ai_audio_player_alert(AI_AUDIO_ALERT_NETWORK_CFG);
+        __schedule_network_cfg_alert();
 #endif
 
         break;
