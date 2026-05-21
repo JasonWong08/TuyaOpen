@@ -33,7 +33,7 @@ extern "C" {
 #define I2S_MCK_IO (12)
 #define I2S_BCK_IO (11)
 #define I2S_WS_IO  (9)
-#define I2S_DO_IO  (8)
+#define I2S_DO_IO  (7)
 #define I2S_DI_IO  (10)
 
 #define GPIO_OUTPUT_PA (-1)
