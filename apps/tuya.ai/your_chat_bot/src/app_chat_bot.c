@@ -15,6 +15,7 @@
 #include "app_chat_bot.h"
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+#include "quaddle_robot_bridge.h"
 #include "robot_uart_voice.h"
 #endif
 
@@ -183,6 +184,7 @@ OPERATE_RET app_chat_bot_init(void)
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
     TUYA_CALL_ERR_RETURN(robot_uart_voice_init());
+    TUYA_CALL_ERR_RETURN(quaddle_robot_bridge_init());
 #endif
 
 #if defined(ENABLE_COMP_AI_PICTURE) && (ENABLE_COMP_AI_PICTURE == 1)

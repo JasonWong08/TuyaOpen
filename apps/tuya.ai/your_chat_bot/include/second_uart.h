@@ -45,7 +45,9 @@ OPERATE_RET second_uart_init(void);
 void        second_uart_deinit(void);
 
 OPERATE_RET second_uart_send_data(const uint8_t *data, size_t length);
+OPERATE_RET second_uart_send_data_force(const uint8_t *data, size_t length);
 OPERATE_RET second_uart_send_string(const char *str);
+OPERATE_RET second_uart_send_string_force(const char *str);
 OPERATE_RET second_uart_send_line(const char *str);
 
 OPERATE_RET second_uart_send_stand_up_command(void);

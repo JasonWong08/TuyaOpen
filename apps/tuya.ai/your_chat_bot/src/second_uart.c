@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "tal_api.h"
+#include "tal_mutex.h"
 #include "tal_uart.h"
 
 #include "second_uart.h"
@@ -19,6 +20,7 @@
 #define SECOND_UART_LAST_MAX 128
 
 static bool   s_initialized;
+static MUTEX_HANDLE s_tx_mutex;
 static char   s_last_cmd[SECOND_UART_LAST_MAX];
 static size_t s_last_len;
 
@@ -62,6 +64,14 @@ OPERATE_RET second_uart_init(void)
         return OPRT_OK;
     }
 
+    if (!s_tx_mutex) {
+        OPERATE_RET mutex_rt = tal_mutex_create_init(&s_tx_mutex);
+        if (mutex_rt != OPRT_OK) {
+            PR_ERR("second_uart: create mutex failed %d", mutex_rt);
+            return mutex_rt;
+        }
+    }
+
     memset(&cfg, 0, sizeof(cfg));
     cfg.rx_buffer_size    = SECOND_UART_BUF_SIZE;
     cfg.open_mode         = 0;
@@ -99,7 +109,7 @@ void second_uart_deinit(void)
     s_last_len    = 0;
 }
 
-OPERATE_RET second_uart_send_data(const uint8_t *data, size_t length)
+static OPERATE_RET __second_uart_send_data(const uint8_t *data, size_t length, bool force)
 {
     int written;
 
@@ -112,20 +122,40 @@ OPERATE_RET second_uart_send_data(const uint8_t *data, size_t length)
         return rt;
     }
 
-    if (__second_uart_same_as_last(data, length)) {
+    if (!force && __second_uart_same_as_last(data, length)) {
         PR_DEBUG("second_uart: skip duplicate (%u bytes)", (unsigned)length);
         return OPRT_OK;
+    }
+
+    if (s_tx_mutex) {
+        tal_mutex_lock(s_tx_mutex);
     }
 
     written = tal_uart_write(ROBOT_UART_PORT, data, (uint32_t)length);
     if (written < 0 || (size_t)written != length) {
         PR_WARN("second_uart: wrote %d of %u", written, (unsigned)length);
+        if (s_tx_mutex) {
+            tal_mutex_unlock(s_tx_mutex);
+        }
         return OPRT_COM_ERROR;
     }
 
     __second_uart_remember(data, length);
     __second_uart_log_tx(data, length);
+    if (s_tx_mutex) {
+        tal_mutex_unlock(s_tx_mutex);
+    }
     return OPRT_OK;
+}
+
+OPERATE_RET second_uart_send_data(const uint8_t *data, size_t length)
+{
+    return __second_uart_send_data(data, length, false);
+}
+
+OPERATE_RET second_uart_send_data_force(const uint8_t *data, size_t length)
+{
+    return __second_uart_send_data(data, length, true);
 }
 
 OPERATE_RET second_uart_send_test(const char *cmd)
@@ -134,7 +164,7 @@ OPERATE_RET second_uart_send_test(const char *cmd)
     return second_uart_send_string(cmd ? cmd : "kbk 3");
 }
 
-OPERATE_RET second_uart_send_string(const char *str)
+static OPERATE_RET __second_uart_send_string(const char *str, bool force)
 {
     char   buf[SECOND_UART_LAST_MAX];
     size_t n;
@@ -152,7 +182,17 @@ OPERATE_RET second_uart_send_string(const char *str)
         buf[n++] = '\n';
     }
     buf[n] = '\0';
-    return second_uart_send_data((const uint8_t *)buf, n);
+    return __second_uart_send_data((const uint8_t *)buf, n, force);
+}
+
+OPERATE_RET second_uart_send_string(const char *str)
+{
+    return __second_uart_send_string(str, false);
+}
+
+OPERATE_RET second_uart_send_string_force(const char *str)
+{
+    return __second_uart_send_string(str, true);
 }
 
 OPERATE_RET second_uart_send_line(const char *str)

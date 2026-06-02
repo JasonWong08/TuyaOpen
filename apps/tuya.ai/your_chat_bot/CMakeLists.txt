@@ -14,6 +14,7 @@ aux_source_directory(${APP_PATH}/src APP_SRCS)
 list(FILTER APP_SRCS EXCLUDE REGEX ".*/ai_mcp_robot_tools\\.c$")
 list(FILTER APP_SRCS EXCLUDE REGEX ".*/second_uart\\.c$")
 list(FILTER APP_SRCS EXCLUDE REGEX ".*/robot_uart_voice\\.c$")
+list(FILTER APP_SRCS EXCLUDE REGEX ".*/quaddle_robot_bridge\\.c$")
 
 set(APP_INC ${APP_PATH}/include)
 
@@ -45,7 +46,8 @@ if("${CONFIG_ENABLE_CHAT_BOT_ROBOT_SECOND_UART}" STREQUAL "y")
         PRIVATE
             ${APP_PATH}/src/second_uart.c
             ${APP_PATH}/src/robot_uart_voice.c
-            ${APP_PATH}/src/ai_mcp_robot_tools.c)
+            ${APP_PATH}/src/ai_mcp_robot_tools.c
+            ${APP_PATH}/src/quaddle_robot_bridge.c)
 endif()
 
 ########################################
