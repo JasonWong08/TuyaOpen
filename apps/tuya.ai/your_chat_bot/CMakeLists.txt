@@ -15,6 +15,7 @@ list(FILTER APP_SRCS EXCLUDE REGEX ".*/ai_mcp_robot_tools\\.c$")
 list(FILTER APP_SRCS EXCLUDE REGEX ".*/second_uart\\.c$")
 list(FILTER APP_SRCS EXCLUDE REGEX ".*/robot_uart_voice\\.c$")
 list(FILTER APP_SRCS EXCLUDE REGEX ".*/quaddle_robot_bridge\\.c$")
+list(FILTER APP_SRCS EXCLUDE REGEX ".*/quaddle_ble_hid_central\\.c$")
 
 set(APP_INC ${APP_PATH}/include)
 
@@ -48,6 +49,16 @@ if("${CONFIG_ENABLE_CHAT_BOT_ROBOT_SECOND_UART}" STREQUAL "y")
             ${APP_PATH}/src/robot_uart_voice.c
             ${APP_PATH}/src/ai_mcp_robot_tools.c
             ${APP_PATH}/src/quaddle_robot_bridge.c)
+endif()
+
+if("${CONFIG_ENABLE_QUADDLE_BLE_HID_CENTRAL}" STREQUAL "y")
+    target_compile_definitions(${EXAMPLE_LIB}
+        PRIVATE
+            ENABLE_QUADDLE_BLE_HID_CENTRAL=1
+            QUADDLE_BLE_GAMEPAD_NAME_FILTER="${CONFIG_QUADDLE_BLE_GAMEPAD_NAME_FILTER}")
+    target_sources(${EXAMPLE_LIB}
+        PRIVATE
+            ${APP_PATH}/src/quaddle_ble_hid_central.c)
 endif()
 
 ########################################

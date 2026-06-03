@@ -17,6 +17,21 @@ config ENABLE_CHAT_BOT_ROBOT_SECOND_UART
       Links your_chat_bot-only MCP tool self.robot.send_command (see robot_uart_ai_system_prompt.h).
       Does not affect other AI apps under apps/tuya.ai.
 
+config ENABLE_QUADDLE_BLE_HID_CENTRAL
+    bool "Quaddle BLE HID central for BM769/Q34B gamepad"
+    depends on ENABLE_CHAT_BOT_ROBOT_SECOND_UART && ENABLE_BLUETOOTH
+    default n
+    help
+      Scan, connect, subscribe HID/vendor input reports, decode BM769/Q34B frames,
+      and feed Arduino-compatible event text into quaddle_robot_bridge_handle_line().
+
+config QUADDLE_BLE_GAMEPAD_NAME_FILTER
+    string "Quaddle BLE gamepad name filter"
+    depends on ENABLE_QUADDLE_BLE_HID_CENTRAL
+    default "bm769,q34b,gamepadspace"
+    help
+      Comma-separated, case-insensitive advertised name substrings accepted as target gamepads.
+
 rsource "../ai_components/Kconfig"
 
 endmenu

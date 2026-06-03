@@ -1,0 +1,7 @@
+#ifndef H_MESH_CRYPT_CONSTANTS_
+#define H_MESH_CRYPT_CONSTANTS_
+
+#define TC_CRYPTO_FAIL    0
+#define TC_CRYPTO_SUCCESS 1
+
+#endif

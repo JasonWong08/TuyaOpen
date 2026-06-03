@@ -50,6 +50,17 @@ target_include_directories(${MODULE_NAME}
         ${LIB_PUBLIC_INC}
     )
 
+if(CONFIG_ENABLE_QUADDLE_BLE_HID_CENTRAL STREQUAL "y")
+    target_compile_definitions(${MODULE_NAME}
+        PRIVATE
+            TY_HS_BLE_ROLE_CENTRAL=1
+            TY_HS_BLE_SM_LEGACY=1
+            TY_HS_BLE_SM_BONDING=1
+            TY_HS_BLE_SM_IO_CAP=3
+            TY_HS_BLE_SM_OUR_KEY_DIST=3
+            TY_HS_BLE_SM_THEIR_KEY_DIST=3)
+endif()
+
 
 ########################################
 # Layer Configure
@@ -60,4 +71,3 @@ list(APPEND COMPONENT_PUBINC ${LIB_PUBLIC_INC})
 set(COMPONENT_PUBINC "${COMPONENT_PUBINC}" PARENT_SCOPE)
 
 endif()
-

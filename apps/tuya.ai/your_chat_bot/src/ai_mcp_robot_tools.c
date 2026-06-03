@@ -18,6 +18,7 @@
 #endif
 
 #include "second_uart.h"
+#include "quaddle_robot_bridge.h"
 
 static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val,
                                         void *user_data)
@@ -41,6 +42,13 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
 
     if (!text || strlen(text) == 0) {
         mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "empty command");
+        return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
+    }
+
+    if (quaddle_robot_bridge_gamepad_active()) {
+        PR_NOTICE("MCP robot send_command skipped: gamepad priority active %ums",
+                  quaddle_robot_bridge_gamepad_active_remaining_ms());
+        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "gamepad control active; AI command skipped");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
     }
 

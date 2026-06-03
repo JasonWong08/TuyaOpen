@@ -3,6 +3,7 @@
 #include "ble_svc_gap.h"
 #include "ble_svc_gatt.h"
 #include "ble_gap.h"
+#include "ble_store.h"
 #include "ble_hs_log.h"
 #include "tal_log.h"
 #include "tkl_mutex.h"
@@ -109,6 +110,8 @@ static int tuya_ble_host_gap_event(struct ble_gap_event *event, void *arg)
 {
     TKL_BLE_GAP_PARAMS_EVT_T gap_event;
     TKL_BLE_GATT_PARAMS_EVT_T gatt_event;
+    uint8_t notify_buf[256];
+    uint16_t notify_len;
 
     TKL_BLUETOOTH_SERVER_PARAMS_T *p_role = arg;
 
@@ -201,7 +204,19 @@ static int tuya_ble_host_gap_event(struct ble_gap_event *event, void *arg)
         break;
 
     case BLE_GAP_EVENT_NOTIFY_RX:
-        BLE_HS_LOG(INFO, "receive notify ok");
+        gatt_event.type = TKL_BLE_GATT_EVT_NOTIFY_INDICATE_RX;
+        gatt_event.result = 0;
+        gatt_event.conn_handle = event->notify_rx.conn_handle;
+        gatt_event.gatt_event.data_report.char_handle = event->notify_rx.attr_handle;
+        notify_len = OS_MBUF_PKTLEN(event->notify_rx.om);
+        if (notify_len > sizeof(notify_buf)) {
+            notify_len = sizeof(notify_buf);
+        }
+        if (notify_len > 0 && os_mbuf_copydata(event->notify_rx.om, 0, notify_len, notify_buf) == 0) {
+            gatt_event.gatt_event.data_report.report.length = notify_len;
+            gatt_event.gatt_event.data_report.report.p_data = notify_buf;
+        }
+        BLE_HS_LOG(INFO, "receive notify ok, handle=0x%04x len=%d", event->notify_rx.attr_handle, notify_len);
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
         gatt_event.type = TKL_BLE_GATT_EVT_SUBSCRIBE;
@@ -303,6 +318,44 @@ static int tuya_ble_host_mtu_exchange_callback(uint16_t conn_handle, const struc
 }
 
 #if (TY_HS_BLE_ROLE_CENTRAL)
+static int tuya_ble_gattc_read_callback(uint16_t conn_handle, const struct ble_gatt_error *error,
+                                        struct ble_gatt_attr *attr, void *arg)
+{
+    static uint8_t read_buf[256];
+    uint16_t read_len = 0;
+    int status = error ? error->status : BLE_HS_EUNKNOWN;
+    TKL_BLE_GATT_PARAMS_EVT_T gatt_event;
+
+    (void)arg;
+
+    memset(&gatt_event, 0, sizeof(gatt_event));
+    gatt_event.type = TKL_BLE_GATT_EVT_READ_RX;
+    gatt_event.result = status;
+    gatt_event.conn_handle = conn_handle;
+    if (attr) {
+        gatt_event.gatt_event.data_read.char_handle = attr->handle;
+    }
+
+    if (status != 0 || attr == NULL || attr->om == NULL) {
+        BLE_HS_LOG(DEBUG, "GATT read failed status=%d", status);
+    } else {
+        read_len = OS_MBUF_PKTLEN(attr->om);
+        if (read_len > sizeof(read_buf)) {
+            read_len = sizeof(read_buf);
+        }
+        if (read_len > 0 && os_mbuf_copydata(attr->om, 0, read_len, read_buf) == 0) {
+            gatt_event.gatt_event.data_read.report.length = read_len;
+            gatt_event.gatt_event.data_read.report.p_data = read_buf;
+        }
+    }
+
+    if (tkl_bluetooth_gatt_callback) {
+        tkl_bluetooth_gatt_callback(&gatt_event);
+    }
+
+    return OPRT_OK;
+}
+
 static int tuya_ble_svc_disc_callback(uint16_t conn_handle, const struct ble_gatt_error *error,
                                       const struct ble_gatt_svc *service, void *arg)
 {
@@ -314,6 +367,11 @@ static int tuya_ble_svc_disc_callback(uint16_t conn_handle, const struct ble_gat
     gatt_event.conn_handle = conn_handle;
     switch (error->status) {
     case 0: {
+        if (svc_index >= TKL_BLE_GATT_SERVICE_MAX_NUM) {
+            BLE_HS_LOG_WARN("Discovery Service overflow, drop handle range 0x%04x-0x%04x", service->start_handle,
+                            service->end_handle);
+            return 0;
+        }
         if (service->uuid.u.type == BLE_UUID_TYPE_16) {
             p_service->services[svc_index].uuid.uuid_type = TKL_BLE_UUID_TYPE_16;
             p_service->services[svc_index].uuid.uuid.uuid16 = service->uuid.u16.value;
@@ -369,6 +427,10 @@ static int tuya_ble_chr_disc_callback(uint16_t conn_handle, const struct ble_gat
 
     switch (error->status) {
     case 0: {
+        if (char_index >= TKL_BLE_GATT_CHAR_MAX_NUM) {
+            BLE_HS_LOG_WARN("Discovery Characteristics overflow, drop value handle 0x%04x", chr->val_handle);
+            return 0;
+        }
         if (chr->uuid.u.type == BLE_UUID_TYPE_16) {
             p_char->characteristics[char_index].uuid.uuid_type = TKL_BLE_UUID_TYPE_16;
             p_char->characteristics[char_index].uuid.uuid.uuid16 = chr->uuid.u16.value;
@@ -381,20 +443,24 @@ static int tuya_ble_chr_disc_callback(uint16_t conn_handle, const struct ble_gat
         }
 
         p_char->characteristics[char_index].handle = chr->val_handle;
+        p_char->characteristics[char_index].property = chr->properties;
+        p_char->char_num++;
 
-        BLE_HS_LOG_DEBUG("Discovery Characteristics, Value Handle = 0x%04x, UUID Value = 0x%04x", chr->val_handle,
-                         chr->uuid.u16.value);
+        BLE_HS_LOG_DEBUG("Discovery Characteristics, Value Handle = 0x%04x, Property = 0x%02x, UUID Value = 0x%04x",
+                         chr->val_handle, chr->properties, chr->uuid.u16.value);
         return 0;
     };
 
     case BLE_HS_EDONE:
         /* All services discovered; start discovering characteristics. */
-        memcpy(&gatt_event.gatt_event.char_disc, p_char, sizeof(TKL_BLE_GATT_SVC_DISC_TYPE_T));
+        memcpy(&gatt_event.gatt_event.char_disc, p_char, sizeof(TKL_BLE_GATT_CHAR_DISC_TYPE_T));
+        memset(p_char, 0, sizeof(TKL_BLE_GATT_CHAR_DISC_TYPE_T));
         gatt_event.result = OPRT_OK;
         BLE_HS_LOG_INFO("Finish Discovery Characteristics");
         break;
 
     default:
+        memset(p_char, 0, sizeof(TKL_BLE_GATT_CHAR_DISC_TYPE_T));
         gatt_event.result = OPRT_OS_ADAPTER_BLE_CHAR_DISC_FAILED;
         break;
     }
@@ -843,6 +909,24 @@ OPERATE_RET tkl_ble_gap_scan_stop(void)
     return OPRT_OK;
 }
 
+OPERATE_RET tkl_ble_gap_connect_cancel(void)
+{
+    int rc;
+
+    if (!ble_hs_is_enabled()) {
+        BLE_HS_LOG_INFO("bt_stack close,bt operation invalid.\n");
+        return OPRT_OK;
+    }
+
+    rc = ble_gap_conn_cancel();
+    if (rc != 0) {
+        BLE_HS_LOG(ERR, "Cancel GAP connection procedure fail rc=%d\n", rc);
+        return rc;
+    }
+
+    return OPRT_OK;
+}
+
 /**
  * @brief   Start connecting one peer
  * @param   [in] p_peer_addr: include address and address type
@@ -913,6 +997,43 @@ OPERATE_RET tkl_ble_gap_disconnect(uint16_t conn_handle, uint8_t hci_reason)
     if (rc != 0) {
         BLE_HS_LOG(ERR, "Failed to disconnect one device; rc=%d\n", rc);
         return OPRT_OS_ADAPTER_BLE_GATT_DISCONN_FAILED;
+    }
+
+    return OPRT_OK;
+}
+
+OPERATE_RET tkl_ble_gap_security_request(uint16_t conn_handle)
+{
+    int rc;
+
+    if (!ble_hs_is_enabled()) {
+        BLE_HS_LOG_INFO("bt_stack close,bt operation invalid.\n");
+        return OPRT_OK;
+    }
+
+    rc = ble_gap_security_initiate(conn_handle);
+    if (rc != 0 && rc != BLE_HS_EALREADY) {
+        BLE_HS_LOG(ERR, "Start GAP security failed handle=0x%04x rc=%d\n", conn_handle, rc);
+        return rc;
+    }
+
+    BLE_HS_LOG(INFO, "Start GAP security handle=0x%04x rc=%d\n", conn_handle, rc);
+    return OPRT_OK;
+}
+
+OPERATE_RET tkl_ble_gap_unpair_all(void)
+{
+    int rc;
+
+    if (!ble_hs_is_enabled()) {
+        BLE_HS_LOG_INFO("bt_stack close,bt operation invalid.\n");
+        return OPRT_OK;
+    }
+
+    rc = ble_store_clear();
+    if (rc != 0) {
+        BLE_HS_LOG(ERR, "Clear BLE bonding store fail rc=%d\n", rc);
+        return rc;
     }
 
     return OPRT_OK;
@@ -1289,6 +1410,7 @@ OPERATE_RET tkl_ble_gattc_all_char_discovery(uint16_t conn_handle, uint16_t star
 
     int rc = OPRT_COM_ERROR;
 
+    memset(&tuya_ble_client.char_disc, 0, sizeof(TKL_BLE_GATT_CHAR_DISC_TYPE_T));
     BLE_HS_LOG_DEBUG("Discovery All Char, Start Handle = 0x%04x, End Handle = 0x%04x", start_handle, end_handle);
     rc = ble_gattc_disc_all_chrs(conn_handle, start_handle, end_handle, tuya_ble_chr_disc_callback, NULL);
     if (rc != 0) {
@@ -1318,6 +1440,7 @@ OPERATE_RET tkl_ble_gattc_char_desc_discovery(uint16_t conn_handle, uint16_t sta
 
     int rc = OPRT_COM_ERROR;
 
+    memset(&tuya_ble_client.desc_disc, 0xFF, sizeof(TKL_BLE_GATT_DESC_DISC_TYPE_T));
     BLE_HS_LOG_DEBUG("Discovery All Descriptors, Start Handle = 0x%04x, End Handle = 0x%04x", start_handle, end_handle);
     rc = ble_gattc_disc_all_dscs(conn_handle, start_handle, end_handle, tuya_ble_desc_disc_callback, NULL);
     if (rc != 0) {
@@ -1367,7 +1490,20 @@ OPERATE_RET tkl_ble_gattc_write_without_rsp(uint16_t conn_handle, uint16_t char_
  * */
 OPERATE_RET tkl_ble_gattc_write(uint16_t conn_handle, uint16_t char_handle, uint8_t *p_data, uint16_t length)
 {
-    return 0;
+    if (!ble_hs_is_enabled()) {
+        BLE_HS_LOG_INFO("bt_stack close,bt operation invalid.\n");
+        return OPRT_OK;
+    }
+
+    int rc;
+
+    rc = ble_gattc_write_flat(conn_handle, char_handle, p_data, length, NULL, NULL);
+    if (rc != 0) {
+        BLE_HS_LOG(ERR, "Error: Failed to write characteristic with response; rc=%d\n", rc);
+        return OPRT_OS_ADAPTER_BLE_WRITE_FAILED;
+    }
+
+    return OPRT_OK;
 }
 
 /**
@@ -1379,7 +1515,20 @@ OPERATE_RET tkl_ble_gattc_write(uint16_t conn_handle, uint16_t char_handle, uint
  * */
 OPERATE_RET tkl_ble_gattc_read(uint16_t conn_handle, uint16_t char_handle)
 {
-    return 0;
+    int rc;
+
+    if (!ble_hs_is_enabled()) {
+        BLE_HS_LOG_INFO("bt_stack close,bt operation invalid.\n");
+        return OPRT_OK;
+    }
+
+    rc = ble_gattc_read(conn_handle, char_handle, tuya_ble_gattc_read_callback, NULL);
+    if (rc != 0) {
+        BLE_HS_LOG(ERR, "GATT read failed handle=0x%04x rc=%d\n", char_handle, rc);
+        return rc;
+    }
+
+    return OPRT_OK;
 }
 #endif
 /**

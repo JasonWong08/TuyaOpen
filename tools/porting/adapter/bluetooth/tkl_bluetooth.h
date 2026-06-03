@@ -127,6 +127,14 @@ OPERATE_RET tkl_ble_gap_scan_start(TKL_BLE_GAP_SCAN_PARAMS_T const *p_scan_param
 OPERATE_RET tkl_ble_gap_scan_stop(void);
 
 /**
+ * @brief   Cancel an in-progress GAP connection attempt.
+ * @param   void
+ * @return  SUCCESS
+ *          ERROR
+ * */
+OPERATE_RET tkl_ble_gap_connect_cancel(void);
+
+/**
  * @brief   Start connecting one peer
  * @param   [in] p_peer_addr:   include address and address type
  *          [in] p_scan_params: scan parameters
@@ -145,6 +153,22 @@ OPERATE_RET tkl_ble_gap_connect(TKL_BLE_GAP_ADDR_T const *p_peer_addr, TKL_BLE_G
  *          ERROR
  * */
 OPERATE_RET tkl_ble_gap_disconnect(uint16_t conn_handle, uint8_t hci_reason);
+
+/**
+ * @brief   Start BLE security pairing/encryption on an existing connection.
+ * @param   [in] conn_handle:   the connection handle
+ * @return  SUCCESS
+ *          ERROR
+ * */
+OPERATE_RET tkl_ble_gap_security_request(uint16_t conn_handle);
+
+/**
+ * @brief   Clear all stored BLE security/bonding records.
+ * @param   void
+ * @return  SUCCESS
+ *          ERROR
+ * */
+OPERATE_RET tkl_ble_gap_unpair_all(void);
 
 /**
  * @brief   Start to update connection parameters

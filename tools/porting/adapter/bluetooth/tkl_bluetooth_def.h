@@ -78,8 +78,8 @@
     (0x15) /**< Remote Device Terminated Connection due to power off. */
 #define TKL_BLE_HCI_LOCAL_HOST_TERMINATED_CONNECTION (0x16) /**< Local Host Terminated Connection. */
 
-#define TKL_BLE_GATT_SERVICE_MAX_NUM (6) /**< [20220614] Increase maximum service into 6 */
-#define TKL_BLE_GATT_CHAR_MAX_NUM    (6)
+#define TKL_BLE_GATT_SERVICE_MAX_NUM (12) /**< Support richer BLE HID devices. */
+#define TKL_BLE_GATT_CHAR_MAX_NUM    (12)
 
 #define TKL_BLE_GATT_INVALID_HANDLE (0xFFFF) /**< Invalid Connect Handle */
 
@@ -306,6 +306,7 @@ typedef struct {
 typedef struct {
     TKL_BLE_UUID_T uuid; /**< Discovery Service UUID */
     uint16_t handle;     /**< Discovery Char Handle */
+    uint8_t property;    /**< Characteristics property, Refer to TKL_BLE_CHAR_PROP_TYPE_E */
 } TKL_BLE_GATT_CHAR_HANDLE_T;
 
 typedef struct {

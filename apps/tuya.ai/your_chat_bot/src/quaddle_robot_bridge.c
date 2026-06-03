@@ -23,6 +23,7 @@
 #define ABXY_SOLO_DEFER_MS         200
 #define STICK_DELAYED_K_MS         100
 #define QUADDLE_POLL_INTERVAL_MS   20
+#define GAMEPAD_PRIORITY_MS        500
 
 typedef enum {
     QUADDLE_BTN_L1 = 1u << 0,
@@ -62,6 +63,7 @@ static uint32_t s_pending_stick_deadline_ms;
 static char     s_pending_stick_cmd[QUADDLE_CMD_MAX];
 static TIMER_ID s_poll_timer;
 static bool     s_cli_registered;
+static uint32_t s_last_gamepad_input_ms;
 
 static int quaddle_abs(int v)
 {
@@ -264,6 +266,11 @@ static OPERATE_RET send_k_cmd(const char *cmd)
         s_r2_allow_next_g = true;
     }
     return rt;
+}
+
+static void mark_gamepad_input(void)
+{
+    s_last_gamepad_input_ms = now_ms();
 }
 
 static bool raw_btn_should_emit(const char *cmd)
@@ -501,6 +508,7 @@ void quaddle_robot_bridge_reset(void)
     s_pending_stick_cmd[0]    = '\0';
     s_pending_solo_deadline_ms = 0;
     s_pending_stick_deadline_ms = 0;
+    s_last_gamepad_input_ms = 0;
 }
 
 void quaddle_robot_bridge_poll(void)
@@ -523,6 +531,7 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
     if (!line) {
         return OPRT_INVALID_PARM;
     }
+    mark_gamepad_input();
 
     p = payload_after_bracket(line);
     if (p && p[0] != '\0') {
@@ -609,6 +618,25 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
         return second_uart_send_string_force(cmd);
     }
     return OPRT_OK;
+}
+
+BOOL_T quaddle_robot_bridge_gamepad_active(void)
+{
+    return quaddle_robot_bridge_gamepad_active_remaining_ms() > 0;
+}
+
+uint32_t quaddle_robot_bridge_gamepad_active_remaining_ms(void)
+{
+    uint32_t elapsed;
+
+    if (s_last_gamepad_input_ms == 0) {
+        return 0;
+    }
+    elapsed = now_ms() - s_last_gamepad_input_ms;
+    if (elapsed >= GAMEPAD_PRIORITY_MS) {
+        return 0;
+    }
+    return GAMEPAD_PRIORITY_MS - elapsed;
 }
 
 #endif /* ENABLE_CHAT_BOT_ROBOT_SECOND_UART */
