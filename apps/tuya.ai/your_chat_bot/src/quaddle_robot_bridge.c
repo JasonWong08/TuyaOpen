@@ -15,7 +15,7 @@
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 
-#define LSTICK_DEAD_ABS_MAX        3
+#define LSTICK_DEAD_ABS_MAX        5
 #define LSTICK_EDGE_ABS            120
 #define LSTICK_MODERATE_ENTER_ABS  10
 #define LSTICK_MODERATE_MAX_ABS    100
@@ -98,7 +98,7 @@ static int classify_stick_zone(int lx, int ly)
     const int ax = quaddle_abs(lx);
     const int ay = quaddle_abs(ly);
 
-    if (ax < LSTICK_DEAD_ABS_MAX && ay < LSTICK_DEAD_ABS_MAX) {
+    if (ax <= LSTICK_DEAD_ABS_MAX && ay <= LSTICK_DEAD_ABS_MAX) {
         return 0;
     }
     if (ly > LSTICK_EDGE_ABS) {

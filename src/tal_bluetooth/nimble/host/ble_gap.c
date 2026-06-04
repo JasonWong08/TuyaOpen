@@ -5580,14 +5580,29 @@ ble_gap_security_initiate(uint16_t conn_handle)
          */
         rc = ble_store_read_peer_sec(&key_sec, &value_sec);
         if (rc == 0 && value_sec.ltk_present) {
+            BLE_HS_LOG(INFO, "GAP security: restoring encryption from stored LTK handle=0x%04x\n",
+                       conn_handle);
             rc = ble_sm_enc_initiate(conn_handle, value_sec.key_size,
                                      value_sec.ltk, value_sec.ediv,
                                      value_sec.rand_num,
                                      value_sec.authenticated);
             if (rc != 0) {
-                goto done;
+                BLE_HS_LOG(WARN, "GAP security: stored LTK restore failed handle=0x%04x rc=%d, retry pair\n",
+                           conn_handle, rc);
+                (void)ble_store_delete_peer_sec(&key_sec);
+                rc = ble_sm_pair_initiate(conn_handle);
+                if (rc != 0) {
+                    goto done;
+                }
             }
         } else {
+            if (rc != 0 && rc != BLE_HS_ENOENT && rc != BLE_HS_ENOTSUP) {
+                BLE_HS_LOG(WARN, "GAP security: peer sec read failed handle=0x%04x rc=%d, retry pair\n",
+                           conn_handle, rc);
+            } else {
+                BLE_HS_LOG(INFO, "GAP security: no stored LTK handle=0x%04x read_rc=%d, start pair\n",
+                           conn_handle, rc);
+            }
             rc = ble_sm_pair_initiate(conn_handle);
             if (rc != 0) {
                 goto done;

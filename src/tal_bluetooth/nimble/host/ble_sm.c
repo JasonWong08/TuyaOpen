@@ -1000,6 +1000,10 @@ ble_sm_chk_store_overflow_by_type(int obj_type, uint16_t conn_handle)
 
     rc = ble_store_util_count(obj_type, &count);
     if (rc != 0) {
+        if (rc == BLE_HS_ENOTSUP) {
+            BLE_HS_LOG(INFO, "SM store overflow check skipped obj_type=%d rc=%d\n", obj_type, rc);
+            return 0;
+        }
         return rc;
     }
 

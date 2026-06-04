@@ -1011,6 +1011,11 @@ OPERATE_RET tkl_ble_gap_security_request(uint16_t conn_handle)
         return OPRT_OK;
     }
 
+    BLE_HS_LOG(INFO,
+               "GAP security cfg sm=%d legacy=%d sc=%d bonding=%d io=%d key=%d/%d\n",
+               TY_HS_BLE_SM, TY_HS_BLE_SM_LEGACY, TY_HS_BLE_SM_SC, TY_HS_BLE_SM_BONDING,
+               TY_HS_BLE_SM_IO_CAP, TY_HS_BLE_SM_OUR_KEY_DIST, TY_HS_BLE_SM_THEIR_KEY_DIST);
+
     rc = ble_gap_security_initiate(conn_handle);
     if (rc != 0 && rc != BLE_HS_EALREADY) {
         BLE_HS_LOG(ERR, "Start GAP security failed handle=0x%04x rc=%d\n", conn_handle, rc);

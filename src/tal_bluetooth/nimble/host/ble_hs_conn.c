@@ -20,6 +20,7 @@
 #include <string.h>
 #include <errno.h>
 #include "tuya_ble_cfg.h"
+#include "ble_hs_definition.h"
 #include "tuya_ble_mbuf.h"
 #include "tuya_ble_mempool.h"
 #include "ble_hs_id.h"

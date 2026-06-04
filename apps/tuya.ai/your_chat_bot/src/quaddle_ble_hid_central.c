@@ -111,6 +111,10 @@ typedef struct {
     TIMER_ID boot_timer;
     uint8_t poll_read_index;
     bool poll_read_pending;
+    uint16_t poll_read_handle;
+    uint8_t poll_snap[QUADDLE_BLE_MAX_INPUT_CHARS][64];
+    uint8_t poll_snap_len[QUADDLE_BLE_MAX_INPUT_CHARS];
+    uint8_t report_trace_count;
     bool boot_down;
     bool boot_fired_this_hold;
     uint32_t boot_press_start_ms;
@@ -543,6 +547,25 @@ static void feed_report(const uint8_t *d, uint16_t len)
     feed_canonical("[BM769]", d[3], d[4], d[5], d[6], bm769_button_mask(d, len), d[7] & 0x0F);
 }
 
+static void trace_report_hex(const char *source, uint16_t handle, const uint8_t *data, uint16_t len)
+{
+    char hex[96];
+    size_t pos = 0;
+    uint16_t show_len = len > 16 ? 16 : len;
+
+    if (!data || s_hid.report_trace_count >= 20) {
+        return;
+    }
+    for (uint16_t i = 0; i < show_len && pos + 4 < sizeof(hex); i++) {
+        pos += (size_t)snprintf(hex + pos, sizeof(hex) - pos, "%s%02X", i ? " " : "", data[i]);
+    }
+    if (len > show_len && pos + 5 < sizeof(hex)) {
+        (void)snprintf(hex + pos, sizeof(hex) - pos, " ...");
+    }
+    PR_NOTICE("quaddle ble hid: %s handle=%u len=%u data=%s", source ? source : "report", handle, len, hex);
+    s_hid.report_trace_count++;
+}
+
 static bool name_filter_match(const char *name)
 {
     const char *filters = QUADDLE_BLE_GAMEPAD_NAME_FILTER;
@@ -693,7 +716,7 @@ static void security_timer_cb(TIMER_ID timer_id, void *arg)
     }
 
     PR_NOTICE("quaddle ble hid: security wait done, start GATT discovery");
-    (void)tkl_ble_gattc_exchange_mtu_request(s_hid.conn_handle, 247);
+    (void)tkl_ble_gattc_exchange_mtu_request(s_hid.conn_handle, 517);
     (void)tkl_ble_gattc_all_service_discovery(s_hid.conn_handle);
 }
 
@@ -708,6 +731,25 @@ static uint8_t readable_input_char_count(void)
 
     for (uint8_t i = 0; i < s_hid.input_char_count; i++) {
         if (input_char_readable(&s_hid.input_chars[i])) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static bool input_char_notifiable(const INPUT_CHAR_T *ch)
+{
+    return ch && ((ch->property & TKL_BLE_GATT_CHAR_PROP_NOTIFY) == TKL_BLE_GATT_CHAR_PROP_NOTIFY ||
+                  (ch->property & TKL_BLE_GATT_CHAR_PROP_INDICATE) == TKL_BLE_GATT_CHAR_PROP_INDICATE);
+}
+
+static uint8_t notifiable_input_char_count(void)
+{
+    uint8_t count = 0;
+
+    for (uint8_t i = 0; i < s_hid.input_char_count; i++) {
+        if (input_char_notifiable(&s_hid.input_chars[i])) {
             count++;
         }
     }
@@ -760,6 +802,7 @@ static OPERATE_RET discover_next_cccd(void)
     if (s_hid.input_char_index >= s_hid.input_char_count) {
         PR_NOTICE("quaddle ble hid: ready, subscribed %u input report(s), readable %u", s_hid.input_char_count,
                   readable_input_char_count());
+        save_current_peer();
         if (s_hid.hid_wake_timer) {
             (void)tal_sw_timer_start(s_hid.hid_wake_timer, QUADDLE_BLE_HID_WAKE_MS, TAL_TIMER_ONCE);
         }
@@ -782,6 +825,8 @@ static void hid_wake_timer_cb(TIMER_ID timer_id, void *arg)
 {
     uint8_t report_mode = 0x01;
     uint8_t exit_suspend = 0x01;
+    uint8_t readable_count;
+    uint8_t notify_count;
 
     (void)timer_id;
     (void)arg;
@@ -799,14 +844,19 @@ static void hid_wake_timer_cb(TIMER_ID timer_id, void *arg)
                                               sizeof(exit_suspend));
         PR_NOTICE("quaddle ble hid: exit suspend handle=%u", s_hid.hid_control_point_handle);
     }
-    if (s_hid.poll_timer && readable_input_char_count() > 0) {
+    readable_count = readable_input_char_count();
+    notify_count = notifiable_input_char_count();
+    if (s_hid.poll_timer && readable_count > 0 && notify_count == 0) {
         s_hid.poll_read_index = 0;
         s_hid.poll_read_pending = false;
+        s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
+        memset(s_hid.poll_snap, 0, sizeof(s_hid.poll_snap));
+        memset(s_hid.poll_snap_len, 0, sizeof(s_hid.poll_snap_len));
         (void)tal_sw_timer_start(s_hid.poll_timer, QUADDLE_BLE_POLL_READ_MS, TAL_TIMER_CYCLE);
         PR_NOTICE("quaddle ble hid: read polling enabled every %ums (%u readable input report(s))",
-                  QUADDLE_BLE_POLL_READ_MS, readable_input_char_count());
+                  QUADDLE_BLE_POLL_READ_MS, readable_count);
     } else {
-        PR_NOTICE("quaddle ble hid: read polling skipped, no readable input report");
+        PR_NOTICE("quaddle ble hid: read polling skipped, readable=%u notify=%u", readable_count, notify_count);
     }
 }
 
@@ -829,12 +879,38 @@ static void poll_read_timer_cb(TIMER_ID timer_id, void *arg)
         if (!input_char_readable(&s_hid.input_chars[index])) {
             continue;
         }
+        s_hid.poll_read_handle = s_hid.input_chars[index].handle;
         rt = tkl_ble_gattc_read(s_hid.conn_handle, s_hid.input_chars[index].handle);
         if (rt == OPRT_OK) {
             s_hid.poll_read_pending = true;
+        } else {
+            s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
         }
         break;
     }
+}
+
+static int input_char_index_by_handle(uint16_t handle)
+{
+    for (uint8_t i = 0; i < s_hid.input_char_count; i++) {
+        if (s_hid.input_chars[i].handle == handle) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static bool report_all_zero(const uint8_t *data, uint16_t len)
+{
+    if (!data || len == 0) {
+        return false;
+    }
+    for (uint16_t i = 0; i < len; i++) {
+        if (data[i] != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static OPERATE_RET connect_peer(bool reverse_addr_order)
@@ -943,6 +1019,10 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         s_hid.input_char_index = 0;
         s_hid.poll_read_index = 0;
         s_hid.poll_read_pending = false;
+        s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
+        memset(s_hid.poll_snap, 0, sizeof(s_hid.poll_snap));
+        memset(s_hid.poll_snap_len, 0, sizeof(s_hid.poll_snap_len));
+        s_hid.report_trace_count = 0;
         s_hid.profile = GP_PROFILE_UNKNOWN;
         if (strstr(s_hid.peer_name, "Q34B") || strstr(s_hid.peer_name, "q34b")) {
             s_hid.profile = GP_PROFILE_Q34B;
@@ -951,10 +1031,12 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         }
         reset_decoder();
         PR_NOTICE("quaddle ble hid: connected handle=%u name=%s", s_hid.conn_handle, s_hid.peer_name);
-        save_current_peer();
-        if (tkl_ble_gap_security_request(s_hid.conn_handle) == OPRT_OK) {
+        OPERATE_RET sec_rt = tkl_ble_gap_security_request(s_hid.conn_handle);
+        if (sec_rt == OPRT_OK) {
             PR_NOTICE("quaddle ble hid: security requested, wait %ums before GATT discovery",
                       QUADDLE_BLE_SECURITY_WAIT_MS);
+        } else {
+            PR_WARN("quaddle ble hid: security request failed rt=%d, continue GATT discovery", sec_rt);
         }
         if (s_hid.security_timer) {
             (void)tal_sw_timer_start(s_hid.security_timer, QUADDLE_BLE_SECURITY_WAIT_MS, TAL_TIMER_ONCE);
@@ -981,6 +1063,9 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         s_hid.conn_handle = QUADDLE_BLE_INVALID_HANDLE;
         s_hid.poll_read_index = 0;
         s_hid.poll_read_pending = false;
+        s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
+        memset(s_hid.poll_snap, 0, sizeof(s_hid.poll_snap));
+        memset(s_hid.poll_snap_len, 0, sizeof(s_hid.poll_snap_len));
         reset_decoder();
         quaddle_robot_bridge_reset();
         schedule_rescan();
@@ -1075,14 +1160,37 @@ static void gatt_cb(TKL_BLE_GATT_PARAMS_EVT_T *event)
     case TKL_BLE_GATT_EVT_NOTIFY_INDICATE_RX:
         PR_DEBUG("quaddle ble hid: report handle=%u len=%u", event->gatt_event.data_report.char_handle,
                  event->gatt_event.data_report.report.length);
+        trace_report_hex("notify", event->gatt_event.data_report.char_handle,
+                         event->gatt_event.data_report.report.p_data, event->gatt_event.data_report.report.length);
         feed_report(event->gatt_event.data_report.report.p_data, event->gatt_event.data_report.report.length);
         break;
 
     case TKL_BLE_GATT_EVT_READ_RX:
         s_hid.poll_read_pending = false;
+        s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
         if (event->result == OPRT_OK && event->gatt_event.data_read.report.p_data &&
             event->gatt_event.data_read.report.length > 0) {
-            feed_report(event->gatt_event.data_read.report.p_data, event->gatt_event.data_read.report.length);
+            const uint8_t *data = event->gatt_event.data_read.report.p_data;
+            uint16_t len = event->gatt_event.data_read.report.length;
+            uint16_t snap_len = len > sizeof(s_hid.poll_snap[0]) ? sizeof(s_hid.poll_snap[0]) : len;
+            int index = input_char_index_by_handle(event->gatt_event.data_read.char_handle);
+
+            if (report_all_zero(data, len)) {
+                PR_DEBUG("quaddle ble hid: ignore all-zero read handle=%u len=%u",
+                         event->gatt_event.data_read.char_handle, len);
+                break;
+            }
+            if (index >= 0 && s_hid.poll_snap_len[index] == snap_len &&
+                memcmp(s_hid.poll_snap[index], data, snap_len) == 0) {
+                break;
+            }
+
+            trace_report_hex("read", event->gatt_event.data_read.char_handle, data, len);
+            feed_report(data, len);
+            if (index >= 0) {
+                memcpy(s_hid.poll_snap[index], data, snap_len);
+                s_hid.poll_snap_len[index] = (uint8_t)snap_len;
+            }
         }
         break;
 
@@ -1246,7 +1354,7 @@ OPERATE_RET quaddle_ble_hid_central_init(void)
         PR_ERR("quaddle ble hid: stack init failed %d", rt);
         return rt;
     }
-    PR_NOTICE("quaddle ble hid: central init");
+    PR_NOTICE("quaddle ble hid: central init fix=20260604-poll-filter-v8");
     return OPRT_OK;
 }
 
