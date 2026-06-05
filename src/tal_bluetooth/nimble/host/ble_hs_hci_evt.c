@@ -775,7 +775,7 @@ int ble_hs_hci_evt_process(const struct ble_hci_ev *ev)
     entry = ble_hs_hci_evt_dispatch_find(ev->opcode);
     if (entry == NULL) {
         STATS_INC(ble_hs_stats, hci_unknown_event);
-        PR_ERR("hci_unknown hci event %d ", ev->opcode);
+        BLE_HS_LOG(DEBUG, "hci_unknown hci event %d ", ev->opcode);
         rc = BLE_HS_ENOTSUP;
     } else {
         rc = entry->cb(ev->opcode, ev->data, ev->length);

@@ -28,8 +28,31 @@ extern "C" {
 
 struct os_mbuf;
 
+#ifndef BLE_HS_VERBOSE_LOG
+#define BLE_HS_VERBOSE_LOG 0
+#endif
+
+#undef BLE_HS_LOG_DEBUG
+#undef BLE_HS_LOG_INFO
+#undef BLE_HS_LOG_WARN
+#undef BLE_HS_LOG_ERROR
+
+#if defined(BLE_HS_VERBOSE_LOG) && (BLE_HS_VERBOSE_LOG == 1)
+#define BLE_HS_LOG_DEBUG(fmt, ...)              PR_DEBUG(fmt, ##__VA_ARGS__)
+#define BLE_HS_LOG_INFO(fmt, ...)               PR_INFO(fmt, ##__VA_ARGS__)
+#define BLE_HS_LOG_NOTICE(fmt, ...)             PR_NOTICE(fmt, ##__VA_ARGS__)
+#else
+#define BLE_HS_LOG_DEBUG(fmt, ...)              do { } while (0)
+#define BLE_HS_LOG_INFO(fmt, ...)               do { } while (0)
+#define BLE_HS_LOG_NOTICE(fmt, ...)             do { } while (0)
+#endif
+
+#define BLE_HS_LOG_WARN(fmt, ...)               PR_WARN(fmt, ##__VA_ARGS__)
+#define BLE_HS_LOG_ERROR(fmt, ...)              PR_ERR(fmt, ##__VA_ARGS__)
+#define BLE_HS_LOG_ERR(fmt, ...)                PR_ERR(fmt, ##__VA_ARGS__)
+
 #define BLE_HS_LOG(lvl, fmt, ...) \
-    PR_ ## lvl(fmt, ##__VA_ARGS__)
+    BLE_HS_LOG_ ## lvl(fmt, ##__VA_ARGS__)
 
 #define BLE_HS_LOG_ADDR(addr)
 

@@ -216,7 +216,6 @@ static int tuya_ble_host_gap_event(struct ble_gap_event *event, void *arg)
             gatt_event.gatt_event.data_report.report.length = notify_len;
             gatt_event.gatt_event.data_report.report.p_data = notify_buf;
         }
-        BLE_HS_LOG(INFO, "receive notify ok, handle=0x%04x len=%d", event->notify_rx.attr_handle, notify_len);
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
         gatt_event.type = TKL_BLE_GATT_EVT_SUBSCRIBE;

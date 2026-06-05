@@ -24,17 +24,34 @@
 #define STICK_DELAYED_K_MS         100
 #define QUADDLE_POLL_INTERVAL_MS   20
 #define GAMEPAD_PRIORITY_MS        500
+#define PLUS_LONG_PRESS_MS         1500
+#define QUADDLE_MACRO_MAX_STEPS    48
 
 typedef enum {
-    QUADDLE_BTN_L1 = 1u << 0,
-    QUADDLE_BTN_R1 = 1u << 1,
-    QUADDLE_BTN_B  = 1u << 2,
-    QUADDLE_BTN_A  = 1u << 3,
-    QUADDLE_BTN_Y  = 1u << 4,
-    QUADDLE_BTN_X  = 1u << 5,
-    QUADDLE_BTN_ZL = 1u << 9,
-    QUADDLE_BTN_ZR = 1u << 10,
+    QUADDLE_BTN_L1    = 1u << 0,
+    QUADDLE_BTN_R1    = 1u << 1,
+    QUADDLE_BTN_B     = 1u << 2,
+    QUADDLE_BTN_A     = 1u << 3,
+    QUADDLE_BTN_Y     = 1u << 4,
+    QUADDLE_BTN_X     = 1u << 5,
+    QUADDLE_BTN_MINUS = 1u << 6,
+    QUADDLE_BTN_PLUS  = 1u << 7,
+    QUADDLE_BTN_ZL    = 1u << 9,
+    QUADDLE_BTN_ZR    = 1u << 10,
 } QUADDLE_BTN_E;
+
+enum {
+    QUADDLE_MACRO_STEP_TEXT = 0,
+    QUADDLE_MACRO_STEP_JR,
+};
+
+typedef struct {
+    uint8_t  type;
+    uint16_t delta_ms;
+    char     text[QUADDLE_CMD_MAX];
+    int8_t   jr_rx;
+    int8_t   jr_ry;
+} QUADDLE_MACRO_STEP_T;
 
 static const char *const s_stick_cmd_base[6][9] = {
     {"up", "wkF", "wkL", "wkR", "wkB", "wkF", "vtL", "vtR", "wkB"},
@@ -61,9 +78,23 @@ static char     s_pending_solo_btn;
 static bool     s_pending_stick_active;
 static uint32_t s_pending_stick_deadline_ms;
 static char     s_pending_stick_cmd[QUADDLE_CMD_MAX];
+static char     s_last_combo_k_cmd[QUADDLE_CMD_MAX];
 static TIMER_ID s_poll_timer;
 static bool     s_cli_registered;
 static uint32_t s_last_gamepad_input_ms;
+
+static QUADDLE_MACRO_STEP_T s_macro_steps[QUADDLE_MACRO_MAX_STEPS];
+static uint8_t  s_macro_step_count;
+static bool     s_macro_recording;
+static bool     s_macro_playing;
+static bool     s_macro_has_first_step;
+static uint32_t s_macro_last_record_ms;
+static uint8_t  s_macro_play_index;
+static uint32_t s_macro_play_next_ms;
+static bool     s_macro_injecting;
+static bool     s_plus_held;
+static uint32_t s_plus_down_ms;
+static bool     s_plus_long_fired;
 
 static int quaddle_abs(int v)
 {
@@ -192,6 +223,10 @@ static void update_button_state(const char *label, bool pressed)
         mask = QUADDLE_BTN_Y;
     } else if (strcmp(label, "X") == 0) {
         mask = QUADDLE_BTN_X;
+    } else if (strcmp(label, "MINUS") == 0) {
+        mask = QUADDLE_BTN_MINUS;
+    } else if (strcmp(label, "PLUS") == 0) {
+        mask = QUADDLE_BTN_PLUS;
     } else if (strcmp(label, "ZL") == 0 || strcmp(label, "L2") == 0) {
         mask = QUADDLE_BTN_ZL;
     } else if (strcmp(label, "ZR") == 0 || strcmp(label, "R2") == 0) {
@@ -250,8 +285,221 @@ static void cancel_pending_stick(void)
     s_pending_stick_cmd[0] = '\0';
 }
 
+static void cancel_deferred(void)
+{
+    cancel_pending_solo();
+    cancel_pending_stick();
+}
+
+static void macro_stop_playback(void)
+{
+    s_macro_playing = false;
+    s_macro_play_index = 0;
+    s_macro_play_next_ms = 0;
+}
+
+static void macro_reset(void)
+{
+    memset(s_macro_steps, 0, sizeof(s_macro_steps));
+    s_macro_step_count = 0;
+    s_macro_recording = false;
+    s_macro_playing = false;
+    s_macro_has_first_step = false;
+    s_macro_last_record_ms = 0;
+    s_macro_play_index = 0;
+    s_macro_play_next_ms = 0;
+    s_macro_injecting = false;
+    s_plus_held = false;
+    s_plus_down_ms = 0;
+    s_plus_long_fired = false;
+}
+
+static void macro_log_count(const char *verb)
+{
+    PR_NOTICE("quaddle macro: %s %u step(s)", verb ? verb : "state", s_macro_step_count);
+}
+
+static void macro_begin_record_clear(void)
+{
+    macro_stop_playback();
+    cancel_deferred();
+    memset(s_macro_steps, 0, sizeof(s_macro_steps));
+    s_macro_step_count = 0;
+    s_macro_has_first_step = false;
+    s_macro_recording = true;
+    s_macro_last_record_ms = now_ms();
+    PR_NOTICE("quaddle macro: recording (hold PLUS 1.5s), tap PLUS to stop");
+}
+
+static void macro_on_plus_short_press(void)
+{
+    if (s_macro_playing) {
+        macro_stop_playback();
+        PR_NOTICE("quaddle macro: playback stopped");
+        return;
+    }
+    if (s_macro_recording) {
+        s_macro_recording = false;
+        macro_log_count("saved");
+        return;
+    }
+    if (s_macro_step_count > 0) {
+        s_macro_playing = true;
+        s_macro_play_index = 0;
+        s_macro_play_next_ms = now_ms();
+        macro_log_count("playing");
+    }
+}
+
+static void macro_poll_plus_hold(bool plus_held)
+{
+    uint32_t now = now_ms();
+
+    if (plus_held) {
+        if (!s_plus_held) {
+            s_plus_held = true;
+            s_plus_down_ms = now;
+            s_plus_long_fired = false;
+        } else if (!s_plus_long_fired && (uint32_t)(now - s_plus_down_ms) >= PLUS_LONG_PRESS_MS) {
+            s_plus_long_fired = true;
+            macro_begin_record_clear();
+        }
+        return;
+    }
+
+    if (s_plus_held) {
+        if (!s_plus_long_fired) {
+            macro_on_plus_short_press();
+        }
+        s_plus_held = false;
+        s_plus_long_fired = false;
+    }
+}
+
+static void macro_before_robot_output(void)
+{
+    if (s_macro_playing && !s_macro_injecting) {
+        macro_stop_playback();
+        PR_NOTICE("quaddle macro: playback interrupted");
+    }
+}
+
+static uint16_t macro_record_delta_ms(void)
+{
+    uint32_t now = now_ms();
+    uint32_t delta;
+
+    if (!s_macro_has_first_step) {
+        s_macro_has_first_step = true;
+        s_macro_last_record_ms = now;
+        return 0;
+    }
+    delta = now - s_macro_last_record_ms;
+    if (delta > 65535u) {
+        delta = 65535u;
+    }
+    s_macro_last_record_ms = now;
+    return (uint16_t)delta;
+}
+
+static void macro_record_text_line(const char *line)
+{
+    QUADDLE_MACRO_STEP_T *step;
+
+    if (!s_macro_recording || !line || line[0] == '\0' || s_macro_step_count >= QUADDLE_MACRO_MAX_STEPS) {
+        return;
+    }
+    step = &s_macro_steps[s_macro_step_count++];
+    step->type = QUADDLE_MACRO_STEP_TEXT;
+    step->delta_ms = macro_record_delta_ms();
+    strncpy(step->text, line, sizeof(step->text) - 1);
+    step->text[sizeof(step->text) - 1] = '\0';
+}
+
+static void macro_record_jr_packet(int rx, int ry)
+{
+    QUADDLE_MACRO_STEP_T *step;
+
+    if (!s_macro_recording || s_macro_step_count >= QUADDLE_MACRO_MAX_STEPS) {
+        return;
+    }
+    step = &s_macro_steps[s_macro_step_count++];
+    step->type = QUADDLE_MACRO_STEP_JR;
+    step->delta_ms = macro_record_delta_ms();
+    step->jr_rx = (int8_t)rx;
+    step->jr_ry = (int8_t)ry;
+    step->text[0] = '\0';
+}
+
+static void macro_emit_step(const QUADDLE_MACRO_STEP_T *step)
+{
+    if (!step) {
+        return;
+    }
+
+    s_macro_injecting = true;
+    if (step->type == QUADDLE_MACRO_STEP_JR) {
+        const uint8_t pkt[5] = {'J', 'r', (uint8_t)step->jr_rx, (uint8_t)step->jr_ry, '~'};
+        (void)second_uart_send_data_force(pkt, sizeof(pkt));
+    } else if (step->text[0] != '\0') {
+        (void)second_uart_send_string_force(step->text);
+    }
+    s_macro_injecting = false;
+}
+
+static void macro_poll_playback(void)
+{
+    uint32_t now = now_ms();
+
+    if (!s_macro_playing || s_macro_step_count == 0 || (int32_t)(now - s_macro_play_next_ms) < 0) {
+        return;
+    }
+
+    macro_emit_step(&s_macro_steps[s_macro_play_index]);
+    s_macro_play_index++;
+    if (s_macro_play_index >= s_macro_step_count) {
+        macro_stop_playback();
+        PR_NOTICE("quaddle macro: playback done");
+        return;
+    }
+    s_macro_play_next_ms = now + s_macro_steps[s_macro_play_index].delta_ms;
+}
+
+static void remember_combo_k_cmd(const char *cmd)
+{
+    if (!cmd || cmd[0] != 'k' || cmd[1] == '\0' || strcmp(cmd, "kup") == 0) {
+        return;
+    }
+    if (stick_modifier_row() == 0) {
+        return;
+    }
+    strncpy(s_last_combo_k_cmd, cmd, sizeof(s_last_combo_k_cmd) - 1);
+    s_last_combo_k_cmd[sizeof(s_last_combo_k_cmd) - 1] = '\0';
+}
+
+static OPERATE_RET send_combo_replay_k_cmd(const char *cmd)
+{
+    OPERATE_RET rt;
+
+    if (!cmd || cmd[0] != 'k') {
+        return OPRT_INVALID_PARM;
+    }
+    cancel_pending_stick();
+    macro_before_robot_output();
+    rt = second_uart_send_string_force(cmd);
+    if (rt == OPRT_OK) {
+        strncpy(s_last_k_cmd, cmd, sizeof(s_last_k_cmd) - 1);
+        s_last_k_cmd[sizeof(s_last_k_cmd) - 1] = '\0';
+        s_r2_allow_next_g = true;
+        macro_record_text_line(cmd);
+    }
+    return rt;
+}
+
 static OPERATE_RET send_k_cmd(const char *cmd)
 {
+    OPERATE_RET rt;
+
     if (!cmd || cmd[0] != 'k') {
         return OPRT_INVALID_PARM;
     }
@@ -259,11 +507,14 @@ static OPERATE_RET send_k_cmd(const char *cmd)
     if (strcmp(s_last_k_cmd, cmd) == 0) {
         return OPRT_OK;
     }
-    OPERATE_RET rt = second_uart_send_string(cmd);
+    remember_combo_k_cmd(cmd);
+    macro_before_robot_output();
+    rt = second_uart_send_string(cmd);
     if (rt == OPRT_OK) {
         strncpy(s_last_k_cmd, cmd, sizeof(s_last_k_cmd) - 1);
         s_last_k_cmd[sizeof(s_last_k_cmd) - 1] = '\0';
         s_r2_allow_next_g = true;
+        macro_record_text_line(cmd);
     }
     return rt;
 }
@@ -295,6 +546,7 @@ static OPERATE_RET send_raw_btn_cmd(const char *cmd)
         return OPRT_OK;
     }
     cancel_pending_stick();
+    macro_before_robot_output();
     rt = second_uart_send_string_force(cmd);
     if (rt == OPRT_OK) {
         strncpy(s_last_raw_btn_cmd, cmd, sizeof(s_last_raw_btn_cmd) - 1);
@@ -302,6 +554,7 @@ static OPERATE_RET send_raw_btn_cmd(const char *cmd)
         if (cmd[0] == 'g' && cmd[1] == '\0') {
             s_r2_allow_next_g = false;
         }
+        macro_record_text_line(cmd);
     }
     return rt;
 }
@@ -329,6 +582,7 @@ static OPERATE_RET flush_pending_stick(void)
     strncpy(cmd, s_pending_stick_cmd, sizeof(cmd) - 1);
     cmd[sizeof(cmd) - 1] = '\0';
     cancel_pending_stick();
+    remember_combo_k_cmd(cmd);
     return send_k_cmd(cmd);
 }
 
@@ -460,6 +714,14 @@ static bool build_robot_command(const char *line, char *out, size_t out_len)
     }
     memcpy(label, p, len - 1);
     label[len - 1] = '\0';
+    if (strcmp(label, "MINUS") == 0) {
+        if (s_last_combo_k_cmd[0] == '\0') {
+            return false;
+        }
+        strncpy(out, s_last_combo_k_cmd, out_len - 1);
+        out[out_len - 1] = '\0';
+        return true;
+    }
     const char *cmd = cmd_for_pressed_label(label);
     if (!cmd) {
         return false;
@@ -496,19 +758,21 @@ OPERATE_RET quaddle_robot_bridge_init(void)
 
 void quaddle_robot_bridge_reset(void)
 {
-    s_buttons                 = 0;
-    s_last_k_cmd[0]           = '\0';
-    s_jr_inited               = false;
-    s_last_raw_btn_cmd[0]     = '\0';
-    s_r2_allow_next_g         = true;
-    s_pending_solo_active     = false;
-    s_pending_solo_cmd[0]     = '\0';
-    s_pending_solo_btn        = '\0';
-    s_pending_stick_active    = false;
-    s_pending_stick_cmd[0]    = '\0';
-    s_pending_solo_deadline_ms = 0;
+    s_buttons                    = 0;
+    s_last_k_cmd[0]              = '\0';
+    s_jr_inited                  = false;
+    s_last_raw_btn_cmd[0]        = '\0';
+    s_r2_allow_next_g            = true;
+    s_pending_solo_active        = false;
+    s_pending_solo_cmd[0]        = '\0';
+    s_pending_solo_btn           = '\0';
+    s_pending_stick_active       = false;
+    s_pending_stick_cmd[0]       = '\0';
+    s_pending_solo_deadline_ms   = 0;
     s_pending_stick_deadline_ms = 0;
-    s_last_gamepad_input_ms = 0;
+    s_last_combo_k_cmd[0]       = '\0';
+    s_last_gamepad_input_ms     = 0;
+    macro_reset();
 }
 
 void quaddle_robot_bridge_poll(void)
@@ -521,6 +785,8 @@ void quaddle_robot_bridge_poll(void)
     if (s_pending_stick_active && (int32_t)(now - s_pending_stick_deadline_ms) >= 0) {
         (void)flush_pending_stick();
     }
+    macro_poll_plus_hold((s_buttons & QUADDLE_BTN_PLUS) != 0);
+    macro_poll_playback();
 }
 
 OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
@@ -567,6 +833,22 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
         if (strcmp(p, "R2-") == 0 || strcmp(p, "ZR-") == 0) {
             s_r2_allow_next_g = true;
         }
+
+        if (strcmp(p, "PLUS+") == 0 || strcmp(p, "PLUS-") == 0) {
+            macro_poll_plus_hold(strcmp(p, "PLUS+") == 0);
+            return OPRT_OK;
+        }
+
+        if (s_macro_playing) {
+            macro_before_robot_output();
+        }
+
+        if (strcmp(p, "MINUS+") == 0) {
+            if (s_last_combo_k_cmd[0] != '\0') {
+                return send_combo_replay_k_cmd(s_last_combo_k_cmd);
+            }
+            return OPRT_OK;
+        }
     }
 
     if (!build_robot_command(line, cmd, sizeof(cmd))) {
@@ -582,6 +864,7 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
             s_pending_stick_cmd[sizeof(s_pending_stick_cmd) - 1] = '\0';
             s_pending_stick_active = true;
             s_pending_stick_deadline_ms = now_ms() + STICK_DELAYED_K_MS;
+            remember_combo_k_cmd(cmd);
             return OPRT_OK;
         }
     }
@@ -592,6 +875,7 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
     if (cmd[0] == 'J' && cmd[1] == 'r' && (cmd[2] == ' ' || cmd[2] == '\t')) {
         int rx = 0;
         int ry = 0;
+        OPERATE_RET rt;
         if (sscanf(cmd, "Jr %d %d", &rx, &ry) != 2) {
             return OPRT_OK;
         }
@@ -600,12 +884,14 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
             return OPRT_OK;
         }
         const uint8_t pkt[5] = {'J', 'r', (uint8_t)(int8_t)rx, (uint8_t)(int8_t)ry, '~'};
-        OPERATE_RET rt = second_uart_send_data_force(pkt, sizeof(pkt));
+        macro_before_robot_output();
+        rt = second_uart_send_data_force(pkt, sizeof(pkt));
         if (rt == OPRT_OK) {
             s_last_jr_rx = (int16_t)rx;
             s_last_jr_ry = (int16_t)ry;
             s_jr_inited = true;
             s_r2_allow_next_g = true;
+            macro_record_jr_packet(rx, ry);
         }
         return rt;
     }
@@ -613,9 +899,16 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
         return send_raw_btn_cmd(cmd);
     }
     if (is_dpad_x_cmd(cmd)) {
+        OPERATE_RET rt;
+
         cancel_pending_stick();
         s_r2_allow_next_g = true;
-        return second_uart_send_string_force(cmd);
+        macro_before_robot_output();
+        rt = second_uart_send_string_force(cmd);
+        if (rt == OPRT_OK) {
+            macro_record_text_line(cmd);
+        }
+        return rt;
     }
     return OPRT_OK;
 }
