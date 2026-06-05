@@ -54,6 +54,7 @@ if(CONFIG_ENABLE_QUADDLE_BLE_HID_CENTRAL STREQUAL "y")
     target_compile_definitions(${MODULE_NAME}
         PRIVATE
             TY_HS_BLE_ROLE_CENTRAL=1
+            TY_HS_BLE_MAX_CONNECTIONS=2
             TY_HS_BLE_SM_LEGACY=1
             TY_HS_BLE_SM_BONDING=1
             TY_HS_BLE_SM_IO_CAP=3

@@ -5,6 +5,8 @@
 #ifndef YOUR_CHAT_BOT_QUADDLE_BLE_HID_CENTRAL_H
 #define YOUR_CHAT_BOT_QUADDLE_BLE_HID_CENTRAL_H
 
+#include <stdbool.h>
+
 #include "tuya_cloud_types.h"
 
 #if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
@@ -15,6 +17,7 @@ extern "C" {
 
 OPERATE_RET quaddle_ble_hid_central_init(void);
 OPERATE_RET quaddle_ble_hid_central_clear_saved(void);
+void quaddle_ble_hid_central_set_wifi_busy(bool busy);
 
 #ifdef __cplusplus
 }

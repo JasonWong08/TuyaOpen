@@ -5,6 +5,7 @@
  * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include "tal_api.h"
@@ -26,11 +27,38 @@ static size_t s_last_len;
 
 static void __second_uart_log_tx(const uint8_t *data, size_t length)
 {
+    char   escaped[SECOND_UART_LAST_MAX * 2];
+    size_t out = 0;
+
     if (!data || length == 0) {
         return;
     }
-    PR_NOTICE("second_uart: TX UART%d GPIO%d/%d %u bytes: \"%.*s\"", (int)SECOND_UART_HW_PORT, (int)SECOND_UART_TX_PIN,
-              (int)SECOND_UART_RX_PIN, (unsigned)length, (int)length, (const char *)data);
+    for (size_t i = 0; i < length && out + 1 < sizeof(escaped); i++) {
+        if (data[i] == '\n') {
+            if (out + 2 >= sizeof(escaped)) {
+                break;
+            }
+            escaped[out++] = '\\';
+            escaped[out++] = 'n';
+        } else if (data[i] == '\r') {
+            if (out + 2 >= sizeof(escaped)) {
+                break;
+            }
+            escaped[out++] = '\\';
+            escaped[out++] = 'r';
+        } else if (data[i] >= 0x20 && data[i] <= 0x7e) {
+            escaped[out++] = (char)data[i];
+        } else {
+            if (out + 4 >= sizeof(escaped)) {
+                break;
+            }
+            snprintf(&escaped[out], sizeof(escaped) - out, "\\x%02X", data[i]);
+            out += 4;
+        }
+    }
+    escaped[out] = '\0';
+    PR_NOTICE("second_uart: TX UART%d GPIO%d/%d %u bytes: \"%s\"", (int)SECOND_UART_HW_PORT, (int)SECOND_UART_TX_PIN,
+              (int)SECOND_UART_RX_PIN, (unsigned)length, escaped);
 }
 
 static bool __second_uart_same_as_last(const void *data, size_t len)

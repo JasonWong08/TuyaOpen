@@ -15,11 +15,14 @@
  */
 
 #include "tal_api.h"
+#include "tal_event.h"
 #include "netcfg.h"
 #include "tal_event_info.h"
 #include "ble_mgr.h"
 #include "tuya_register_center.h"
 #include "ble_channel.h"
+
+#define BLE_NETCFG_WIFI_EVENT "netcfg.wifi"
 
 typedef struct {
     netcfg_args_t netcfg_args;
@@ -100,6 +103,7 @@ static void __handle_net_cfg(void *data, void *user_data)
     memcpy(g_bt_netcfg_handle.netcfg_info.token, token, t_len);
     g_bt_netcfg_handle.netcfg_info.token[t_len] = '\0';
     g_bt_netcfg_handle.netcfg_info.t_len = (uint8_t)t_len;
+    tal_event_publish(BLE_NETCFG_WIFI_EVENT, NULL);
     g_bt_netcfg_handle.netcfg_finish_cb(NETCFG_TUYA_BLE, &g_bt_netcfg_handle.netcfg_info);
 
     cJSON *reg = cJSON_GetObjectItem(json, "reg");

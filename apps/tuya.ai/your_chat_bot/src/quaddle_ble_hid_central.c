@@ -10,6 +10,7 @@
 
 #include "tal_api.h"
 #include "tal_cli.h"
+#include "tal_event.h"
 #include "tal_kv.h"
 #include "tkl_bluetooth.h"
 #include "tkl_gpio.h"
@@ -51,11 +52,18 @@
 #define QUADDLE_BLE_POLL_READ_MS      100
 #define QUADDLE_BLE_BOOT_POLL_MS      50
 #define QUADDLE_BLE_BOOT_HOLD_MS      2000
+#define QUADDLE_BLE_WIFI_BUSY_MAX_MS  45000
+#define QUADDLE_BLE_CONN_NORMAL_MIN   0x0018
+#define QUADDLE_BLE_CONN_NORMAL_MAX   0x0030
+#define QUADDLE_BLE_CONN_BUSY_MIN     0x0080
+#define QUADDLE_BLE_CONN_BUSY_MAX     0x00A0
+#define QUADDLE_BLE_CONN_TIMEOUT      0x0320
 #define QUADDLE_BLE_MAX_SERVICES      8
 #define QUADDLE_BLE_MAX_INPUT_CHARS   16
 #define QUADDLE_BLE_STICK_THRESH      3
 #define QUADDLE_BLE_KV_PEER_ADDR      "qgp_addr"
 #define QUADDLE_BLE_KV_PEER_NAME      "qgp_name"
+#define QUADDLE_BLE_EVENT_WIFI_NETCFG "netcfg.wifi"
 #define QUADDLE_BLE_BOOT_BUTTON_PIN   TUYA_GPIO_NUM_0
 
 typedef struct {
@@ -121,6 +129,7 @@ typedef struct {
     TIMER_ID hid_wake_timer;
     TIMER_ID poll_timer;
     TIMER_ID boot_timer;
+    TIMER_ID wifi_resume_timer;
     uint8_t poll_read_index;
     bool poll_read_pending;
     uint16_t poll_read_handle;
@@ -129,10 +138,15 @@ typedef struct {
     uint8_t report_trace_count;
     bool boot_down;
     bool boot_fired_this_hold;
+    bool wifi_busy;
+    uint8_t conn_param_mode;
     uint32_t boot_press_start_ms;
 } QUADDLE_BLE_HID_CTX_T;
 
 static QUADDLE_BLE_HID_CTX_T s_hid;
+
+static void schedule_rescan(void);
+static void set_wifi_busy_internal(bool busy);
 
 static uint16_t uuid_to_u16(const TKL_BLE_UUID_T *uuid)
 {
@@ -657,12 +671,119 @@ static void reset_decoder(void)
     s_hid.prev_hat = 0;
 }
 
+static OPERATE_RET apply_conn_params(bool wifi_busy)
+{
+    TKL_BLE_GAP_CONN_PARAMS_T conn = {0};
+    uint8_t target_mode = wifi_busy ? 2 : 1;
+    OPERATE_RET rt;
+
+    if (!s_hid.connected || s_hid.conn_handle == QUADDLE_BLE_INVALID_HANDLE || s_hid.conn_param_mode == target_mode) {
+        return OPRT_OK;
+    }
+
+    conn.conn_interval_min = wifi_busy ? QUADDLE_BLE_CONN_BUSY_MIN : QUADDLE_BLE_CONN_NORMAL_MIN;
+    conn.conn_interval_max = wifi_busy ? QUADDLE_BLE_CONN_BUSY_MAX : QUADDLE_BLE_CONN_NORMAL_MAX;
+    conn.conn_latency = 0;
+    conn.conn_sup_timeout = QUADDLE_BLE_CONN_TIMEOUT;
+    rt = tkl_ble_gap_conn_param_update(s_hid.conn_handle, &conn);
+    if (rt == OPRT_OK) {
+        s_hid.conn_param_mode = target_mode;
+        PR_NOTICE("quaddle ble hid: %s BLE conn interval %u-%u",
+                  wifi_busy ? "wifi busy" : "normal", conn.conn_interval_min, conn.conn_interval_max);
+    } else {
+        PR_WARN("quaddle ble hid: conn param update failed rt=%d busy=%d", rt, wifi_busy);
+    }
+    return rt;
+}
+
+static void stop_hid_activity_timers(void)
+{
+    if (s_hid.rescan_timer) {
+        (void)tal_sw_timer_stop(s_hid.rescan_timer);
+    }
+    if (s_hid.connect_timer) {
+        (void)tal_sw_timer_stop(s_hid.connect_timer);
+    }
+    if (s_hid.security_timer) {
+        (void)tal_sw_timer_stop(s_hid.security_timer);
+    }
+    if (s_hid.subscribe_timer) {
+        (void)tal_sw_timer_stop(s_hid.subscribe_timer);
+    }
+    if (s_hid.hid_wake_timer) {
+        (void)tal_sw_timer_stop(s_hid.hid_wake_timer);
+    }
+    if (s_hid.poll_timer) {
+        (void)tal_sw_timer_stop(s_hid.poll_timer);
+    }
+    s_hid.poll_read_pending = false;
+    s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
+}
+
+static void wifi_resume_timer_cb(TIMER_ID timer_id, void *arg)
+{
+    (void)timer_id;
+    (void)arg;
+
+    if (!s_hid.wifi_busy) {
+        return;
+    }
+    PR_WARN("quaddle ble hid: wifi busy timeout, resume gamepad BLE");
+    set_wifi_busy_internal(false);
+}
+
+static void set_wifi_busy_internal(bool busy)
+{
+    if (s_hid.wifi_busy == busy) {
+        if (busy && s_hid.wifi_resume_timer) {
+            (void)tal_sw_timer_start(s_hid.wifi_resume_timer, QUADDLE_BLE_WIFI_BUSY_MAX_MS, TAL_TIMER_ONCE);
+        } else {
+            (void)apply_conn_params(busy);
+        }
+        return;
+    }
+
+    s_hid.wifi_busy = busy;
+    PR_NOTICE("quaddle ble hid: wifi coexist %s", busy ? "busy" : "normal");
+
+    if (busy) {
+        if (s_hid.wifi_resume_timer) {
+            (void)tal_sw_timer_start(s_hid.wifi_resume_timer, QUADDLE_BLE_WIFI_BUSY_MAX_MS, TAL_TIMER_ONCE);
+        }
+        stop_hid_activity_timers();
+        if (s_hid.scanning) {
+            (void)tkl_ble_gap_scan_stop();
+            s_hid.scanning = false;
+        }
+        if (s_hid.connecting) {
+            (void)tkl_ble_gap_connect_cancel();
+            s_hid.connecting = false;
+        }
+        if (s_hid.connected && s_hid.conn_handle != QUADDLE_BLE_INVALID_HANDLE) {
+            PR_NOTICE("quaddle ble hid: pause gamepad BLE during WiFi provisioning");
+            (void)tkl_ble_gap_disconnect(s_hid.conn_handle, TKL_BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+        }
+        return;
+    }
+
+    if (s_hid.wifi_resume_timer) {
+        (void)tal_sw_timer_stop(s_hid.wifi_resume_timer);
+    }
+    (void)apply_conn_params(busy);
+
+    if (s_hid.connected && s_hid.hid_wake_timer) {
+        (void)tal_sw_timer_start(s_hid.hid_wake_timer, QUADDLE_BLE_HID_WAKE_MS, TAL_TIMER_ONCE);
+    } else if (!s_hid.connected && !s_hid.connecting) {
+        schedule_rescan();
+    }
+}
+
 static OPERATE_RET start_scan(void)
 {
     TKL_BLE_GAP_SCAN_PARAMS_T scan = {0};
     OPERATE_RET rt = OPRT_OK;
 
-    if (!s_hid.initialized || s_hid.connected || s_hid.connecting || s_hid.scanning) {
+    if (!s_hid.initialized || s_hid.connected || s_hid.connecting || s_hid.scanning || s_hid.wifi_busy) {
         return OPRT_OK;
     }
     scan.extended = 0;
@@ -689,11 +810,17 @@ static void rescan_timer_cb(TIMER_ID timer_id, void *arg)
 {
     (void)timer_id;
     (void)arg;
+    if (s_hid.wifi_busy) {
+        return;
+    }
     (void)start_scan();
 }
 
 static void schedule_rescan(void)
 {
+    if (s_hid.wifi_busy) {
+        return;
+    }
     if (s_hid.rescan_timer) {
         (void)tal_sw_timer_start(s_hid.rescan_timer, QUADDLE_BLE_RESCAN_MS, TAL_TIMER_ONCE);
     }
@@ -859,7 +986,7 @@ static void hid_wake_timer_cb(TIMER_ID timer_id, void *arg)
     }
     readable_count = readable_input_char_count();
     notify_count = notifiable_input_char_count();
-    if (s_hid.poll_timer && readable_count > 0 && notify_count == 0) {
+    if (!s_hid.wifi_busy && s_hid.poll_timer && readable_count > 0 && notify_count == 0) {
         s_hid.poll_read_index = 0;
         s_hid.poll_read_pending = false;
         s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
@@ -879,7 +1006,7 @@ static void poll_read_timer_cb(TIMER_ID timer_id, void *arg)
     (void)timer_id;
     (void)arg;
 
-    if (!s_hid.connected || s_hid.input_char_count == 0 || s_hid.poll_read_pending) {
+    if (s_hid.wifi_busy || !s_hid.connected || s_hid.input_char_count == 0 || s_hid.poll_read_pending) {
         return;
     }
     for (uint8_t i = 0; i < s_hid.input_char_count; i++) {
@@ -935,17 +1062,17 @@ static OPERATE_RET connect_peer(bool reverse_addr_order)
     char addr_text[32] = {0};
     OPERATE_RET rt;
 
-    if (!s_hid.initialized || s_hid.connected || s_hid.connecting) {
+    if (!s_hid.initialized || s_hid.connected || s_hid.connecting || s_hid.wifi_busy) {
         return OPRT_OK;
     }
     if (reverse_addr_order) {
         conn_addr = reversed_addr(&s_hid.peer_addr);
     }
 
-    conn.conn_interval_min = 0x0018;
-    conn.conn_interval_max = 0x0030;
+    conn.conn_interval_min = s_hid.wifi_busy ? QUADDLE_BLE_CONN_BUSY_MIN : QUADDLE_BLE_CONN_NORMAL_MIN;
+    conn.conn_interval_max = s_hid.wifi_busy ? QUADDLE_BLE_CONN_BUSY_MAX : QUADDLE_BLE_CONN_NORMAL_MAX;
     conn.conn_latency = 0;
-    conn.conn_sup_timeout = 0x0100;
+    conn.conn_sup_timeout = QUADDLE_BLE_CONN_TIMEOUT;
     conn.connection_timeout = 8000;
     scan.interval = 0x0040;
     scan.window = 0x0040;
@@ -981,11 +1108,16 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
     switch (event->type) {
     case TKL_BLE_EVT_STACK_INIT:
         QHID_LOG_NOTICE_DETAIL("quaddle ble hid: stack init result=%d", event->result);
-        (void)start_scan();
+        if (!s_hid.wifi_busy) {
+            (void)start_scan();
+        }
         break;
 
     case TKL_BLE_GAP_EVT_ADV_REPORT: {
         char name[32];
+        if (s_hid.wifi_busy) {
+            break;
+        }
         adv_extract_name(event->gap_event.adv_report.data.p_data, event->gap_event.adv_report.data.length, name,
                          sizeof(name));
         if (!name_filter_match(name)) {
@@ -1016,6 +1148,9 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         s_hid.connecting = false;
         if (event->result != OPRT_OK || event->conn_handle == QUADDLE_BLE_INVALID_HANDLE) {
             PR_WARN("quaddle ble hid: connect failed result=%d reversed=%d", event->result, s_hid.peer_addr_reversed);
+            if (s_hid.wifi_busy) {
+                break;
+            }
             if (!s_hid.peer_addr_reversed) {
                 (void)connect_peer(true);
             } else {
@@ -1045,6 +1180,7 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         }
         reset_decoder();
         PR_NOTICE("quaddle ble hid: connected handle=%u name=%s", s_hid.conn_handle, s_hid.peer_name);
+        (void)apply_conn_params(s_hid.wifi_busy);
         OPERATE_RET sec_rt = tkl_ble_gap_security_request(s_hid.conn_handle);
         if (sec_rt == OPRT_OK) {
             QHID_LOG_NOTICE_DETAIL("quaddle ble hid: security requested, wait %ums before GATT discovery",
@@ -1057,6 +1193,18 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         } else {
             (void)tkl_ble_gattc_exchange_mtu_request(s_hid.conn_handle, 247);
             (void)tkl_ble_gattc_all_service_discovery(s_hid.conn_handle);
+        }
+        break;
+
+    case TKL_BLE_GAP_EVT_CONN_PARAM_UPDATE:
+        if (s_hid.connected && event->conn_handle == s_hid.conn_handle) {
+            if (s_hid.wifi_busy &&
+                event->gap_event.conn_param.conn_interval_max < QUADDLE_BLE_CONN_BUSY_MIN) {
+                s_hid.conn_param_mode = 0;
+                (void)apply_conn_params(true);
+            } else {
+                s_hid.conn_param_mode = s_hid.wifi_busy ? 2 : 1;
+            }
         }
         break;
 
@@ -1078,11 +1226,14 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         s_hid.poll_read_index = 0;
         s_hid.poll_read_pending = false;
         s_hid.poll_read_handle = QUADDLE_BLE_INVALID_HANDLE;
+        s_hid.conn_param_mode = 0;
         memset(s_hid.poll_snap, 0, sizeof(s_hid.poll_snap));
         memset(s_hid.poll_snap_len, 0, sizeof(s_hid.poll_snap_len));
         reset_decoder();
         quaddle_robot_bridge_reset();
-        schedule_rescan();
+        if (!s_hid.wifi_busy) {
+            schedule_rescan();
+        }
         break;
 
     default:
@@ -1100,6 +1251,9 @@ static void gatt_cb(TKL_BLE_GATT_PARAMS_EVT_T *event)
     case TKL_BLE_GATT_EVT_PRIM_SEV_DISCOVERY:
         if (event->result != OPRT_OK) {
             PR_ERR("quaddle ble hid: service discovery failed %d", event->result);
+            if (s_hid.connected && s_hid.conn_handle != QUADDLE_BLE_INVALID_HANDLE) {
+                (void)tkl_ble_gap_disconnect(s_hid.conn_handle, TKL_BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+            }
             break;
         }
         s_hid.service_count = 0;
@@ -1236,6 +1390,9 @@ OPERATE_RET quaddle_ble_hid_central_clear_saved(void)
     if (s_hid.poll_timer) {
         (void)tal_sw_timer_stop(s_hid.poll_timer);
     }
+    if (s_hid.wifi_resume_timer) {
+        (void)tal_sw_timer_stop(s_hid.wifi_resume_timer);
+    }
 
     if (s_hid.scanning) {
         (void)tkl_ble_gap_scan_stop();
@@ -1271,6 +1428,22 @@ OPERATE_RET quaddle_ble_hid_central_clear_saved(void)
 
     PR_NOTICE("quaddle ble hid: pairing cleared; scanning any supported gamepad");
     schedule_rescan();
+    return OPRT_OK;
+}
+
+void quaddle_ble_hid_central_set_wifi_busy(bool busy)
+{
+    if (!s_hid.initialized) {
+        s_hid.wifi_busy = busy;
+        return;
+    }
+    set_wifi_busy_internal(busy);
+}
+
+static int netcfg_wifi_event_cb(void *data)
+{
+    (void)data;
+    quaddle_ble_hid_central_set_wifi_busy(true);
     return OPRT_OK;
 }
 
@@ -1358,8 +1531,11 @@ OPERATE_RET quaddle_ble_hid_central_init(void)
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(subscribe_next_timer_cb, NULL, &s_hid.subscribe_timer));
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(hid_wake_timer_cb, NULL, &s_hid.hid_wake_timer));
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(poll_read_timer_cb, NULL, &s_hid.poll_timer));
+    TUYA_CALL_ERR_RETURN(tal_sw_timer_create(wifi_resume_timer_cb, NULL, &s_hid.wifi_resume_timer));
     TUYA_CALL_ERR_RETURN(init_boot_button());
     TUYA_CALL_ERR_LOG(tal_cli_cmd_register(s_quaddle_ble_cli, sizeof(s_quaddle_ble_cli) / sizeof(s_quaddle_ble_cli[0])));
+    TUYA_CALL_ERR_LOG(tal_event_subscribe(QUADDLE_BLE_EVENT_WIFI_NETCFG, "quaddle_ble", netcfg_wifi_event_cb,
+                                          SUBSCRIBE_TYPE_NORMAL));
     TUYA_CALL_ERR_RETURN(tkl_ble_gap_callback_register(gap_cb));
     TUYA_CALL_ERR_RETURN(tkl_ble_gatt_callback_register(gatt_cb));
     s_hid.initialized = true;

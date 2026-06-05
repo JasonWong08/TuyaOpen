@@ -1827,7 +1827,11 @@ ble_gap_rx_conn_complete(struct ble_gap_conn_complete *evt, uint8_t instance)
 
     /* We verified that there is a free connection when the procedure began. */
     conn = ble_hs_conn_alloc(evt->connection_handle);
-    BLE_HS_DBG_ASSERT(conn != NULL);
+    if (conn == NULL) {
+        BLE_HS_LOG(WARN, "connection pool exhausted, reject conn handle=0x%04x role=%u",
+                   evt->connection_handle, evt->role);
+        return BLE_HS_ENOMEM;
+    }
 
     conn->bhc_itvl = evt->conn_itvl;
     conn->bhc_latency = evt->conn_latency;

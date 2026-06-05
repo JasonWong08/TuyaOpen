@@ -42,6 +42,7 @@
 #include "board_com_api.h"
 
 #include "app_chat_bot.h"
+#include "quaddle_ble_hid_central.h"
 #include "reset_netcfg.h"
 
 #if defined(ENABLE_BATTERY) && (ENABLE_BATTERY == 1)
@@ -208,11 +209,17 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     } break;
 
     case TUYA_EVENT_BIND_TOKEN_ON:
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+        quaddle_ble_hid_central_set_wifi_busy(true);
+#endif
         break;
 
     /* MQTT with tuya cloud is connected, device online */
     case TUYA_EVENT_MQTT_CONNECTED:
         PR_INFO("Device MQTT Connected!");
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+        quaddle_ble_hid_central_set_wifi_busy(false);
+#endif
         tal_event_publish(EVENT_MQTT_CONNECTED, NULL);
 
         static uint8_t first = 1;
@@ -247,6 +254,9 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
 
     case TUYA_EVENT_RESET:
         PR_INFO("Device Reset:%d", event->value.asInteger);
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+        quaddle_ble_hid_central_set_wifi_busy(false);
+#endif
 
         _need_reset = 1;
         break;
@@ -402,11 +412,7 @@ void user_main(void)
 #endif
     netmgr_init(type);
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
-#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
-    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_WIFI_AP});
-#else
-    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_BLE | NETCFG_TUYA_WIFI_AP});
-#endif
+    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_BLE});
 #endif
 
     PR_DEBUG("tuya_iot_init success");

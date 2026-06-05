@@ -33,8 +33,28 @@ typedef struct {
     } read_char[1];
 } TKL_BLUETOOTH_SERVER_PARAMS_T;
 
-static TKL_BLE_GAP_EVT_FUNC_CB tkl_bluetooth_gap_callback;
-static TKL_BLE_GATT_EVT_FUNC_CB tkl_bluetooth_gatt_callback;
+#define TKL_BLE_CALLBACK_MAX_NUM 4
+
+static TKL_BLE_GAP_EVT_FUNC_CB tkl_bluetooth_gap_callbacks[TKL_BLE_CALLBACK_MAX_NUM];
+static TKL_BLE_GATT_EVT_FUNC_CB tkl_bluetooth_gatt_callbacks[TKL_BLE_CALLBACK_MAX_NUM];
+
+static void tkl_ble_dispatch_gap_event(TKL_BLE_GAP_PARAMS_EVT_T *event)
+{
+    for (uint8_t i = 0; i < TKL_BLE_CALLBACK_MAX_NUM; i++) {
+        if (tkl_bluetooth_gap_callbacks[i]) {
+            tkl_bluetooth_gap_callbacks[i](event);
+        }
+    }
+}
+
+static void tkl_ble_dispatch_gatt_event(TKL_BLE_GATT_PARAMS_EVT_T *event)
+{
+    for (uint8_t i = 0; i < TKL_BLE_CALLBACK_MAX_NUM; i++) {
+        if (tkl_bluetooth_gatt_callbacks[i]) {
+            tkl_bluetooth_gatt_callbacks[i](event);
+        }
+    }
+}
 
 /* Tuya Ble Host Stack*/
 // 60 bytes
@@ -99,8 +119,8 @@ static int tuya_ble_host_scan_event(struct ble_gap_event *event, void *arg)
 
         // BLE_HS_LOG(INFO, "BLE_GAP_EVENT_DISC");
 
-        if (tkl_bluetooth_gap_callback && gap_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
-            tkl_bluetooth_gap_callback(&gap_event);
+        if (gap_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
+            tkl_ble_dispatch_gap_event(&gap_event);
         }
     }
     return 0;
@@ -234,10 +254,10 @@ static int tuya_ble_host_gap_event(struct ble_gap_event *event, void *arg)
         return OPRT_OK;
     }
 
-    if (tkl_bluetooth_gap_callback && gap_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
-        tkl_bluetooth_gap_callback(&gap_event);
-    } else if (tkl_bluetooth_gatt_callback && gatt_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
-        tkl_bluetooth_gatt_callback(&gatt_event);
+    if (gap_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
+        tkl_ble_dispatch_gap_event(&gap_event);
+    } else if (gatt_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
+        tkl_ble_dispatch_gatt_event(&gatt_event);
     }
     return OPRT_OK;
 }
@@ -269,9 +289,7 @@ static int tuya_ble_host_write_callback(uint16_t conn_handle, uint16_t attr_hand
         gatt_event.gatt_event.char_read.char_handle = attr_handle;
         gatt_event.gatt_event.char_read.offset = 0;
 
-        if (tkl_bluetooth_gatt_callback) {
-            tkl_bluetooth_gatt_callback(&gatt_event);
-        }
+        tkl_ble_dispatch_gatt_event(&gatt_event);
 
         for (uint8_t i = 0; i < 1; i++) {
             if (tuya_ble_server.read_char[i].handle == attr_handle) {
@@ -291,9 +309,7 @@ static int tuya_ble_host_write_callback(uint16_t conn_handle, uint16_t attr_hand
             gatt_event.gatt_event.write_report.report.length = om->om_len;
             gatt_event.gatt_event.write_report.report.p_data = (uint8_t *)om->om_data;
 
-            if (tkl_bluetooth_gatt_callback) {
-                tkl_bluetooth_gatt_callback(&gatt_event);
-            }
+            tkl_ble_dispatch_gatt_event(&gatt_event);
             om = SLIST_NEXT(om, om_next);
         }
         return OPRT_OK;
@@ -348,9 +364,7 @@ static int tuya_ble_gattc_read_callback(uint16_t conn_handle, const struct ble_g
         }
     }
 
-    if (tkl_bluetooth_gatt_callback) {
-        tkl_bluetooth_gatt_callback(&gatt_event);
-    }
+    tkl_ble_dispatch_gatt_event(&gatt_event);
 
     return OPRT_OK;
 }
@@ -408,9 +422,7 @@ static int tuya_ble_svc_disc_callback(uint16_t conn_handle, const struct ble_gat
         break;
     }
 
-    if (tkl_bluetooth_gatt_callback) {
-        tkl_bluetooth_gatt_callback(&gatt_event);
-    }
+    tkl_ble_dispatch_gatt_event(&gatt_event);
     return OPRT_OK;
 }
 
@@ -464,9 +476,7 @@ static int tuya_ble_chr_disc_callback(uint16_t conn_handle, const struct ble_gat
         break;
     }
 
-    if (tkl_bluetooth_gatt_callback) {
-        tkl_bluetooth_gatt_callback(&gatt_event);
-    }
+    tkl_ble_dispatch_gatt_event(&gatt_event);
     return OPRT_OK;
 }
 
@@ -501,9 +511,7 @@ static int tuya_ble_desc_disc_callback(uint16_t conn_handle, const struct ble_ga
         break;
     }
 
-    if (tkl_bluetooth_gatt_callback) {
-        tkl_bluetooth_gatt_callback(&gatt_event);
-    }
+    tkl_ble_dispatch_gatt_event(&gatt_event);
     return OPRT_OK;
 }
 #endif
@@ -515,9 +523,7 @@ static void tuya_ble_stack_event_callback(TKL_BLE_GAP_EVT_TYPE_E type, int resul
     init_event.type = type;
     init_event.result = result;
     BLE_HS_LOG_INFO("Init/Deinit Event");
-    if (tkl_bluetooth_gap_callback) {
-        tkl_bluetooth_gap_callback(&init_event);
-    }
+    tkl_ble_dispatch_gap_event(&init_event);
 }
 
 static void tuya_ble_host_stack_reset_callback(int reason)
@@ -543,6 +549,18 @@ static void tuya_ble_host_stack_sync_callback(void)
  * */
 OPERATE_RET tkl_ble_stack_init(uint8_t role)
 {
+    if ((role & TKL_BLE_ROLE_SERVER) == TKL_BLE_ROLE_SERVER) {
+        memset(&tuya_ble_server, 0, sizeof(TKL_BLUETOOTH_SERVER_PARAMS_T));
+        tuya_ble_server.role = TKL_BLE_ROLE_SERVER;
+        tuya_ble_server.read_char[0].buffer = NULL;
+    }
+#if (TY_HS_BLE_ROLE_CENTRAL)
+    if ((role & TKL_BLE_ROLE_CLIENT) == TKL_BLE_ROLE_CLIENT) {
+        memset(&tuya_ble_client, 0, sizeof(TKL_BLUETOOTH_CLIENT_PARAMS_T));
+        tuya_ble_client.role = TKL_BLE_ROLE_CLIENT;
+    }
+#endif
+
     if (ble_hs_is_enabled()) {
         BLE_HS_LOG_INFO("ble_stack already inited\r\n");
         tuya_ble_stack_event_callback(TKL_BLE_EVT_STACK_INIT, 0);
@@ -556,17 +574,6 @@ OPERATE_RET tkl_ble_stack_init(uint8_t role)
     static int init_flag = 0;
     OPERATE_RET ret = OPRT_OK;
 
-    if ((role & TKL_BLE_ROLE_SERVER) == TKL_BLE_ROLE_SERVER) {
-        memset(&tuya_ble_server, 0, sizeof(TKL_BLUETOOTH_SERVER_PARAMS_T));
-        tuya_ble_server.role = TKL_BLE_ROLE_SERVER;
-        tuya_ble_server.read_char[0].buffer = NULL;
-    }
-#if (TY_HS_BLE_ROLE_CENTRAL)
-    if ((role & TKL_BLE_ROLE_CLIENT) == TKL_BLE_ROLE_CLIENT) {
-        memset(&tuya_ble_client, 0, sizeof(TKL_BLUETOOTH_CLIENT_PARAMS_T));
-        tuya_ble_client.role = TKL_BLE_ROLE_CLIENT;
-    }
-#endif
     ret = tkl_hci_init();
     if (init_flag == 0) {
         // Hci Buf, Host Pre, Controller Init
@@ -670,7 +677,26 @@ OPERATE_RET tkl_ble_stack_gatt_link(uint16_t *p_link)
  * */
 OPERATE_RET tkl_ble_gap_callback_register(const TKL_BLE_GAP_EVT_FUNC_CB gap_evt)
 {
-    tkl_bluetooth_gap_callback = gap_evt;
+    if (gap_evt) {
+        for (uint8_t i = 0; i < TKL_BLE_CALLBACK_MAX_NUM; i++) {
+            if (tkl_bluetooth_gap_callbacks[i] == gap_evt) {
+                tuya_ble_hs_cfg.reset_cb = tuya_ble_host_stack_reset_callback;
+                tuya_ble_hs_cfg.sync_cb = tuya_ble_host_stack_sync_callback;
+                return OPRT_OK;
+            }
+        }
+
+        for (uint8_t i = 0; i < TKL_BLE_CALLBACK_MAX_NUM; i++) {
+            if (!tkl_bluetooth_gap_callbacks[i]) {
+                tkl_bluetooth_gap_callbacks[i] = gap_evt;
+                tuya_ble_hs_cfg.reset_cb = tuya_ble_host_stack_reset_callback;
+                tuya_ble_hs_cfg.sync_cb = tuya_ble_host_stack_sync_callback;
+                return OPRT_OK;
+            }
+        }
+
+        return OPRT_COM_ERROR;
+    }
 
     tuya_ble_hs_cfg.reset_cb = tuya_ble_host_stack_reset_callback;
     tuya_ble_hs_cfg.sync_cb = tuya_ble_host_stack_sync_callback;
@@ -685,9 +711,24 @@ OPERATE_RET tkl_ble_gap_callback_register(const TKL_BLE_GAP_EVT_FUNC_CB gap_evt)
  * */
 OPERATE_RET tkl_ble_gatt_callback_register(const TKL_BLE_GATT_EVT_FUNC_CB gatt_evt)
 {
-    // Register Gatt Callback
-    tkl_bluetooth_gatt_callback = gatt_evt;
-    return OPRT_OK;
+    if (!gatt_evt) {
+        return OPRT_OK;
+    }
+
+    for (uint8_t i = 0; i < TKL_BLE_CALLBACK_MAX_NUM; i++) {
+        if (tkl_bluetooth_gatt_callbacks[i] == gatt_evt) {
+            return OPRT_OK;
+        }
+    }
+
+    for (uint8_t i = 0; i < TKL_BLE_CALLBACK_MAX_NUM; i++) {
+        if (!tkl_bluetooth_gatt_callbacks[i]) {
+            tkl_bluetooth_gatt_callbacks[i] = gatt_evt;
+            return OPRT_OK;
+        }
+    }
+
+    return OPRT_COM_ERROR;
 }
 
 /******************************************************************************************************************************/
@@ -1116,8 +1157,8 @@ OPERATE_RET tkl_ble_gap_rssi_get(uint16_t conn_handle)
     gap_event.conn_handle = conn_handle;
     gap_event.gap_event.link_rssi = rssi;
 
-    if (tkl_bluetooth_gap_callback && gap_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
-        tkl_bluetooth_gap_callback(&gap_event);
+    if (gap_event.conn_handle != TKL_BLE_GATT_INVALID_HANDLE) {
+        tkl_ble_dispatch_gap_event(&gap_event);
     }
 
     return OPRT_OK;

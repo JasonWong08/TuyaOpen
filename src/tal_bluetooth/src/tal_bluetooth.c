@@ -17,6 +17,7 @@
  */
 
 #include <string.h>
+#include <stdbool.h>
 #include "tal_bluetooth_def.h"
 #include "tkl_bluetooth_def.h"
 #include "tkl_bluetooth.h"
@@ -48,9 +49,21 @@ static uint16_t tkl_ble_common_connect_handle = TKL_BLE_GATT_INVALID_HANDLE;
 /**< Use TAL Definitions, TAL Only Support One GATT Link at one time, follow
  * Bluetooth Spec. */
 static TAL_BLE_EVT_FUNC_CB tal_ble_event_callback;
+static uint8_t tal_ble_runtime_role;
 #if (TY_HS_BLE_ROLE_CENTRAL)
 static TAL_BLE_PEER_INFO_T tal_ble_peer = {0};
 #endif
+
+static bool tal_ble_has_peripheral_role(void)
+{
+    return ((tal_ble_runtime_role & TAL_BLE_ROLE_PERIPERAL) == TAL_BLE_ROLE_PERIPERAL) ||
+           ((tal_ble_runtime_role & TAL_BLE_ROLE_BEACON) == TAL_BLE_ROLE_BEACON);
+}
+
+static bool tal_ble_has_central_role(void)
+{
+    return (tal_ble_runtime_role & TAL_BLE_ROLE_CENTRAL) == TAL_BLE_ROLE_CENTRAL;
+}
 
 static __attribute__((unused)) uint16_t tal_ble_uuid16_convert(TKL_BLE_UUID_T *p_uuid)
 {
@@ -93,6 +106,9 @@ static void tkl_ble_kernel_gap_event_callback(TKL_BLE_GAP_PARAMS_EVT_T *p_event)
     case TKL_BLE_GAP_EVT_CONNECT: {
         tal_event.ble_event.connect.result = p_event->result;
         if (p_event->gap_event.connect.role == TKL_BLE_ROLE_SERVER) {
+            if (!tal_ble_has_peripheral_role()) {
+                return;
+            }
             tal_event.type = TAL_BLE_EVT_PERIPHERAL_CONNECT;
 
             tkl_ble_common_connect_handle = p_event->conn_handle;
@@ -117,6 +133,9 @@ static void tkl_ble_kernel_gap_event_callback(TKL_BLE_GAP_PARAMS_EVT_T *p_event)
 
         } else {
 #if (TY_HS_BLE_ROLE_CENTRAL)
+            if (!tal_ble_has_central_role()) {
+                return;
+            }
             tal_ble_peer.conn_handle = p_event->conn_handle;
             if (tkl_ble_gattc_all_service_discovery(p_event->conn_handle) != 0) { // Try To Discovery All Service, And
                                                                                   // Find the correct service
@@ -133,6 +152,14 @@ static void tkl_ble_kernel_gap_event_callback(TKL_BLE_GAP_PARAMS_EVT_T *p_event)
     } break;
 
     case TKL_BLE_GAP_EVT_DISCONNECT: {
+        if (p_event->gap_event.disconnect.role == TKL_BLE_ROLE_SERVER && !tal_ble_has_peripheral_role()) {
+            return;
+        }
+#if (TY_HS_BLE_ROLE_CENTRAL)
+        if (p_event->gap_event.disconnect.role == TKL_BLE_ROLE_CLIENT && !tal_ble_has_central_role()) {
+            return;
+        }
+#endif
         if (p_event->gap_event.disconnect.role == TKL_BLE_ROLE_SERVER &&
             p_event->conn_handle == tkl_ble_common_connect_handle) {
             tkl_ble_common_connect_handle = TKL_BLE_GATT_INVALID_HANDLE;
@@ -144,6 +171,9 @@ static void tkl_ble_kernel_gap_event_callback(TKL_BLE_GAP_PARAMS_EVT_T *p_event)
     } break;
 
     case TKL_BLE_GAP_EVT_ADV_REPORT: {
+        if (!tal_ble_has_central_role()) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_ADV_REPORT;
         tal_event.ble_event.adv_report.rssi = p_event->gap_event.adv_report.rssi;
         tal_event.ble_event.adv_report.data_len = (uint8_t)p_event->gap_event.adv_report.data.length;
@@ -170,11 +200,17 @@ static void tkl_ble_kernel_gap_event_callback(TKL_BLE_GAP_PARAMS_EVT_T *p_event)
     } break;
 
     case TKL_BLE_GAP_EVT_CONN_PARAM_REQ: {
+        if (p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_CONN_PARAM_REQ;
         tal_event.ble_event.conn_param.conn_handle = p_event->conn_handle;
     } break;
 
     case TKL_BLE_GAP_EVT_CONN_PARAM_UPDATE: {
+        if (p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_CONN_PARAM_UPDATE;
         tal_event.ble_event.conn_param.conn_handle = p_event->conn_handle;
 
@@ -185,6 +221,9 @@ static void tkl_ble_kernel_gap_event_callback(TKL_BLE_GAP_PARAMS_EVT_T *p_event)
     } break;
 
     case TKL_BLE_GAP_EVT_CONN_RSSI: {
+        if (p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_CONN_RSSI;
         tal_event.ble_event.link_rssi.conn_handle = p_event->conn_handle;
 
@@ -213,18 +252,27 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
 
     switch (p_event->type) {
     case TKL_BLE_GATT_EVT_MTU_REQUEST: {
+        if (!tal_ble_has_peripheral_role() || p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_MTU_REQUEST;
         tal_event.ble_event.exchange_mtu.conn_handle = p_event->conn_handle;
         tal_event.ble_event.exchange_mtu.mtu = p_event->gatt_event.exchange_mtu;
     } break;
 #if (TY_HS_BLE_ROLE_CENTRAL)
     case TKL_BLE_GATT_EVT_MTU_RSP: {
+        if (!tal_ble_has_central_role() || p_event->conn_handle != tal_ble_peer.conn_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_MTU_RSP;
         tal_event.ble_event.exchange_mtu.conn_handle = p_event->conn_handle;
         tal_event.ble_event.exchange_mtu.mtu = p_event->gatt_event.exchange_mtu;
     } break;
 
     case TKL_BLE_GATT_EVT_PRIM_SEV_DISCOVERY: {
+        if (!tal_ble_has_central_role() || p_event->conn_handle != tal_ble_peer.conn_handle) {
+            return;
+        }
         TKL_BLE_GATT_SVC_DISC_TYPE_T *p_svc_disc = &p_event->gatt_event.svc_disc;
         int svc_result = OPRT_INVALID_PARM;
 
@@ -253,6 +301,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 
     case TKL_BLE_GATT_EVT_CHAR_DISCOVERY: {
+        if (!tal_ble_has_central_role() || p_event->conn_handle != tal_ble_peer.conn_handle) {
+            return;
+        }
 
         TKL_BLE_GATT_CHAR_DISC_TYPE_T *p_char_disc = &p_event->gatt_event.char_disc;
         int char_result = OPRT_INVALID_PARM;
@@ -298,6 +349,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 
     case TKL_BLE_GATT_EVT_CHAR_DESC_DISCOVERY: {
+        if (!tal_ble_has_central_role() || p_event->conn_handle != tal_ble_peer.conn_handle) {
+            return;
+        }
         TKL_BLE_GATT_DESC_DISC_TYPE_T *p_desc_disc = &p_event->gatt_event.desc_disc;
         uint8_t cccd_enable[2] = {0x01, 0x00};
         int desc_result;
@@ -323,6 +377,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 #endif
     case TKL_BLE_GATT_EVT_NOTIFY_TX: {
+        if (!tal_ble_has_peripheral_role() || p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_NOTIFY_TX;
         tal_event.ble_event.notify_result.conn_handle = p_event->conn_handle;
 
@@ -331,6 +388,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 
     case TKL_BLE_GATT_EVT_WRITE_REQ: {
+        if (!tal_ble_has_peripheral_role() || p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_WRITE_REQ;
         tal_event.ble_event.write_report.peer.conn_handle = p_event->conn_handle;
         tal_event.ble_event.write_report.peer.char_handle[0] = p_event->gatt_event.write_report.char_handle;
@@ -339,6 +399,14 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 
     case TKL_BLE_GATT_EVT_NOTIFY_INDICATE_RX: {
+        if (!tal_ble_has_central_role()) {
+            return;
+        }
+#if (TY_HS_BLE_ROLE_CENTRAL)
+        if (p_event->conn_handle != tal_ble_peer.conn_handle) {
+            return;
+        }
+#endif
         tal_event.type = TAL_BLE_EVT_NOTIFY_RX;
         tal_event.ble_event.data_report.peer.conn_handle = p_event->conn_handle;
         tal_event.ble_event.data_report.peer.char_handle[0] = p_event->gatt_event.data_report.char_handle;
@@ -347,6 +415,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 #if (TY_HS_BLE_ROLE_CENTRAL)
     case TKL_BLE_GATT_EVT_READ_RX: {
+        if (!tal_ble_has_central_role() || p_event->conn_handle != tal_ble_peer.conn_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_READ_RX;
         tal_event.ble_event.data_read.peer.conn_handle = p_event->conn_handle;
         tal_event.ble_event.data_read.peer.char_handle[0] = p_event->gatt_event.data_read.char_handle;
@@ -355,6 +426,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 #endif
     case TKL_BLE_GATT_EVT_SUBSCRIBE: {
+        if (!tal_ble_has_peripheral_role() || p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         if (p_event->result == OPRT_OK) {
             tal_event.type = TAL_BLE_EVT_SUBSCRIBE;
             tal_event.ble_event.subscribe.conn_handle = p_event->conn_handle;
@@ -368,6 +442,9 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
     } break;
 
     case TKL_BLE_GATT_EVT_READ_CHAR_VALUE: {
+        if (!tal_ble_has_peripheral_role() || p_event->conn_handle != tkl_ble_common_connect_handle) {
+            return;
+        }
         tal_event.type = TAL_BLE_EVT_READ_CHAR;
         tal_event.ble_event.char_read.conn_handle = p_event->conn_handle;
         tal_event.ble_event.char_read.char_handle = p_event->gatt_event.char_read.char_handle;
@@ -395,6 +472,7 @@ static void tkl_ble_kernel_gatt_event_callback(TKL_BLE_GATT_PARAMS_EVT_T *p_even
 OPERATE_RET tal_ble_bt_init(TAL_BLE_ROLE_E role, const TAL_BLE_EVT_FUNC_CB ble_event)
 {
     uint8_t ble_stack_role = 0; // TKL_BLE_ROLE_SERVER;
+    tal_ble_runtime_role |= role;
 
     if (ble_event != NULL) {
         /**<  Get the TAL Event Callback. */
