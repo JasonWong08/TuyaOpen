@@ -266,6 +266,26 @@ OPERATE_RET __netconn_wifi_netcfg_finish(int type, netcfg_info_t *info)
     return OPRT_OK;
 }
 
+static OPERATE_RET __netconn_wifi_netcfg_start_modules(void)
+{
+    netmgr_conn_wifi_t *netmgr_wifi = &s_netmgr_wifi;
+    OPERATE_RET rt = OPRT_OK;
+
+    TAL_NETWORK_CARD_TYPE_E active_type = tal_network_card_get_active_type();
+    if (netmgr_wifi->netcfg.type & TUYA_NETMGR_NETCFG_AP && active_type != TAL_NET_TYPE_AT_MODEM) {
+        TUYA_CALL_ERR_LOG(netcfg_start(NETCFG_TUYA_WIFI_AP, __netconn_wifi_netcfg_finish, NULL));
+    }
+
+#ifdef ENABLE_BLUETOOTH
+    if (netmgr_wifi->netcfg.type & TUYA_NETMGR_NETCFG_BLE) {
+        TUYA_CALL_ERR_LOG(netcfg_start(NETCFG_TUYA_BLE, __netconn_wifi_netcfg_finish, NULL));
+    }
+#endif
+
+    netmgr_wifi->netcfg_waiting_to_start = false;
+    return rt;
+}
+
 int __netconn_activate_token_get(tuya_iot_config_t *config)
 {
     int rt = OPRT_OK;
@@ -282,15 +302,21 @@ int __netconn_activate_token_get(tuya_iot_config_t *config)
     TAL_NETWORK_CARD_TYPE_E active_type = tal_network_card_get_active_type();
     if (netmgr_wifi->netcfg.type & TUYA_NETMGR_NETCFG_AP && active_type != TAL_NET_TYPE_AT_MODEM) {
         ap_netcfg_init(&netmgr_wifi->netcfg);
-        netcfg_start(NETCFG_TUYA_WIFI_AP, __netconn_wifi_netcfg_finish, NULL);
     }
 
 #ifdef ENABLE_BLUETOOTH
     if (netmgr_wifi->netcfg.type & TUYA_NETMGR_NETCFG_BLE) {
         ble_netcfg_init(&netmgr_wifi->netcfg);
-        netcfg_start(NETCFG_TUYA_BLE, __netconn_wifi_netcfg_finish, NULL);
     }
 #endif
+
+    if (!netmgr_wifi->netcfg_start_requested) {
+        netmgr_wifi->netcfg_waiting_to_start = true;
+        PR_INFO("wifi netcfg prepared, waiting for explicit start");
+        return rt;
+    }
+
+    TUYA_CALL_ERR_RETURN(__netconn_wifi_netcfg_start_modules());
 
     return rt;
 }
@@ -408,6 +434,18 @@ OPERATE_RET netconn_wifi_set(netmgr_conn_config_type_e cmd, void *param)
     case NETCONN_CMD_NETCFG: {
         netcfg_args_t *netcfg = (netcfg_args_t *)param;
         netmgr_wifi->netcfg.type = netcfg->type;
+        netmgr_wifi->netcfg_start_requested = true;
+        if (netmgr_wifi->netcfg.type & NETCFG_TUYA_BLE || netmgr_wifi->netcfg.type & NETCFG_TUYA_WIFI_AP) {
+            tuya_iot_token_get_port_register(client, __netconn_activate_token_get);
+            if (netmgr_wifi->netcfg_waiting_to_start) {
+                TUYA_CALL_ERR_RETURN(__netconn_wifi_netcfg_start_modules());
+            }
+        }
+    } break;
+    case NETCONN_CMD_NETCFG_PREPARE: {
+        netcfg_args_t *netcfg = (netcfg_args_t *)param;
+        netmgr_wifi->netcfg.type = netcfg->type;
+        netmgr_wifi->netcfg_start_requested = false;
         if (netmgr_wifi->netcfg.type & NETCFG_TUYA_BLE || netmgr_wifi->netcfg.type & NETCFG_TUYA_WIFI_AP) {
             tuya_iot_token_get_port_register(client, __netconn_activate_token_get);
         }

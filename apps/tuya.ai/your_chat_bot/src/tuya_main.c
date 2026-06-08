@@ -412,7 +412,7 @@ void user_main(void)
 #endif
     netmgr_init(type);
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
-    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_BLE});
+    netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG_PREPARE, &(netcfg_args_t){.type = NETCFG_TUYA_BLE});
 #endif
 
     PR_DEBUG("tuya_iot_init success");

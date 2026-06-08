@@ -12,6 +12,9 @@
 #include "tal_cli.h"
 #include "tal_event.h"
 #include "tal_kv.h"
+#include "netconn_wifi.h"
+#include "netmgr.h"
+#include "tuya_iot.h"
 #include "tkl_bluetooth.h"
 #include "tkl_gpio.h"
 
@@ -51,7 +54,10 @@
 #define QUADDLE_BLE_HID_WAKE_MS       180
 #define QUADDLE_BLE_POLL_READ_MS      100
 #define QUADDLE_BLE_BOOT_POLL_MS      50
+#define QUADDLE_BLE_BOOT_SHORT_MIN_MS 80
 #define QUADDLE_BLE_BOOT_HOLD_MS      2000
+#define QUADDLE_BLE_BOOT_NETCFG_DELAY_MS 500
+#define QUADDLE_BLE_WIFI_RESUME_SCAN_DELAY_MS 4000
 #define QUADDLE_BLE_WIFI_BUSY_MAX_MS  45000
 #define QUADDLE_BLE_CONN_NORMAL_MIN   0x0018
 #define QUADDLE_BLE_CONN_NORMAL_MAX   0x0030
@@ -130,6 +136,7 @@ typedef struct {
     TIMER_ID poll_timer;
     TIMER_ID boot_timer;
     TIMER_ID wifi_resume_timer;
+    TIMER_ID boot_netcfg_timer;
     uint8_t poll_read_index;
     bool poll_read_pending;
     uint16_t poll_read_handle;
@@ -146,6 +153,7 @@ typedef struct {
 static QUADDLE_BLE_HID_CTX_T s_hid;
 
 static void schedule_rescan(void);
+static void schedule_rescan_delay(uint32_t delay_ms);
 static void set_wifi_busy_internal(bool busy);
 
 static uint16_t uuid_to_u16(const TKL_BLE_UUID_T *uuid)
@@ -734,6 +742,8 @@ static void wifi_resume_timer_cb(TIMER_ID timer_id, void *arg)
 
 static void set_wifi_busy_internal(bool busy)
 {
+    bool was_busy = s_hid.wifi_busy;
+
     if (s_hid.wifi_busy == busy) {
         if (busy && s_hid.wifi_resume_timer) {
             (void)tal_sw_timer_start(s_hid.wifi_resume_timer, QUADDLE_BLE_WIFI_BUSY_MAX_MS, TAL_TIMER_ONCE);
@@ -774,7 +784,37 @@ static void set_wifi_busy_internal(bool busy)
     if (s_hid.connected && s_hid.hid_wake_timer) {
         (void)tal_sw_timer_start(s_hid.hid_wake_timer, QUADDLE_BLE_HID_WAKE_MS, TAL_TIMER_ONCE);
     } else if (!s_hid.connected && !s_hid.connecting) {
-        schedule_rescan();
+        schedule_rescan_delay(was_busy ? QUADDLE_BLE_WIFI_RESUME_SCAN_DELAY_MS : QUADDLE_BLE_RESCAN_MS);
+    }
+}
+
+static void boot_netcfg_start_timer_cb(TIMER_ID timer_id, void *arg)
+{
+    (void)timer_id;
+    (void)arg;
+
+#if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
+    OPERATE_RET rt = OPRT_OK;
+
+    PR_NOTICE("quaddle ble hid: start Tuya BLE provisioning");
+    TUYA_CALL_ERR_LOG(netmgr_conn_set(NETCONN_WIFI, NETCONN_CMD_NETCFG, &(netcfg_args_t){.type = NETCFG_TUYA_BLE}));
+#else
+    PR_WARN("quaddle ble hid: Tuya BLE provisioning ignored, WiFi is disabled");
+#endif
+}
+
+static void schedule_boot_netcfg_start(void)
+{
+    if (tuya_iot_is_connected()) {
+        PR_NOTICE("quaddle ble hid: BOOT short press ignored, device already online");
+        return;
+    }
+    PR_NOTICE("quaddle ble hid: BOOT short press: pause gamepad and enter Tuya BLE provisioning");
+    set_wifi_busy_internal(true);
+    if (s_hid.boot_netcfg_timer) {
+        (void)tal_sw_timer_start(s_hid.boot_netcfg_timer, QUADDLE_BLE_BOOT_NETCFG_DELAY_MS, TAL_TIMER_ONCE);
+    } else {
+        boot_netcfg_start_timer_cb(NULL, NULL);
     }
 }
 
@@ -818,11 +858,16 @@ static void rescan_timer_cb(TIMER_ID timer_id, void *arg)
 
 static void schedule_rescan(void)
 {
+    schedule_rescan_delay(QUADDLE_BLE_RESCAN_MS);
+}
+
+static void schedule_rescan_delay(uint32_t delay_ms)
+{
     if (s_hid.wifi_busy) {
         return;
     }
     if (s_hid.rescan_timer) {
-        (void)tal_sw_timer_start(s_hid.rescan_timer, QUADDLE_BLE_RESCAN_MS, TAL_TIMER_ONCE);
+        (void)tal_sw_timer_start(s_hid.rescan_timer, delay_ms, TAL_TIMER_ONCE);
     }
 }
 
@@ -1461,6 +1506,13 @@ static void boot_timer_cb(TIMER_ID timer_id, void *arg)
     }
     down = (level == TUYA_GPIO_LEVEL_LOW);
     if (!down) {
+        if (s_hid.boot_down && !s_hid.boot_fired_this_hold) {
+            now_ms = (uint32_t)tal_system_get_millisecond();
+            if (now_ms - s_hid.boot_press_start_ms >= QUADDLE_BLE_BOOT_SHORT_MIN_MS) {
+                s_hid.boot_fired_this_hold = true;
+                schedule_boot_netcfg_start();
+            }
+        }
         s_hid.boot_down = false;
         s_hid.boot_fired_this_hold = false;
         return;
@@ -1495,7 +1547,8 @@ static OPERATE_RET init_boot_button(void)
     }
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(boot_timer_cb, NULL, &s_hid.boot_timer));
     TUYA_CALL_ERR_RETURN(tal_sw_timer_start(s_hid.boot_timer, QUADDLE_BLE_BOOT_POLL_MS, TAL_TIMER_CYCLE));
-    PR_NOTICE("quaddle ble hid: BOOT GPIO0 hold %ums clears saved gamepad", QUADDLE_BLE_BOOT_HOLD_MS);
+    PR_NOTICE("quaddle ble hid: BOOT GPIO0 short press starts netcfg, hold %ums clears saved gamepad",
+              QUADDLE_BLE_BOOT_HOLD_MS);
     return OPRT_OK;
 }
 
@@ -1532,6 +1585,7 @@ OPERATE_RET quaddle_ble_hid_central_init(void)
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(hid_wake_timer_cb, NULL, &s_hid.hid_wake_timer));
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(poll_read_timer_cb, NULL, &s_hid.poll_timer));
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(wifi_resume_timer_cb, NULL, &s_hid.wifi_resume_timer));
+    TUYA_CALL_ERR_RETURN(tal_sw_timer_create(boot_netcfg_start_timer_cb, NULL, &s_hid.boot_netcfg_timer));
     TUYA_CALL_ERR_RETURN(init_boot_button());
     TUYA_CALL_ERR_LOG(tal_cli_cmd_register(s_quaddle_ble_cli, sizeof(s_quaddle_ble_cli) / sizeof(s_quaddle_ble_cli[0])));
     TUYA_CALL_ERR_LOG(tal_event_subscribe(QUADDLE_BLE_EVENT_WIFI_NETCFG, "quaddle_ble", netcfg_wifi_event_cb,

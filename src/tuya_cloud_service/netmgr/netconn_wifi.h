@@ -99,6 +99,8 @@ typedef struct {
     char ccode[COUNTRY_CODE_LEN + 1];
 
     netcfg_args_t netcfg;     // wifi netcfg configure
+    bool netcfg_start_requested;
+    bool netcfg_waiting_to_start;
     netconn_wifi_conn_t conn; // wifi connect/reconnect configure
 } netmgr_conn_wifi_t;
 

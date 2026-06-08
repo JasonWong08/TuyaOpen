@@ -70,6 +70,7 @@ typedef enum {
     NETCONN_CMD_SSID_PSWD,     // netconn_wifi_info_t
     NETCONN_CMD_COUNTRYCODE,   // "US"/"CN"/"EU"/"JP"
     NETCONN_CMD_NETCFG,        // netconn_wifi_netcfg_t
+    NETCONN_CMD_NETCFG_PREPARE, // netconn_wifi_netcfg_t, register token getter but defer netcfg start
     NETCONN_CMD_SET_STATUS_CB, // user define status callback instead of the
                                // default
     NETCONN_CMD_CLOSE,         // close network connection
