@@ -25,6 +25,7 @@
 #include "netmgr.h"
 #include "tkl_output.h"
 #include "tal_cli.h"
+#include "tal_kv.h"
 #include "tuya_authorize.h"
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
 #include "netconn_wifi.h"
@@ -58,6 +59,14 @@ tuya_iot_client_t ai_client;
 
 /* Tuya license information (uuid authkey) */
 tuya_iot_license_t license;
+
+static const cli_cmd_t sg_kv_cli_cmd[] = {
+    {
+        .name = "kv",
+        .help = "kv set/get/del/list",
+        .func = tal_kv_cmd,
+    },
+};
 
 #ifndef PROJECT_VERSION
 #define PROJECT_VERSION "1.0.0"
@@ -369,12 +378,22 @@ void user_main(void)
         .seed = "vmlkasdh93dlvlcy",
         .key  = "dflfuap134ddlduq",
     });
+    uint8_t *value = NULL;
+    size_t len = 0;
+    if (tal_kv_get("ty_ai_chat_par", &value, &len) == OPRT_OK) {
+        PR_NOTICE("ty_ai_chat_par: %s", value);
+        tal_kv_free(value);
+    } else {
+        PR_NOTICE("ty_ai_chat_par not found");
+    }
+
     tal_sw_timer_init();
     tal_sw_timer_create(__printf_heap_tm_cb, NULL, &sg_printf_heap_tm);
     tal_sw_timer_start(sg_printf_heap_tm, PRINTF_FREE_HEAP_TIME, TAL_TIMER_CYCLE);
     tal_workq_init();
     tal_time_service_init();
     tal_cli_init();
+    tal_cli_cmd_register(sg_kv_cli_cmd, sizeof(sg_kv_cli_cmd) / sizeof(sg_kv_cli_cmd[0]));
     tuya_authorize_init();
 
     reset_netconfig_start();
