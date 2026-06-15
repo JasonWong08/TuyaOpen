@@ -25,6 +25,7 @@
 #include "ai_audio_player.h"
 #include "ai_manage_mode.h"
 #include "ai_mode_free.h"
+#include "tuya_ai_input.h"
 
 /***********************************************************
 ************************macro define************************
@@ -156,7 +157,6 @@ static OPERATE_RET __ai_mode_free_init(void)
     tkl_kws_enable();
 
     //create idle timer
-    TIMER_ID sg_enter_idle_timer = NULL;
     TUYA_CALL_ERR_RETURN(tal_sw_timer_create(__ai_mode_enter_idle_time_cb, NULL, &sg_enter_idle_timer));
 
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
@@ -276,9 +276,26 @@ static OPERATE_RET __ai_mode_free_vad_change(AI_AUDIO_VAD_STATE_E vad_flag)
     PR_DEBUG("[====ai_free] vad: [%d]", vad_flag); 
 
     if (AI_AUDIO_VAD_START == vad_flag) {
+        if (ai_audio_player_is_playing()) {
+            PR_DEBUG("[====ai_free] ignore vad start while player is playing");
+            return OPRT_OK;
+        }
+
+        AI_INPUT_STATE_E input_state = tuya_ai_input_get_state();
+        if (input_state != AI_INPUT_IDLE && input_state != AI_INPUT_STOP) {
+            PR_DEBUG("[====ai_free] ignore vad start, ai input state:%d", input_state);
+            return OPRT_OK;
+        }
+
         tuya_ai_agent_set_scode(AI_AGENT_SCODE_DEFAULT);
         tuya_ai_input_start(false);
     } else {
+        AI_INPUT_STATE_E input_state = tuya_ai_input_get_state();
+        if (input_state != AI_INPUT_PROC) {
+            PR_DEBUG("[====ai_free] ignore vad stop, ai input state:%d", input_state);
+            return OPRT_OK;
+        }
+
         tuya_ai_input_stop();
     }
 
