@@ -18,6 +18,7 @@ extern "C" {
 OPERATE_RET quaddle_ble_hid_central_init(void);
 OPERATE_RET quaddle_ble_hid_central_clear_saved(void);
 void quaddle_ble_hid_central_set_wifi_busy(bool busy);
+void quaddle_ble_hid_central_set_chat_busy(bool busy);
 
 #ifdef __cplusplus
 }

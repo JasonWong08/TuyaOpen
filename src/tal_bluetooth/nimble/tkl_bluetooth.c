@@ -67,6 +67,7 @@ static struct ble_gatt_chr_def tuya_gatt_chars[2][TUYA_BLE_GATT_CHAR_MAX_NUM]; /
 static TKL_BLUETOOTH_SERVER_PARAMS_T tuya_ble_server;
 
 static struct ble_gap_event_listener tuya_ble_event_listener;
+static bool tuya_ble_scan_listener_registered = false;
 static int gatts_service_flag = FALSE;
 TKL_MUTEX_HANDLE tkl_ble_stack_mutex = NULL;
 static int stack_sync_flag = 0;
@@ -87,9 +88,10 @@ static int tuya_ble_host_scan_event(struct ble_gap_event *event, void *arg)
         gap_event.type = TKL_BLE_GAP_EVT_ADV_REPORT;
         gap_event.result = 0;
         gap_event.conn_handle = 0;
-        if (BLE_HCI_ADV_RPT_EVTYPE_ADV_IND == event->disc.event_type ||
-            BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND == event->disc.event_type) {
+        if (BLE_HCI_ADV_RPT_EVTYPE_ADV_IND == event->disc.event_type) {
             gap_event.gap_event.adv_report.adv_type = TKL_BLE_ADV_DATA;
+        } else if (BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND == event->disc.event_type) {
+            gap_event.gap_event.adv_report.adv_type = TKL_BLE_NONCONN_ADV_DATA;
         } else if (BLE_HCI_ADV_RPT_EVTYPE_SCAN_RSP == event->disc.event_type) {
             gap_event.gap_event.adv_report.adv_type = TKL_BLE_RSP_DATA;
         } else {
@@ -623,6 +625,7 @@ OPERATE_RET tkl_ble_stack_deinit(uint8_t role)
         loopnum++;
     }
     tuya_ble_host_main_exit();
+    tuya_ble_scan_listener_registered = false;
     tkl_hci_deinit();
     tuya_ble_stack_event_callback(TKL_BLE_EVT_STACK_DEINIT, 0);
 
@@ -915,6 +918,15 @@ OPERATE_RET tkl_ble_gap_scan_start(TKL_BLE_GAP_SCAN_PARAMS_T const *p_scan_param
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
+    if (!tuya_ble_scan_listener_registered) {
+        rc = ble_gap_event_listener_register(&tuya_ble_event_listener, tuya_ble_host_scan_event, NULL);
+        if (rc != 0) {
+            BLE_HS_LOG(ERR, "Error registering GAP discovery listener; rc=%d\n", rc);
+            return OPRT_OS_ADAPTER_BLE_SCAN_START_FAILED;
+        }
+        tuya_ble_scan_listener_registered = true;
+    }
+
     // Need to combine with mesh stack, and need to adjust all of scan interface
     rc = ble_gap_disc(BLE_HCI_ADV_OWN_ADDR_PUBLIC, BLE_HS_FOREVER, &disc_params, NULL, NULL);
     // rc = ble_gap_disc(BLE_HCI_ADV_OWN_ADDR_PUBLIC, BLE_HS_FOREVER, &disc_params,tuya_ble_host_gap_event,
@@ -924,7 +936,6 @@ OPERATE_RET tkl_ble_gap_scan_start(TKL_BLE_GAP_SCAN_PARAMS_T const *p_scan_param
         return OPRT_OS_ADAPTER_BLE_SCAN_START_FAILED;
     }
 
-    ble_gap_event_listener_register(&tuya_ble_event_listener, tuya_ble_host_scan_event, NULL);
     return OPRT_OK;
 }
 
@@ -983,13 +994,13 @@ OPERATE_RET tkl_ble_gap_connect(TKL_BLE_GAP_ADDR_T const *p_peer_addr, TKL_BLE_G
         BLE_HS_LOG_INFO("bt_stack close,bt operation invalid.\n");
         return OPRT_OK;
     }
-    int rc, i;
+    int rc;
     ble_addr_t conn_addr;
     struct ble_gap_conn_params conn_param;
 
-    for (i = 0; i < 6; i++) {
-        conn_addr.val[i] = p_peer_addr->addr[5 - i];
-    }
+    /* Scan reports expose NimBLE's native address byte order through TKL.
+     * Preserve those bytes when feeding the address back into NimBLE. */
+    memcpy(conn_addr.val, p_peer_addr->addr, sizeof(conn_addr.val));
 
     if (p_peer_addr->type == TKL_BLE_GAP_ADDR_TYPE_RANDOM) {
         conn_addr.type = BLE_ADDR_RANDOM;

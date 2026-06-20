@@ -12,6 +12,7 @@
 #include "tal_cli.h"
 
 #include "robot_uart_voice.h"
+#include "quaddle_robot_bridge.h"
 #include "second_uart.h"
 #include "ai_mode_free.h"
 
@@ -167,6 +168,7 @@ static bool __robot_voice_is_exit_phrase(const char *asr)
         "\xE9\x80\x80\xE5\x87\xBA\xE8\x81\x8A\xE5\xA4\xA9",
         "\xE7\xBB\x93\xE6\x9D\x9F",
         "\xE5\x86\x8D\xE8\xA7\x81",
+        "\xE6\x8B\x9C\xE6\x8B\x9C",
     };
     size_t i;
 
@@ -196,19 +198,13 @@ void robot_uart_voice_on_asr(const char *asr_text)
         return;
     }
 
-    rt = second_uart_init();
+    rt = quaddle_robot_bridge_queue_ai_command(cmd, "ASR");
     if (rt != OPRT_OK) {
-        PR_ERR("robot voice: uart init failed %d", rt);
+        PR_ERR("robot voice: queue \"%s\" failed %d", cmd, rt);
         return;
     }
 
-    rt = second_uart_send_string(cmd);
-    if (rt != OPRT_OK) {
-        PR_ERR("robot voice: send \"%s\" failed %d", cmd, rt);
-        return;
-    }
-
-    PR_NOTICE("robot voice: ASR \"%s\" -> UART \"%s\"", asr_text, cmd);
+    PR_NOTICE("robot voice: ASR \"%s\" -> queued UART \"%s\"", asr_text, cmd);
 }
 
 void ai_app_on_asr_result(const char *text)

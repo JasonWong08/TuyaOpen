@@ -45,28 +45,15 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
     }
 
-    if (quaddle_robot_bridge_gamepad_active()) {
-        PR_NOTICE("MCP robot send_command skipped: gamepad priority active %ums",
-                  quaddle_robot_bridge_gamepad_active_remaining_ms());
-        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "gamepad control active; AI command skipped");
-        return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
-    }
-
-    OPERATE_RET uart_rt = second_uart_init();
+    OPERATE_RET uart_rt = quaddle_robot_bridge_queue_ai_command(text, "MCP");
     if (uart_rt != OPRT_OK) {
-        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "uart init failed");
+        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "uart command queue failed");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : uart_rt;
     }
 
-    uart_rt = second_uart_send_string(text);
-    if (uart_rt != OPRT_OK) {
-        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "uart send failed");
-        return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : uart_rt;
-    }
+    PR_NOTICE("MCP robot send_command queued \"%s\"", text);
 
-    PR_NOTICE("MCP robot send_command \"%s\"", text);
-
-    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "command sent successfully");
+    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "command queued; gamepad has priority");
     return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
 }
 

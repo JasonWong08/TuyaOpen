@@ -12,12 +12,25 @@
 #include "netmgr.h"
 
 #include "ai_chat_main.h"
+#include "ai_manage_mode.h"
 #include "app_chat_bot.h"
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 #include "quaddle_ble_hid_central.h"
 #include "quaddle_robot_bridge.h"
 #include "robot_uart_voice.h"
+#endif
+
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
+{
+    if (!event || event->type != AI_USER_EVT_MODE_STATE_UPDATE) {
+        return;
+    }
+
+    AI_MODE_STATE_E state = (AI_MODE_STATE_E)event->data;
+    quaddle_ble_hid_central_set_chat_busy(state != AI_MODE_STATE_IDLE);
+}
 #endif
 
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
@@ -167,7 +180,11 @@ OPERATE_RET app_chat_bot_init(void)
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
         .default_mode = AI_CHAT_MODE_FREE,
         .default_vol  = 70,
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+        .evt_cb       = __ai_chat_handle_event,
+#else
         .evt_cb       = NULL,
+#endif
     };
     TUYA_CALL_ERR_RETURN(ai_chat_init(&ai_chat_cfg));
 
@@ -188,6 +205,7 @@ OPERATE_RET app_chat_bot_init(void)
     TUYA_CALL_ERR_RETURN(quaddle_robot_bridge_init());
 #if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
     TUYA_CALL_ERR_RETURN(quaddle_ble_hid_central_init());
+    quaddle_ble_hid_central_set_chat_busy(ai_mode_get_state() != AI_MODE_STATE_IDLE);
 #endif
 #endif
 
