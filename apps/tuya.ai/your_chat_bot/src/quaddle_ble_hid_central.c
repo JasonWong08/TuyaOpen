@@ -1706,8 +1706,9 @@ OPERATE_RET quaddle_ble_hid_central_init(void)
         return OPRT_OK;
     }
     memset(&s_hid, 0, sizeof(s_hid));
-    /* Scanning is opt-in after the app reports AI_MODE_STATE_IDLE. */
-    s_hid.chat_busy = true;
+    /* Before Wi-Fi provisioning the AI mode remains INIT.  Start with gamepad
+     * discovery allowed; real AI session events will pause it when needed. */
+    s_hid.chat_busy = false;
     s_hid.conn_handle = QUADDLE_BLE_INVALID_HANDLE;
     s_hid.hid_protocol_mode_handle = QUADDLE_BLE_INVALID_HANDLE;
     s_hid.hid_control_point_handle = QUADDLE_BLE_INVALID_HANDLE;
@@ -1740,6 +1741,8 @@ OPERATE_RET quaddle_ble_hid_central_init(void)
     rt = start_scan();
     if (rt != OPRT_OK) {
         PR_WARN("quaddle ble hid: initial scan deferred rt=%d", rt);
+    } else {
+        PR_NOTICE("quaddle ble hid: pre-network gamepad discovery enabled");
     }
     QHID_LOG_NOTICE_DETAIL("quaddle ble hid: central init fix=20260604-poll-filter-v8");
     return OPRT_OK;

@@ -22,6 +22,14 @@
 #endif
 
 #if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+static bool __ai_state_blocks_gamepad_scan(AI_MODE_STATE_E state)
+{
+    /* INIT is the normal state before Wi-Fi/cloud setup.  The gamepad must
+     * remain usable there; only a real AI session owns the BLE/Wi-Fi airtime. */
+    return state == AI_MODE_STATE_LISTEN || state == AI_MODE_STATE_UPLOAD || state == AI_MODE_STATE_THINK ||
+           state == AI_MODE_STATE_SPEAK;
+}
+
 static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
 {
     if (!event || event->type != AI_USER_EVT_MODE_STATE_UPDATE) {
@@ -29,7 +37,7 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
     }
 
     AI_MODE_STATE_E state = (AI_MODE_STATE_E)event->data;
-    quaddle_ble_hid_central_set_chat_busy(state != AI_MODE_STATE_IDLE);
+    quaddle_ble_hid_central_set_chat_busy(__ai_state_blocks_gamepad_scan(state));
 }
 #endif
 
@@ -205,7 +213,7 @@ OPERATE_RET app_chat_bot_init(void)
     TUYA_CALL_ERR_RETURN(quaddle_robot_bridge_init());
 #if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
     TUYA_CALL_ERR_RETURN(quaddle_ble_hid_central_init());
-    quaddle_ble_hid_central_set_chat_busy(ai_mode_get_state() != AI_MODE_STATE_IDLE);
+    quaddle_ble_hid_central_set_chat_busy(__ai_state_blocks_gamepad_scan(ai_mode_get_state()));
 #endif
 #endif
 

@@ -197,6 +197,10 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     switch (event->id) {
     case TUYA_EVENT_BIND_START:
         PR_INFO("Device Bind Start!");
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+        /* Phone provisioning owns BLE until cloud binding completes. */
+        quaddle_ble_hid_central_set_wifi_busy(true);
+#endif
         if (_need_reset == 1) {
             PR_INFO("Device Reset!");
             tal_system_reset();
