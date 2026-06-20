@@ -97,6 +97,13 @@ OPERATE_RET ai_audio_input_wakeup_mode_set(AI_AUDIO_VAD_MODE_E mode);
 */
 OPERATE_RET ai_audio_input_wakeup_set(bool is_wakeup);
 
+/**
+@brief Enable or disable forwarding recorded slices to the output callback
+@param enable TRUE to forward audio, FALSE to keep only the pre-roll cache
+@return OPERATE_RET Operation result
+*/
+OPERATE_RET ai_audio_input_output_set(bool enable);
+
 #ifdef __cplusplus
 }
 #endif

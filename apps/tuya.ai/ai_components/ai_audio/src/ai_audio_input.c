@@ -30,6 +30,7 @@
 typedef struct {
     bool enable;
     bool wakeup_flag;
+    bool output_enabled;
 
     AI_AUDIO_VAD_MODE_E  vad_mode;
     AI_AUDIO_VAD_STATE_E vad_flag;
@@ -57,26 +58,32 @@ static TDL_AUDIO_HANDLE_T  sg_audio_hdl = NULL;
 */
 static OPERATE_RET __audio_slice_check_and_send(bool *more_data)
 {
+    uint8_t *cache_data = NULL;
+    uint32_t read_len = 0;
+
     if (NULL == more_data) {
         return OPRT_INVALID_PARM;
     }
 
     *more_data = FALSE;
 
-    if (sg_recorder->vad_flag == AI_AUDIO_VAD_START) {
+    if (sg_recorder->output_enabled && sg_recorder->vad_flag == AI_AUDIO_VAD_START) {
         tal_mutex_lock(sg_recorder->mutex);
         uint32_t len = tuya_ring_buff_used_size_get(sg_recorder->ringbuf);
         /* If cache is larger than slice size, read all and send */
         if (len >= sg_recorder->slice_size) {
-
-            uint8_t *cache_data = (uint8_t *)Malloc(sg_recorder->slice_size);
-            uint32_t read_len   = tuya_ring_buff_read(sg_recorder->ringbuf, cache_data, sg_recorder->slice_size);
-
-            sg_recorder->output_cb(cache_data, read_len);
-            Free(cache_data);
-            *more_data = TRUE;
+            cache_data = (uint8_t *)Malloc(sg_recorder->slice_size);
+            if (cache_data) {
+                read_len = tuya_ring_buff_read(sg_recorder->ringbuf, cache_data, sg_recorder->slice_size);
+            }
         }
         tal_mutex_unlock(sg_recorder->mutex);
+
+        if (cache_data && read_len > 0) {
+            sg_recorder->output_cb(cache_data, read_len);
+            *more_data = TRUE;
+        }
+        Free(cache_data);
     }
 
     return OPRT_OK;
@@ -96,6 +103,12 @@ static void __audio_frame_put(TDL_AUDIO_FRAME_FORMAT_E type, TDL_AUDIO_STATUS_E 
     /* Microphone disabled? */
     if (sg_recorder == NULL || !sg_recorder->enable)
         return;
+
+    /* Keep the AFE detection path lightweight while only WakeNet is active. */
+    if (sg_recorder->vad_mode == AI_AUDIO_VAD_AUTO && !sg_recorder->wakeup_flag &&
+        !sg_recorder->output_enabled) {
+        return;
+    }
 
     if (sg_recorder->vad_mode == AI_AUDIO_VAD_MANUAL) {
         /* In manual mode, if has VAD flag, send audio data to cache */
@@ -211,13 +224,15 @@ static AI_AUDIO_RECODER_T *__audio_recorder_create(AI_AUDIO_INPUT_CFG_T *cfg, TD
     TUYA_CHECK_NULL_RETURN(sg_recorder = tal_calloc(1, sizeof(AI_AUDIO_RECODER_T)), NULL);
     memset(sg_recorder, 0, sizeof(AI_AUDIO_RECODER_T));
 
-    sg_recorder->output_cb   = cfg->output_cb;
-    sg_recorder->wakeup_flag = FALSE;
-    sg_recorder->vad_task    = NULL;
-    sg_recorder->vad_mode    = cfg->vad_mode;
+    sg_recorder->output_cb      = cfg->output_cb;
+    sg_recorder->wakeup_flag    = FALSE;
+    sg_recorder->output_enabled = TRUE;
+    sg_recorder->vad_task       = NULL;
+    sg_recorder->vad_mode       = cfg->vad_mode;
 
     uint32_t audio_1ms_size = audio_info->sample_rate * audio_info->sample_bits * audio_info->sample_ch_num / 8 / 1000;
-    sg_recorder->vad_size   = (cfg->vad_active_ms + 300) * audio_1ms_size + 1;
+    uint32_t vad_cache_ms    = cfg->vad_active_ms + cfg->vad_off_ms;
+    sg_recorder->vad_size    = vad_cache_ms * audio_1ms_size + 1;
     sg_recorder->slice_size = cfg->slice_ms * audio_1ms_size;
 
     uint32_t rb_size = sg_recorder->vad_size;
@@ -228,8 +243,8 @@ static AI_AUDIO_RECODER_T *__audio_recorder_create(AI_AUDIO_INPUT_CFG_T *cfg, TD
 #endif
     TUYA_CALL_ERR_GOTO(tal_mutex_create_init(&sg_recorder->mutex), __error);
     PR_DEBUG("recorder vad mode %d", cfg->vad_mode);
-    PR_DEBUG("recorder total ms %d, slice ms %d, vad active %d ms, vad off timeout %d", rb_size, cfg->slice_ms,
-             cfg->vad_active_ms, cfg->vad_off_ms);
+    PR_DEBUG("recorder cache %d ms (%d bytes), slice %d ms, vad active %d ms, vad off timeout %d",
+             vad_cache_ms, rb_size, cfg->slice_ms, cfg->vad_active_ms, cfg->vad_off_ms);
 
     return sg_recorder;
 
@@ -360,9 +375,16 @@ OPERATE_RET ai_audio_input_wakeup_mode_set(AI_AUDIO_VAD_MODE_E mode)
 
     PR_NOTICE("audio input -> wakeup mode set from %d to %d!", sg_recorder->vad_mode, mode);
     if (mode != sg_recorder->vad_mode) {
-        TUYA_CALL_ERR_LOG(ai_audio_input_stop());
+        if (sg_recorder->vad_mode == AI_AUDIO_VAD_AUTO) {
+            tkl_vad_stop();
+        }
+
         sg_recorder->vad_mode = mode;
-        TUYA_CALL_ERR_LOG(ai_audio_input_start());
+        sg_recorder->vad_flag = AI_AUDIO_VAD_STOP;
+
+        if (sg_recorder->vad_mode == AI_AUDIO_VAD_AUTO) {
+            tkl_vad_start();
+        }
     }
 
     return rt;
@@ -378,8 +400,8 @@ OPERATE_RET ai_audio_input_reset(void)
 
     tal_mutex_lock(sg_recorder->mutex);
     tuya_ring_buff_reset(sg_recorder->ringbuf);
+    sg_recorder->vad_flag = AI_AUDIO_VAD_STOP;
     tal_mutex_unlock(sg_recorder->mutex);
-    // sg_recorder->vad_flag = AI_AUDIO_VAD_STOP;
 
     if (AI_AUDIO_VAD_AUTO == sg_recorder->vad_mode) {
         PR_NOTICE("audio input -> vad stop!");
@@ -415,4 +437,16 @@ OPERATE_RET ai_audio_input_wakeup_set(bool is_wakeup)
     }
 
     return rt;
+}
+
+OPERATE_RET ai_audio_input_output_set(bool enable)
+{
+    TUYA_CHECK_NULL_RETURN(sg_recorder, OPRT_RESOURCE_NOT_READY);
+
+    if (sg_recorder->output_enabled != enable) {
+        sg_recorder->output_enabled = enable;
+        PR_NOTICE("audio input -> output set to %d", enable);
+    }
+
+    return OPRT_OK;
 }

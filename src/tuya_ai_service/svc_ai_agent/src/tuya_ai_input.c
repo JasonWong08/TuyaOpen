@@ -36,10 +36,14 @@
 #define AI_INPUT_STACK_SIZE (4608)
 #endif
 #ifndef AI_INPUT_RINGBUF_SIZE
+#if (defined(ENABLE_EXT_RAM) && (ENABLE_EXT_RAM == 1)) || defined(CONFIG_SPIRAM)
+#define AI_INPUT_RINGBUF_SIZE (64 * 1024)
+#else
 #define AI_INPUT_RINGBUF_SIZE (20 * 1024)
 #endif
+#endif
 #ifndef AI_INPUT_BUF_SIZE
-#define AI_INPUT_BUF_SIZE (6 * 1024)
+#define AI_INPUT_BUF_SIZE (2560)
 #endif
 
 #define AI_INPUT_TASK_DELAY (80)
@@ -75,6 +79,7 @@ typedef struct {
     AI_ALERT_CTX_T   alert;
 } AI_INPUT_CTX_T;
 STATIC AI_INPUT_CTX_T ai_input_ctx;
+STATIC SYS_TIME_T     sg_last_audio_drop_log_ms = 0;
 
 STATIC VOID_T __alert_timeout_cb(TIMER_ID timer_id, VOID_T *arg);
 
@@ -206,12 +211,16 @@ OPERATE_RET tuya_ai_audio_input(uint64_t timestamp, uint64_t pts, uint8_t *data,
     head.biz.audio.timestamp = timestamp;
     head.biz.audio.pts       = pts;
     rt                       = tuya_ai_input_write(&head, data);
-    while (rt == OPRT_RESOURCE_NOT_READY) {
+    while (rt == OPRT_RESOURCE_NOT_READY && cnt < 20) {
         tal_system_sleep(10);
         rt = tuya_ai_input_write(&head, data);
-        if (cnt++ > 1000) {
-            PR_ERR("audio input failed %d", rt);
-            break;
+        cnt++;
+    }
+    if (rt == OPRT_RESOURCE_NOT_READY) {
+        SYS_TIME_T now_ms = tal_system_get_millisecond();
+        if ((now_ms - sg_last_audio_drop_log_ms) >= 1000) {
+            sg_last_audio_drop_log_ms = now_ms;
+            PR_WARN("audio input congested, drop frame after %d ms", cnt * 10);
         }
     }
     return rt;
@@ -289,8 +298,8 @@ VOID tuya_ai_input_stop(VOID)
         PR_DEBUG("ai input stop, state:%d", state);
         while (!ai_input_ctx.queue_sync) {
             tal_system_sleep(100);
-            if (cnt++ >= 5) {
-                PR_ERR("ai input stop timeout, cnt:%d", cnt);
+            if (cnt++ >= 14) {
+                PR_ERR("ai input stop timeout, cnt:%d state:%d", cnt + 1, ai_input_ctx.state);
                 break;
             }
         }
@@ -445,6 +454,7 @@ OPERATE_RET tuya_ai_input_init(VOID)
         return OPRT_OK;
     }
     memset(&ai_input_ctx, 0, SIZEOF(ai_input_ctx));
+    PR_NOTICE("FREE-AUDIO-v4: ai input upload chunk %d bytes", AI_INPUT_BUF_SIZE);
     TUYA_CALL_ERR_RETURN(tal_mutex_create_init(&ai_input_ctx.mutex));
     TUYA_CALL_ERR_GOTO(tal_queue_create_init(&ai_input_ctx.queue, SIZEOF(AI_INPUT_STATE_E), 3), EXIT);
     TUYA_CALL_ERR_GOTO(tal_sw_timer_create(__alert_timeout_cb, NULL, &ai_input_ctx.alert.timer), EXIT);

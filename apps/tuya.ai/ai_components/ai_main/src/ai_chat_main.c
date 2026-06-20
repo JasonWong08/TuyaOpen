@@ -210,13 +210,18 @@ static int __ai_audio_output(uint8_t *data, uint16_t datalen)
 
 #if defined(ENABLE_AUDIO_AEC) && (ENABLE_AUDIO_AEC == 1)
     timestamp = pts = tal_system_get_millisecond();
-    TUYA_CALL_ERR_LOG(tuya_ai_audio_input(timestamp, pts, data, datalen, datalen));
+    rt = tuya_ai_audio_input(timestamp, pts, data, datalen, datalen);
 #else 
     if(false == ai_audio_player_is_playing()) {
         timestamp = pts = tal_system_get_millisecond();
-        TUYA_CALL_ERR_LOG(tuya_ai_audio_input(timestamp, pts, data, datalen, datalen));
+        rt = tuya_ai_audio_input(timestamp, pts, data, datalen, datalen);
     }
 #endif
+
+    if (rt == OPRT_RESOURCE_NOT_READY) {
+        return OPRT_OK;
+    }
+    TUYA_CALL_ERR_LOG(rt);
 
     return rt;
 }
@@ -481,4 +486,3 @@ int ai_chat_get_volume(void)
 
     return volume;
 }
-

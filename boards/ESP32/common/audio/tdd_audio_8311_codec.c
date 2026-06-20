@@ -62,6 +62,15 @@ static const audio_codec_gpio_if_t *gpio_if_ = NULL;
 static const audio_codec_if_t *codec_if_ = NULL;
 static esp_codec_dev_handle_t output_dev_ = NULL;
 static esp_codec_dev_handle_t input_dev_ = NULL;
+static ESP_I2S_8311_HANDLE_T *sg_8311_hdl = NULL;
+static bool sg_afe_ready = false;
+
+static void __afe_audio_output(uint8_t *data, uint32_t len)
+{
+    if (data && len && sg_8311_hdl && sg_8311_hdl->mic_cb) {
+        sg_8311_hdl->mic_cb(TDL_AUDIO_FRAME_FORMAT_PCM, TDL_AUDIO_STATUS_RECEIVING, data, len);
+    }
+}
 
 /***********************************************************
 ***********************function define**********************
@@ -322,7 +331,9 @@ static void esp32_i2s_8311_read_task(void *args)
         if (hdl->mic_cb) {
             // Call the callback function with the read data
             bytes_read = data_len * sizeof(int16_t);
-            hdl->mic_cb(TDL_AUDIO_FRAME_FORMAT_PCM, TDL_AUDIO_STATUS_RECEIVING, hdl->data_buf, bytes_read);
+            if (!sg_afe_ready) {
+                hdl->mic_cb(TDL_AUDIO_FRAME_FORMAT_PCM, TDL_AUDIO_STATUS_RECEIVING, hdl->data_buf, bytes_read);
+            }
         }
 
         auio_afe_processor_feed(hdl->data_buf, bytes_read);
@@ -341,6 +352,7 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
     }
 
     hdl->mic_cb = mic_cb;
+    sg_8311_hdl = hdl;
 
     TDD_AUDIO_8311_CODEC_T *tdd_i2s_cfg = &hdl->cfg;
 
@@ -369,6 +381,9 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
         /* Non-fatal: codec still works without AFE (push-to-talk mode). */
         PR_WARN("audio_afe_processor_init failed (err:%d), VAD/wakeword disabled", rt);
         rt = OPRT_OK;
+    } else {
+        sg_afe_ready = true;
+        audio_afe_register_output_cb(__afe_audio_output);
     }
 
     const THREAD_CFG_T thread_cfg = {
