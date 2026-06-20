@@ -1,6 +1,9 @@
 [English](./README.md) | 简体中文
 
 # your_chat_bot
+
+> 完整源码下载、ESP32 平台同步和编译步骤：[Quaddle AI 完整源码下载与编译指南](BUILD_FROM_FORK_zh.md)
+
  [your_chat_bot](https://github.com/tuya/TuyaOpen/tree/master/apps/tuya.ai/your_chat_bot) 是基于 tuya.ai 开源的大模型智能聊天机器人。通过麦克风采集语音，语音识别，实现对话、互动、调侃，还能通过屏幕看到实时聊天内容。
 
 
