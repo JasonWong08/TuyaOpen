@@ -36,6 +36,7 @@ typedef struct {
     uint32_t dma_desc_num;
     uint32_t dma_frame_num;
     int default_volume;
+    float mic_gain_db;
 } TDD_AUDIO_8311_CODEC_T;
 
 /***********************************************************

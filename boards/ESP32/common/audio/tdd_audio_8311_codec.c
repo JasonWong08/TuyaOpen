@@ -54,6 +54,7 @@ static i2s_chan_handle_t rx_handle_ = NULL;
 static int input_sample_rate_ = 0;
 static int output_sample_rate_ = 0;
 static int output_volume_ = 0;
+static float input_gain_db_ = 40.0f;
 static gpio_num_t pa_pin_ = 0;
 static i2c_master_bus_handle_t codec_i2c_bus_ = NULL;
 static const audio_codec_data_if_t *data_if_ = NULL;
@@ -123,7 +124,8 @@ static void EnableInput(bool enable)
             .mclk_multiple = 0,
         };
         ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
-        ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, 40.0));
+        ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, input_gain_db_));
+        ESP_LOGI(TAG, "Microphone input gain: %.1f dB", input_gain_db_);
     } else {
         ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
     }
@@ -216,6 +218,7 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     input_sample_rate_ = i2s_config->mic_sample_rate;
     output_sample_rate_ = i2s_config->spk_sample_rate;
     output_volume_ = i2s_config->default_volume;
+    input_gain_db_ = i2s_config->mic_gain_db > 0.0f ? i2s_config->mic_gain_db : 40.0f;
 
     // ESP_LOGI(TAG, ">>>>>>>>mclk=%d, bclk=%d, ws=%d, dout=%d, din=%d",
     //          i2s_config->i2s_mck_io, i2s_config->i2s_bck_io, i2s_config->i2s_ws_io,
