@@ -39,6 +39,7 @@ do { \
 
 #define AI_CHAT_WAKEUP_TIME_MS     (30 * 1000)      // 30sec
 #define AI_CHAT_LISTEN_ARM_DELAY_MS 250
+#define AI_CHAT_POST_PLAY_ARM_DELAY_MS 20
 #define AI_CHAT_LISTEN_ARM_RETRY_MS 100
 #define AI_CHAT_LISTEN_ARM_LOG_RETRIES 10
 #define AI_CHAT_EMPTY_IDLE_LIMIT    2
@@ -62,6 +63,7 @@ static bool            sg_pending_vad_start = false;
 static bool            sg_exit_pending = false;
 static uint8_t         sg_empty_asr_count = 0;
 static uint8_t         sg_listen_arm_retries = 0;
+static uint32_t        sg_listen_armed_ms = 0;
 static TIMER_ID        sg_enter_idle_timer = NULL;
 static TIMER_ID        sg_listen_arm_timer = NULL;
 static uint32_t        sg_wakeup_time_ms = AI_CHAT_WAKEUP_TIME_MS;
@@ -109,7 +111,7 @@ static void __ai_mode_free_schedule_listen_arm(uint32_t delay_ms)
         tal_sw_timer_stop(sg_listen_arm_timer);
         tal_sw_timer_start(sg_listen_arm_timer, delay_ms, TAL_TIMER_ONCE);
     }
-    PR_NOTICE("mode free listen arm scheduled in %d ms", delay_ms);
+    PR_DEBUG("mode free listen arm scheduled in %d ms", delay_ms);
 }
 
 static void __ai_mode_free_start_input(void)
@@ -248,8 +250,9 @@ static void __ai_mode_listen_arm_time_cb(TIMER_ID timer_id, void *arg)
     ai_audio_input_wakeup_set(false);
     ai_audio_input_reset();
     ai_audio_input_wakeup_set(true);
+    sg_listen_armed_ms = tal_system_get_millisecond();
     sg_listen_arm_retries = 0;
-    PR_NOTICE("mode free listen armed after audio reset");
+    PR_DEBUG("mode free listen armed after audio reset");
 }
 
 static void __ai_mode_enter_idle_time_cb(TIMER_ID timer_id, void *arg)
@@ -391,7 +394,10 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
             if (sg_is_wakeup && !sg_exit_pending) {
                 sg_empty_asr_count = 0;
                 MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
-                __ai_mode_free_schedule_listen_arm(AI_CHAT_LISTEN_ARM_DELAY_MS);
+                /* Arm almost immediately after playback ends. Waiting the normal
+                 * recovery delay here can reset AFE after the user has already
+                 * started a short utterance and clip its first syllable. */
+                __ai_mode_free_schedule_listen_arm(AI_CHAT_POST_PLAY_ARM_DELAY_MS);
             } else {
                 sg_is_wakeup = false;
                 sg_pending_vad_start = false;
@@ -439,6 +445,9 @@ static OPERATE_RET __ai_mode_free_vad_change(AI_AUDIO_VAD_STATE_E vad_flag)
     PR_DEBUG("[====ai_free] vad: [%d]", vad_flag); 
 
     if (AI_AUDIO_VAD_START == vad_flag) {
+        uint32_t now_ms = tal_system_get_millisecond();
+        PR_DEBUG("mode free vad start %u ms after listen arm",
+                 sg_listen_armed_ms ? (unsigned int)(now_ms - sg_listen_armed_ms) : 0U);
         __ai_mode_free_start_input();
     } else {
         sg_pending_vad_start = false;

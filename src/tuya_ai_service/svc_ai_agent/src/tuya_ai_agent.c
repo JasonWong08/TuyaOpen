@@ -1425,7 +1425,13 @@ OPERATE_RET tuya_ai_agent_event(AI_EVENT_TYPE etype, AI_PACKET_PT ptype)
         } else if (AI_EVENT_ONE_SHOT == etype) {
             rt = tuya_ai_event_one_shot(__ai_agent_get_sid(), tuya_ai_agent_get_eid(), NULL, 0);
         } else if (AI_EVENT_CHAT_BREAK == etype) {
-            rt = tuya_ai_event_chat_break(__ai_agent_get_sid(), tuya_ai_agent_get_eid(), NULL, 0);
+            AI_SESSION_ID sid = __ai_agent_get_sid();
+            AI_EVENT_ID eid = tuya_ai_agent_get_eid();
+            if (sid == NULL || eid == NULL || sid[0] == '\0' || eid[0] == '\0') {
+                PR_DEBUG("ignore chat break without active session");
+                return OPRT_OK;
+            }
+            rt = tuya_ai_event_chat_break(sid, eid, NULL, 0);
         }
     }
 

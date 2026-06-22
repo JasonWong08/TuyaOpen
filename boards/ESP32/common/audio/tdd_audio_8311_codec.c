@@ -66,6 +66,18 @@ static esp_codec_dev_handle_t input_dev_ = NULL;
 static ESP_I2S_8311_HANDLE_T *sg_8311_hdl = NULL;
 static bool sg_afe_ready = false;
 
+static esp_err_t __codec_dev_open(esp_codec_dev_handle_t dev, esp_codec_dev_sample_info_t *fs)
+{
+    /* esp-codec-dev probes a newly-created I2S channel with disable() before
+     * enabling it. IDF logs that expected state as an error even though the
+     * codec open continues successfully. */
+    esp_log_level_t old_level = esp_log_level_get("i2s_common");
+    esp_log_level_set("i2s_common", ESP_LOG_NONE);
+    esp_err_t ret = esp_codec_dev_open(dev, fs);
+    esp_log_level_set("i2s_common", old_level);
+    return ret;
+}
+
 static void __afe_audio_output(uint8_t *data, uint32_t len)
 {
     if (data && len && sg_8311_hdl && sg_8311_hdl->mic_cb) {
@@ -81,8 +93,12 @@ static i2c_master_bus_handle_t __i2c_init(int i2c_num, int scl_io, int sda_io)
     i2c_master_bus_handle_t i2c_bus = NULL;
     esp_err_t esp_rt = ESP_OK;
 
-    // retrieve i2c bus handle
+    /* A missing bus is the normal first-init path. Suppress only the noisy
+     * probe; a real bus-creation failure below remains visible. */
+    esp_log_level_t old_level = esp_log_level_get("i2c.master");
+    esp_log_level_set("i2c.master", ESP_LOG_NONE);
     esp_rt = i2c_master_get_bus_handle(i2c_num, &i2c_bus);
+    esp_log_level_set("i2c.master", old_level);
     if (esp_rt == ESP_OK && i2c_bus) {
         ESP_LOGI(TAG, "I2C bus handle retrieved successfully");
         return i2c_bus;
@@ -123,7 +139,7 @@ static void EnableInput(bool enable)
             .sample_rate = (uint32_t)input_sample_rate_,
             .mclk_multiple = 0,
         };
-        ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
+        ESP_ERROR_CHECK(__codec_dev_open(input_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, input_gain_db_));
         ESP_LOGI(TAG, "Microphone input gain: %.1f dB", input_gain_db_);
     } else {
@@ -147,7 +163,7 @@ static void EnableOutput(bool enable)
             .sample_rate = (uint32_t)output_sample_rate_,
             .mclk_multiple = 0,
         };
-        ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
+        ESP_ERROR_CHECK(__codec_dev_open(output_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
         if (pa_pin_ != GPIO_NUM_NC) {
             gpio_set_level(pa_pin_, 1);

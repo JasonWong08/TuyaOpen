@@ -971,6 +971,10 @@ OPERATE_RET tkl_ble_gap_connect_cancel(void)
 
     rc = ble_gap_conn_cancel();
     if (rc != 0) {
+        if (rc == BLE_HS_EALREADY) {
+            BLE_HS_LOG_DEBUG("No active GAP connection procedure to cancel\n");
+            return rc;
+        }
         BLE_HS_LOG(ERR, "Cancel GAP connection procedure fail rc=%d\n", rc);
         return rc;
     }

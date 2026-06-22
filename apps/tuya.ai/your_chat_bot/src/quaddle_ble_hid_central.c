@@ -45,6 +45,7 @@
 #define HID_CONTROL_POINT_CHAR_UUID   0x2A4C
 #define VENDOR_INPUT_CHAR_UUID        0x0003
 #define QUADDLE_BLE_INVALID_HANDLE    0xFFFF
+#define QUADDLE_BLE_CANCEL_NOT_ACTIVE 2 /* NimBLE BLE_HS_EALREADY */
 #define QUADDLE_BLE_SCAN_INTERVAL     0x0040
 #define QUADDLE_BLE_SCAN_WINDOW       0x0040
 #define QUADDLE_BLE_SAVED_SCAN_INTERVAL 0x0100
@@ -950,6 +951,8 @@ static void connect_timer_cb(TIMER_ID timer_id, void *arg)
     rt = tkl_ble_gap_connect_cancel();
     if (rt == OPRT_OK) {
         s_hid.connect_cancel_pending = true;
+    } else if (rt == QUADDLE_BLE_CANCEL_NOT_ACTIVE) {
+        PR_DEBUG("quaddle ble hid: connection procedure already ended before cancel");
     } else {
         PR_WARN("quaddle ble hid: connect cancel returned rt=%d", rt);
     }
