@@ -1337,6 +1337,21 @@ static void gap_cb(TKL_BLE_GAP_PARAMS_EVT_T *event)
         break;
 
     case TKL_BLE_GAP_EVT_DISCONNECT:
+        /* GAP callbacks are shared by the Tuya BLE peripheral and this HID
+         * central.  Ignore phone/peripheral disconnects and stale central
+         * disconnects; otherwise an unrelated disconnect can mark an active
+         * scan as stopped and trigger an endless BLE_HS_EALREADY retry loop. */
+        if (event->gap_event.disconnect.role != TKL_BLE_ROLE_CLIENT) {
+            QHID_LOG_NOTICE_DETAIL("quaddle ble hid: ignore non-client disconnect handle=%u role=%u reason=%d",
+                                   event->conn_handle, event->gap_event.disconnect.role,
+                                   event->gap_event.disconnect.reason);
+            break;
+        }
+        if (!s_hid.connected || event->conn_handle != s_hid.conn_handle) {
+            QHID_LOG_NOTICE_DETAIL("quaddle ble hid: ignore stale disconnect handle=%u current=%u reason=%d",
+                                   event->conn_handle, s_hid.conn_handle, event->gap_event.disconnect.reason);
+            break;
+        }
         if (s_hid.connect_timer) {
             (void)tal_sw_timer_stop(s_hid.connect_timer);
         }

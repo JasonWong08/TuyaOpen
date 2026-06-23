@@ -45,7 +45,7 @@
 - 随意对话模式，未开启 AEC，不支持打断
 - 唤醒词：
   - T5AI 版本： 你好涂鸦
-  - ESP32 版本：你好 Quaddle（发音“你好夸豆”，MultiNet 命令：`ni hao kua dou`）
+  - ESP32 版本：嗨 Quaddle（发音“嗨夸豆”，MultiNet 命令：`hai kua dou`）
 
 ### 通用配置
 

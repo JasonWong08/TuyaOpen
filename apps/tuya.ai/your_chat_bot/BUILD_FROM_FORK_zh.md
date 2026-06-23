@@ -83,7 +83,7 @@ apps/tuya.ai/your_chat_bot/dist/your_chat_bot_1.0.1/your_chat_bot_QIO_1.0.1.bin
 git -C platform/ESP32 remote -v
 git -C platform/ESP32 rev-parse HEAD
 grep -R "MULTINET5" platform/ESP32 --include='*.h' --include='*.c' -n | head
-grep -R "ni hao kua dou" platform/ESP32 --include='*.h' --include='*.c' -n | head
+grep -R "hai kua dou" platform/ESP32 --include='*.h' --include='*.c' -n | head
 ```
 
 `rev-parse HEAD` 必须输出：
@@ -133,7 +133,7 @@ tos.py build
 
 ```text
 multinet model in flash: mn5q8_cn
-Custom wake ready: '你好 Quaddle' (ni hao kua dou)
+Custom wake ready: '嗨 Quaddle' (hai kua dou)
 quaddle ble hid: pre-network gamepad discovery enabled
 ```
 
@@ -142,7 +142,7 @@ quaddle ble hid: pre-network gamepad discovery enabled
 1. 配网前短按手柄 Home 键，确认手柄可以连接并控制设备。
 2. 短按主板 Boot 键完成手机配网。
 3. 联网后确认手柄可继续连接。
-4. 使用“你好 Quaddle”（发音“你好夸豆”）唤醒并进行多轮对话。
+4. 使用“嗨 Quaddle”（发音“嗨夸豆”）唤醒并进行多轮对话。
 5. 结束对话进入 IDLE 后，再验证手柄扫描与重连。
 
 ## 常见问题

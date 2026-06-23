@@ -1091,6 +1091,11 @@ OPERATE_RET tkl_ble_gap_unpair_all(void)
     }
 
     rc = ble_store_clear();
+    /* No store callbacks means bonding data is not persisted, so there is
+     * nothing to clear.  Treat this as an idempotent success. */
+    if (rc == BLE_HS_ENOTSUP) {
+        return OPRT_OK;
+    }
     if (rc != 0) {
         BLE_HS_LOG(ERR, "Clear BLE bonding store fail rc=%d\n", rc);
         return rc;
