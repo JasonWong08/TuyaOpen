@@ -26,7 +26,7 @@ extern "C" {
 /***********************************************************
 ***********************typedef define***********************
 ***********************************************************/
-
+typedef OPERATE_RET (*AI_MCP_VOLUME_CHANGED_CB)(int volume, void *user_data);
 
 /***********************************************************
 ********************function declaration********************
@@ -42,6 +42,14 @@ OPERATE_RET ai_mcp_init(void);
 @return OPERATE_RET Operation result
 */
 OPERATE_RET ai_mcp_deinit(void);
+
+/**
+@brief Set volume changed callback for app-specific side effects
+@param cb Callback invoked after MCP volume set succeeds
+@param user_data User data passed to callback
+@return OPERATE_RET Operation result
+*/
+OPERATE_RET ai_mcp_volume_changed_cb_set(AI_MCP_VOLUME_CHANGED_CB cb, void *user_data);
 
 #ifdef __cplusplus
 }

@@ -36,10 +36,20 @@
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
+static AI_MCP_VOLUME_CHANGED_CB sg_volume_changed_cb        = NULL;
+static void                    *sg_volume_changed_user_data = NULL;
 
 /***********************************************************
 ***********************function define**********************
 ***********************************************************/
+OPERATE_RET ai_mcp_volume_changed_cb_set(AI_MCP_VOLUME_CHANGED_CB cb, void *user_data)
+{
+    sg_volume_changed_cb        = cb;
+    sg_volume_changed_user_data = user_data;
+
+    return OPRT_OK;
+}
+
 static OPERATE_RET __get_device_info(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val,
                                      void *user_data)
 {
@@ -127,6 +137,13 @@ static OPERATE_RET __set_volume(const MCP_PROPERTY_LIST_T *properties, MCP_RETUR
 
     rt = ai_chat_set_volume(volume);
     PR_DEBUG("set volume to %d rt:%d", volume, rt);
+
+    if ((rt == OPRT_OK) && (sg_volume_changed_cb != NULL)) {
+        OPERATE_RET cb_rt = sg_volume_changed_cb((int)volume, sg_volume_changed_user_data);
+        if (cb_rt != OPRT_OK) {
+            PR_WARN("volume changed callback failed:%d", cb_rt);
+        }
+    }
 
     // Set return value
     ai_mcp_return_value_set_bool(ret_val, (rt == OPRT_OK) ? TRUE : FALSE);
@@ -261,6 +278,7 @@ OPERATE_RET ai_mcp_init(void)
 
 OPERATE_RET ai_mcp_deinit(void)
 {
+    ai_mcp_volume_changed_cb_set(NULL, NULL);
     ai_mcp_server_destroy();
 
     PR_DEBUG("MCP Server deinitialized successfully");

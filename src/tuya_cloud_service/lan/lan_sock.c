@@ -50,6 +50,8 @@ static P_LAN_SLOOP_S g_sloop = NULL;
 #define STACK_SIZE_LAN (4 * 1024)
 #endif
 
+#define SYS_ECONNRESET 104
+
 static uint32_t __ty_sock_get_reader_num(void)
 {
     return (LAN_UDP_READER_CNT + tuya_lan_get_client_num());
@@ -230,7 +232,12 @@ void tuya_sock_loop_run(void *data)
                         continue;
                     }
                     if (g_sloop->readers[idx].err) {
-                        PR_ERR("socket err:%d, sock:%d, idx:%d", tal_net_get_errno(), g_sloop->readers[idx].sock, idx);
+                        TUYA_ERRNO net_errno = tal_net_get_errno();
+                        if ((net_errno == SYS_ECONNRESET) || (net_errno == UNW_ECONNRESET)) {
+                            PR_WARN("socket err:%d, sock:%d, idx:%d", net_errno, g_sloop->readers[idx].sock, idx);
+                        } else {
+                            PR_ERR("socket err:%d, sock:%d, idx:%d", net_errno, g_sloop->readers[idx].sock, idx);
+                        }
                         g_sloop->readers[idx].err(g_sloop->readers[idx].sock);
                     }
                     actv_cnt--;

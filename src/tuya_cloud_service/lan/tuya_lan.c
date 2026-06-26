@@ -42,6 +42,8 @@
 #define HEART_BEAT_TIMEOUT 30
 #define ALLOW_NO_KEY_NUM   3
 
+#define SYS_ECONNRESET 104
+
 #define HMAC_LEN       32
 #define RAND_LEN       16
 #define SESSIONKEY_LEN 16
@@ -925,7 +927,12 @@ static void lan_tcp_client_sock_read(int32_t fd)
 recv_again:
     recv_datalen = tal_net_recv(fd, lan->recv_buf + lan->recv_offset, lan->cfg->bufsize - lan->recv_offset);
     if (recv_datalen <= 0) {
-        PR_ERR("net recv err fd:%d,errno:%d", fd, tal_net_get_errno());
+        TUYA_ERRNO net_errno = tal_net_get_errno();
+        if ((net_errno == SYS_ECONNRESET) || (net_errno == UNW_ECONNRESET)) {
+            PR_WARN("net recv err fd:%d,errno:%d", fd, net_errno);
+        } else {
+            PR_ERR("net recv err fd:%d,errno:%d", fd, net_errno);
+        }
         lan_session_fault_set(session);
         return;
     }

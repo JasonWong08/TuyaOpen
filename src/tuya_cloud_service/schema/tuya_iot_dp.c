@@ -78,6 +78,17 @@ void tuya_iot_dp_sync_process(void *data)
         return;
     }
 
+    if ((dpsjson == NULL) || (dpvalid == NULL)) {
+        PR_DEBUG("skip dp sync: no local dp to report");
+        if (dpsjson) {
+            tal_free(dpsjson);
+        }
+        if (dpvalid) {
+            tal_free(dpvalid);
+        }
+        return;
+    }
+
     tuya_iot_dp_report_json_async(client, dpsjson, NULL, dp_sync_cb, dpvalid, 5000);
     tal_free(dpsjson);
 }

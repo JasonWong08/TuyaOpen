@@ -43,6 +43,9 @@
 #include "board_com_api.h"
 
 #include "app_chat_bot.h"
+#if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
+#include "ai_mcp.h"
+#endif
 #include "quaddle_ble_hid_central.h"
 #include "reset_netcfg.h"
 
@@ -72,7 +75,7 @@ static const cli_cmd_t sg_kv_cli_cmd[] = {
 #define PROJECT_VERSION "1.0.0"
 #endif
 
-#define DPID_VOLUME 3
+#define DPID_VOLUME 6
 
 /* Periodic free-heap log interval (ms) */
 #define PRINTF_FREE_HEAP_TIME      (10 * 1000)
@@ -114,18 +117,52 @@ void user_upgrade_notify_on(tuya_iot_client_t *client, cJSON *upgrade)
     PR_INFO("HTTPS URL: %s", cJSON_GetObjectItem(upgrade, "httpsUrl")->valuestring);
 }
 
-OPERATE_RET audio_dp_obj_proc(dp_obj_recv_t *dpobj)
+static OPERATE_RET __dp_obj_report(tuya_iot_client_t *client, dp_obj_recv_t *dpobj)
+{
+    const char *devid = NULL;
+    OPERATE_RET rt    = OPRT_OK;
+
+    if ((client == NULL) || (dpobj == NULL)) {
+        return OPRT_INVALID_PARM;
+    }
+
+    devid = (dpobj->devid != NULL) ? dpobj->devid : client->activate.devid;
+    rt    = tuya_iot_dp_obj_report(client, devid, dpobj->dps, dpobj->dpscnt, 0);
+    if (rt == OPRT_SVC_DP_ID_NOT_FOUND) {
+        PR_DEBUG("skip dp report: no changed dp");
+        return OPRT_OK;
+    }
+    if (rt != OPRT_OK) {
+        PR_WARN("dp obj report failed:%d", rt);
+    }
+
+    return rt;
+}
+
+OPERATE_RET audio_dp_obj_proc(dp_obj_recv_t *dpobj, bool *need_report)
 {
     uint32_t index = 0;
+
+    if (need_report != NULL) {
+        *need_report = false;
+    }
+
     for (index = 0; index < dpobj->dpscnt; index++) {
         dp_obj_t *dp = dpobj->dps + index;
         PR_DEBUG("idx:%d dpid:%d type:%d ts:%u", index, dp->id, dp->type, dp->time_stamp);
 
         switch (dp->id) {
         case DPID_VOLUME: {
+            uint8_t old_volume = ai_chat_get_volume();
             uint8_t volume = dp->value.dp_value;
+            OPERATE_RET rt = OPRT_OK;
+
             PR_DEBUG("volume:%d", volume);
-            ai_chat_set_volume(volume);
+            rt = ai_chat_set_volume(volume);
+            TUYA_CALL_ERR_LOG(rt);
+            if ((rt == OPRT_OK) && (need_report != NULL) && (old_volume != volume)) {
+                *need_report = true;
+            }
 #if defined(ENABLE_CHAT_DISPLAY) && (ENABLE_CHAT_DISPLAY == 1)
             char volume_str[20] = {0};
             snprintf(volume_str, sizeof(volume_str), "%s%d", VOLUME, volume);
@@ -156,6 +193,16 @@ OPERATE_RET ai_audio_volume_upload(void)
 
     return tuya_iot_dp_obj_report(client, client->activate.devid, &dp_obj, 1, 0);
 }
+
+#if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
+static OPERATE_RET __mcp_volume_changed_cb(int volume, void *user_data)
+{
+    (void)volume;
+    (void)user_data;
+
+    return ai_audio_volume_upload();
+}
+#endif
 
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
 static void __network_cfg_alert_tm_cb(TIMER_ID timer_id, void *arg)
@@ -273,14 +320,17 @@ void user_event_handler_on(tuya_iot_client_t *client, tuya_event_msg_t *event)
     /* RECV OBJ DP */
     case TUYA_EVENT_DP_RECEIVE_OBJ: {
         dp_obj_recv_t *dpobj = event->value.dpobj;
+        bool           need_report = false;
+
         PR_DEBUG("SOC Rev DP Cmd t1:%d t2:%d CNT:%u", dpobj->cmd_tp, dpobj->dtt_tp, dpobj->dpscnt);
         if (dpobj->devid != NULL) {
             PR_DEBUG("devid.%s", dpobj->devid);
         }
 
-        audio_dp_obj_proc(dpobj);
-
-        tuya_iot_dp_obj_report(client, dpobj->devid, dpobj->dps, dpobj->dpscnt, 0);
+        audio_dp_obj_proc(dpobj, &need_report);
+        if (need_report) {
+            __dp_obj_report(client, dpobj);
+        }
 
     } break;
 
@@ -440,6 +490,13 @@ void user_main(void)
     if (ret != OPRT_OK) {
         PR_ERR("board_register_hardware failed");
     }
+
+#if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
+    ret = ai_mcp_volume_changed_cb_set(__mcp_volume_changed_cb, NULL);
+    if (ret != OPRT_OK) {
+        PR_ERR("ai_mcp_volume_changed_cb_set failed:%d", ret);
+    }
+#endif
 
     ret = app_chat_bot_init();
     if (ret != OPRT_OK) {
