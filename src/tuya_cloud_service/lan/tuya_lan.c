@@ -41,6 +41,7 @@
 #define LAN_FRAME_MAX_LEN  (4 * 1024)
 #define HEART_BEAT_TIMEOUT 30
 #define ALLOW_NO_KEY_NUM   3
+#define SEQUENCE_ERR_THRESHOLD 5
 
 #define SYS_ECONNRESET 104
 
@@ -106,6 +107,7 @@ static lan_mgr_t *s_lan_mgr = NULL;
 static lan_cfg_t s_lan_cfg = {.client_num = CLIENT_LMT,
                               .bufsize = RECV_BUF_LMT,
                               .heart_timeout = HEART_BEAT_TIMEOUT,
+                              .sequence_err_threshold = SEQUENCE_ERR_THRESHOLD,
                               .allow_no_session_key_num = ALLOW_NO_KEY_NUM};
 
 static lan_mgr_t *lan_mgr_get(void)
@@ -127,8 +129,8 @@ static void lan_session_close(lan_session_t *session)
         PR_ERR("param err");
         return;
     }
-    if (0 == lan->fd_num || session->active == false) {
-        PR_ERR("close session err");
+    if (0 == lan->fd_num || session->active == false || session->fd < 0) {
+        PR_DEBUG("skip close inactive session fd:%d active:%d fd_num:%d", session->fd, session->active, lan->fd_num);
         return;
     }
     tal_mutex_lock(lan->mutex);
@@ -179,7 +181,7 @@ static void lan_session_fault_set(lan_session_t *session)
         return;
     }
     if (0 == lan->fd_num || session->active == false || session->fd < 0) {
-        PR_ERR("set socket fault err %d %d", lan->fd_num, session->fd);
+        PR_DEBUG("skip fault inactive session fd:%d active:%d fd_num:%d", session->fd, session->active, lan->fd_num);
         return;
     }
     PR_DEBUG("set socket fault %d", session->fd);
@@ -921,6 +923,7 @@ static void lan_tcp_client_sock_read(int32_t fd)
 
     uint32_t offset = 0;
     int recv_datalen = 0;
+    bool abort_read = false;
 
     lan->recv_offset = 0;
 
@@ -956,18 +959,8 @@ recv_again:
         }
         frame_buffer = lan->recv_buf + offset;
         lpv35_fixed_head_t *fixed_head = (lpv35_fixed_head_t *)(frame_buffer + LPV35_FRAME_HEAD_SIZE);
-        // verify sequence
         uint32_t fr_sequence = UNI_NTOHL(fixed_head->sequence);
-        if (fr_sequence <= session->sequence_in) {
-            PR_ERR("fd:%d, sequence error in:%d, pre:%d", session->fd, fr_sequence, session->sequence_in);
-            PR_ERR("threshold:%d", lan->cfg->sequence_err_threshold);
-            if ((session->sequence_in - fr_sequence) >= lan->cfg->sequence_err_threshold) {
-                lan_session_close(session);
-            }
-            break;
-        }
-        PR_TRACE("fr_num in:%u, pre:%u", fr_sequence, session->sequence_in);
-        session->sequence_in = fr_sequence;
+        uint32_t fr_type = UNI_NTOHL(fixed_head->type);
         // frame_len verify
         uint32_t frame_len =
             LPV35_FRAME_HEAD_SIZE + sizeof(lpv35_fixed_head_t) + UNI_NTOHL(fixed_head->length) + LPV35_FRAME_TAIL_SIZE;
@@ -994,7 +987,24 @@ recv_again:
             frame_buffer = tmp_recv_buf;
         }
 
-        uint32_t fr_type = UNI_NTOHL(fixed_head->type);
+        if ((fr_sequence != 0) && (FRM_TP_HB != fr_type)) {
+            // verify sequence
+            if (fr_sequence <= session->sequence_in) {
+                uint32_t sequence_delta = session->sequence_in - fr_sequence;
+                PR_WARN("fd:%d, sequence error in:%d, pre:%d", session->fd, fr_sequence, session->sequence_in);
+                PR_WARN("threshold:%d", lan->cfg->sequence_err_threshold);
+                if ((lan->cfg->sequence_err_threshold > 0) && (sequence_delta >= lan->cfg->sequence_err_threshold)) {
+                    lan_session_close(session);
+                    abort_read = true;
+                    break;
+                }
+                offset += frame_len;
+                continue;
+            }
+            PR_TRACE("fr_num in:%u, pre:%u", fr_sequence, session->sequence_in);
+            session->sequence_in = fr_sequence;
+        }
+
         uint8_t *key = NULL;
 
         //! TODO:
@@ -1004,6 +1014,7 @@ recv_again:
                 if (session->secret_key[0]) {
                     PR_WARN("already have the session_key, reset session..");
                     lan_session_close(session);
+                    abort_read = true;
                     break;
                 }
                 key = (uint8_t *)lan->iot_client->activate.localkey;
@@ -1017,6 +1028,7 @@ recv_again:
                     } else {
                         PR_ERR("ERROR, no session_key");
                         lan_session_close(session);
+                        abort_read = true;
                         lan->cfg->allow_no_session_key_num = ALLOW_NO_KEY_NUM;
                     }
                     break;
@@ -1027,6 +1039,7 @@ recv_again:
         } else {
             //! TODO:
             lan_session_close(session);
+            abort_read = true;
             break;
         }
 
@@ -1056,7 +1069,7 @@ recv_again:
 
     if (tmp_recv_buf) {
         tal_free(tmp_recv_buf);
-    } else if (recv_datalen != offset) {
+    } else if (!abort_read && recv_datalen != offset) {
         PR_DEBUG("recv_datalen:%d, offset:%d", recv_datalen, offset);
         memmove(lan->recv_buf, lan->recv_buf + offset, recv_datalen - offset);
         lan->recv_offset = recv_datalen - offset;
