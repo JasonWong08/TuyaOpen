@@ -25,6 +25,10 @@
 #include "ai_mcp_server.h"
 
 #include "ai_mcp.h"
+
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+extern OPERATE_RET ai_mcp_robot_tools_register(void);
+#endif
 /***********************************************************
 ************************macro define************************
 ***********************************************************/
@@ -245,6 +249,10 @@ static OPERATE_RET __ai_mcp_tools_register(void)
                         __set_mode, NULL,
                         MCP_PROP_INT_RANGE("mode", "The chat mode (0=hold, 1=key_press, 2=wakeup, 3=free)", 0, 3)),
         err);
+
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+    TUYA_CALL_ERR_GOTO(ai_mcp_robot_tools_register(), err);
+#endif
 
     TUYA_CALL_ERR_GOTO(ai_mcp_app_tools_register(), err);
 

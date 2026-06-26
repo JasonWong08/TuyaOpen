@@ -23,40 +23,127 @@ typedef struct {
     const char *cmd;
 } ROBOT_VOICE_RULE_T;
 
+static char __robot_voice_ascii_tolower(char ch)
+{
+    if (ch >= 'A' && ch <= 'Z') {
+        return (char)(ch - 'A' + 'a');
+    }
+
+    return ch;
+}
+
+static bool __robot_voice_contains(const char *text, const char *phrase)
+{
+    size_t text_len;
+    size_t phrase_len;
+    size_t i;
+    size_t j;
+
+    if (!text || !phrase || phrase[0] == '\0') {
+        return false;
+    }
+
+    text_len = strlen(text);
+    phrase_len = strlen(phrase);
+    if (phrase_len > text_len) {
+        return false;
+    }
+
+    for (i = 0; i <= text_len - phrase_len; i++) {
+        for (j = 0; j < phrase_len; j++) {
+            if (__robot_voice_ascii_tolower(text[i + j]) != __robot_voice_ascii_tolower(phrase[j])) {
+                break;
+            }
+        }
+        if (j == phrase_len) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /* Longer phrases first to avoid partial false matches */
 static const ROBOT_VOICE_RULE_T s_voice_rules[] = {
     {"\xE5\x90\x91\xE5\x90\x8E\xE9\x80\x80", "kbk 3"},
+    {"move backward", "kbk 3"},
+    {"walk backward", "kbk 3"},
+    {"go backward", "kbk 3"},
     {"\xE5\xBE\x80\xE5\x90\x8E\xE9\x80\x80", "kbk 3"},
+    {"move back", "kbk 3"},
+    {"walk back", "kbk 3"},
+    {"go back", "kbk 3"},
     {"\xE5\x90\x91\xE5\x90\x8E\xE8\xB5\xB0", "kbk 3"},
+    {"step back", "kbk 3"},
     {"\xE5\x90\x91\xE5\x89\x8D\xE8\xB5\xB0", "kwkF 3"},
+    {"move forward", "kwkF 3"},
+    {"walk forward", "kwkF 3"},
+    {"go forward", "kwkF 3"},
+    {"go forword", "kwkF 3"},
     {"\xE5\xBE\x80\xE5\x89\x8D\xE8\xB5\xB0", "kwkF 3"},
+    {"move ahead", "kwkF 3"},
+    {"walk ahead", "kwkF 3"},
+    {"go ahead", "kwkF 3"},
     {"\xE5\x89\x8D\xE8\xB5\xB0", "kwkF 3"},
+    {"step forward", "kwkF 3"},
     {"\xE5\x90\x91\xE5\x89\x8D\xE8\xBF\x9B", "kwkF 3"},
+    {"forward", "kwkF 3"},
     {"\xE8\xB5\xB0\xE5\x87\xA0\xE6\xAD\xA5", "kwkF 3"},
+    {"walk a few steps", "kwkF 3"},
     {"\xE9\x80\x80\xE5\x87\xA0\xE6\xAD\xA5", "kbk 3"},
+    {"back a few steps", "kbk 3"},
     {"\xE5\x90\x91\xE5\x90\x8E", "kbk 3"},
+    {"backward", "kbk 3"},
     {"\xE5\xBE\x80\xE5\x89\x8D", "kwkF 3"},
+    {"ahead", "kwkF 3"},
     {"\xE5\x90\x8E\xE9\x80\x80", "kbk 3"},
     {"\xE5\x80\x92\xE9\x80\x80", "kbk 3"},
     {"\xE5\x89\x8D\xE8\xBF\x9B", "kwkF 3"},
     {"\xE5\xB7\xA6\xE8\xBD\xAC", "kvtL 90"},
+    {"turn left", "kvtL 90"},
+    {"left turn", "kvtL 90"},
     {"\xE5\x8F\xB3\xE8\xBD\xAC", "kvtR 90"},
+    {"turn right", "kvtR 90"},
+    {"right turn", "kvtR 90"},
     {"\xE5\x90\x91\xE5\xB7\xA6", "kvtL 90"},
+    {"to the left", "kvtL 90"},
     {"\xE5\x90\x91\xE5\x8F\xB3", "kvtR 90"},
+    {"to the right", "kvtR 90"},
     {"\xE8\xB7\x91", "ktrF 3"},
+    {"run", "ktrF 3"},
     {"\xE7\x88\xAC", "kcrF 3"},
+    {"crawl", "kcrF 3"},
     {"\xE5\x9D\x90\xE4\xB8\x8B", "ksit"},
+    {"sit down", "ksit"},
     {"\xE5\x9D\x90", "ksit"},
-    {"\xE7\xAB\x99\xE8\xB5\xB7\xE6\x9D\xA5", "kup"},
-    {"\xE8\xB5\xB7\xE7\xAB\x8B", "kup"},
-    {"\xE7\xAB\x99\xE7\xAB\x8B", "kup"},
+    {"sit", "ksit"},
     {"\xE4\xBC\x91\xE6\x81\xAF", "d"},
+    {"take a rest", "d"},
+    {"rest", "d"},
     {"\xE7\x9D\xA1\xE8\xA7\x89", "d"},
+    {"go to sleep", "d"},
+    {"sleep", "d"},
     {"\xE5\xBE\x85\xE6\x9C\xBA", "d"},
+    {"standby", "d"},
+    {"stand by", "d"},
     {"\xE5\x81\x9C", "d"},
+    {"stop", "d"},
+    {"\xE7\xAB\x99\xE8\xB5\xB7\xE6\x9D\xA5", "kup"},
+    {"stand up", "kup"},
+    {"get up", "kup"},
+    {"\xE8\xB5\xB7\xE7\xAB\x8B", "kup"},
+    {"rise", "kup"},
+    {"\xE7\xAB\x99\xE7\xAB\x8B", "kup"},
+    {"stand", "kup"},
     {"\xE6\x89\x93\xE6\x8B\x9B\xE5\x91\xBC", "khi"},
+    {"say hello", "khi"},
+    {"greet", "khi"},
+    {"hello", "khi"},
     {"\xE7\x82\xB9\xE5\xA4\xB4", "knd"},
+    {"nod", "knd"},
     {"\xE6\x91\x87\xE5\xA4\xB4", "kwh"},
+    {"shake head", "kwh"},
+    {"shake your head", "kwh"},
 };
 
 static int __robot_voice_parse_steps(const char *asr)
@@ -68,6 +155,13 @@ static int __robot_voice_parse_steps(const char *asr)
         {"\xE5\x8D\x81", 10}, {"\xE4\xB9\x9D", 9}, {"\xE5\x85\xAB", 8}, {"\xE4\xB8\x83", 7},
         {"\xE5\x85\xAD", 6}, {"\xE4\xBA\x94", 5}, {"\xE5\x9B\x9B", 4}, {"\xE4\xB8\x89", 3},
         {"\xE4\xBA\x8C", 2}, {"\xE4\xB8\xA4", 2}, {"\xE4\xB8\x80", 1},
+    };
+    static const struct {
+        const char *text;
+        int value;
+    } s_english_steps[] = {
+        {"ten", 10},   {"nine", 9}, {"eight", 8}, {"seven", 7}, {"six", 6},
+        {"five", 5},  {"four", 4}, {"three", 3}, {"two", 2},   {"one", 1},
     };
     const char *p;
     size_t i;
@@ -92,6 +186,12 @@ static int __robot_voice_parse_steps(const char *asr)
         }
     }
 
+    for (i = 0; i < sizeof(s_english_steps) / sizeof(s_english_steps[0]); i++) {
+        if (__robot_voice_contains(asr, s_english_steps[i].text)) {
+            return s_english_steps[i].value;
+        }
+    }
+
     return 3;
 }
 
@@ -102,17 +202,21 @@ static bool __robot_voice_match_walk_cmd(const char *asr, char *cmd, size_t cmd_
         "\xE5\x89\x8D\xE8\xB5\xB0", "\xE5\x90\x91\xE5\x89\x8D\xE8\xBF\x9B",
         "\xE5\xBE\x80\xE5\x89\x8D", "\xE5\x89\x8D\xE8\xBF\x9B",
         "\xE8\xB5\xB0\xE5\x87\xA0\xE6\xAD\xA5",
+        "move forward", "walk forward", "go forward", "go forword", "move ahead", "walk ahead", "go ahead",
+        "step forward", "forward",
     };
     static const char *s_backward_phrases[] = {
         "\xE5\x90\x91\xE5\x90\x8E\xE9\x80\x80", "\xE5\xBE\x80\xE5\x90\x8E\xE9\x80\x80",
         "\xE5\x90\x91\xE5\x90\x8E\xE8\xB5\xB0", "\xE9\x80\x80\xE5\x87\xA0\xE6\xAD\xA5",
         "\xE5\x90\x91\xE5\x90\x8E", "\xE5\x90\x8E\xE9\x80\x80", "\xE5\x80\x92\xE9\x80\x80",
+        "move backward", "walk backward", "go backward", "move back", "walk back", "go back", "step back",
+        "backward",
     };
     size_t i;
     int steps;
 
     for (i = 0; i < sizeof(s_backward_phrases) / sizeof(s_backward_phrases[0]); i++) {
-        if (strstr(asr, s_backward_phrases[i]) != NULL) {
+        if (__robot_voice_contains(asr, s_backward_phrases[i])) {
             steps = __robot_voice_parse_steps(asr);
             snprintf(cmd, cmd_len, "kbk %d", steps);
             return true;
@@ -120,15 +224,17 @@ static bool __robot_voice_match_walk_cmd(const char *asr, char *cmd, size_t cmd_
     }
 
     for (i = 0; i < sizeof(s_forward_phrases) / sizeof(s_forward_phrases[0]); i++) {
-        if (strstr(asr, s_forward_phrases[i]) != NULL) {
+        if (__robot_voice_contains(asr, s_forward_phrases[i])) {
             steps = __robot_voice_parse_steps(asr);
             snprintf(cmd, cmd_len, "kwkF %d", steps);
             return true;
         }
     }
 
-    if (strstr(asr, "\xE8\x8A\x82\xE5\xA5\x8F") != NULL &&
-        (strstr(asr, "\xE6\xAD\xA5") != NULL || strstr(asr, "\xE9\x83\xA8") != NULL)) {
+    if ((__robot_voice_contains(asr, "\xE8\x8A\x82\xE5\xA5\x8F") || __robot_voice_contains(asr, "rhythm") ||
+         __robot_voice_contains(asr, "beat")) &&
+        (__robot_voice_contains(asr, "\xE6\xAD\xA5") || __robot_voice_contains(asr, "\xE9\x83\xA8") ||
+         __robot_voice_contains(asr, "step"))) {
         steps = __robot_voice_parse_steps(asr);
         snprintf(cmd, cmd_len, "kwkF %d", steps);
         return true;
@@ -150,7 +256,7 @@ static bool __robot_voice_match_cmd(const char *asr, char *cmd, size_t cmd_len)
     }
 
     for (i = 0; i < sizeof(s_voice_rules) / sizeof(s_voice_rules[0]); i++) {
-        if (strstr(asr, s_voice_rules[i].phrase) != NULL) {
+        if (__robot_voice_contains(asr, s_voice_rules[i].phrase)) {
             snprintf(cmd, cmd_len, "%s", s_voice_rules[i].cmd);
             return true;
         }
@@ -169,6 +275,14 @@ static bool __robot_voice_is_exit_phrase(const char *asr)
         "\xE7\xBB\x93\xE6\x9D\x9F",
         "\xE5\x86\x8D\xE8\xA7\x81",
         "\xE6\x8B\x9C\xE6\x8B\x9C",
+        "end conversation",
+        "exit conversation",
+        "stop conversation",
+        "end chat",
+        "exit chat",
+        "goodbye",
+        "bye bye",
+        "bye",
     };
     size_t i;
 
@@ -177,12 +291,12 @@ static bool __robot_voice_is_exit_phrase(const char *asr)
     }
 
     for (i = 0; i < sizeof(s_exit_phrases) / sizeof(s_exit_phrases[0]); i++) {
-        if (strstr(asr, s_exit_phrases[i]) != NULL) {
+        if (__robot_voice_contains(asr, s_exit_phrases[i])) {
             return true;
         }
     }
 
-    if (strlen(asr) <= 9 && strstr(asr, "\xE5\xAF\xB9\xE8\xAF\x9D") != NULL) {
+    if (strlen(asr) <= 9 && __robot_voice_contains(asr, "\xE5\xAF\xB9\xE8\xAF\x9D")) {
         return true;
     }
 

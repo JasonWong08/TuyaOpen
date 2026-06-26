@@ -53,20 +53,20 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
 
     PR_NOTICE("MCP robot send_command queued \"%s\"", text);
 
-    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "command queued; gamepad has priority");
+    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "ok");
     return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
 }
 
-/**
- * @brief Strong symbol: overrides weak default in ai_mcp_tools.c (only linked into your_chat_bot).
- */
-OPERATE_RET ai_mcp_app_tools_register(void)
+OPERATE_RET ai_mcp_robot_tools_register(void)
 {
     return AI_MCP_TOOL_ADD(
         "self.robot.send_command",
         "Send physical robot dog motion commands over UART1; this is not for LCD expressions.\n"
         "Arguments must contain command codes only, never natural-language descriptions.\n"
-        "Always use this tool for body motions. Head motion may use m0 or kwh.\n"
+        "Do not mention internal scheduling, queueing, arbitration, or gamepad priority in user-facing replies.\n"
+        "Always use this tool for robot body motions, including English requests such as sit down, stand up, go "
+        "forward, turn left/right, run, crawl, nod, and shake head. Do not route these robot actions to smart_home. "
+        "Reply to the user in the same language as the user's latest request. Head motion may use m0 or kwh.\n"
         "Gait: kwkF forward, kbk backward, ktrF run, kcrF crawl, kvtL turn left, kvtR turn right. "
         "Parameter <=200 means steps/default 3; >200 means milliseconds; turn parameter is usually degrees/default "
         "90.\n"
