@@ -303,10 +303,31 @@ static bool __robot_voice_is_exit_phrase(const char *asr)
     return false;
 }
 
+static bool __robot_voice_is_compound_command(const char *asr)
+{
+    if (!asr || asr[0] == '\0') {
+        return false;
+    }
+
+    if (__robot_voice_contains(asr, "\xE7\x84\xB6\xE5\x90\x8E") ||
+        __robot_voice_contains(asr, "\xE6\x8E\xA5\xE7\x9D\x80") ||
+        __robot_voice_contains(asr, "and then") ||
+        __robot_voice_contains(asr, "then")) {
+        return true;
+    }
+
+    return __robot_voice_contains(asr, "\xE5\x85\x88") && __robot_voice_contains(asr, "\xE5\x86\x8D");
+}
+
 void robot_uart_voice_on_asr(const char *asr_text)
 {
     char cmd[16] = {0};
     OPERATE_RET rt;
+
+    if (__robot_voice_is_compound_command(asr_text)) {
+        PR_NOTICE("robot voice: compound ASR skipped for MCP planning \"%s\"", asr_text);
+        return;
+    }
 
     if (!__robot_voice_match_cmd(asr_text, cmd, sizeof(cmd))) {
         return;

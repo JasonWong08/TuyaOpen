@@ -10,8 +10,11 @@
 
 #include "tal_api.h"
 #include "tal_mutex.h"
+#include "tal_system.h"
+#include "tal_thread.h"
 #include "tal_uart.h"
 
+#include "quaddle_robot_bridge.h"
 #include "second_uart.h"
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
@@ -22,8 +25,45 @@
 
 static bool   s_initialized;
 static MUTEX_HANDLE s_tx_mutex;
+static THREAD_HANDLE s_rx_thread;
 static char   s_last_cmd[SECOND_UART_LAST_MAX];
 static size_t s_last_len;
+
+static void __second_uart_rx_task(void *args)
+{
+    (void)args;
+
+    while (s_initialized) {
+        int available = tal_uart_get_rx_data_size(ROBOT_UART_PORT);
+        if (available > 0) {
+            uint8_t data[32];
+            int     read_len = tal_uart_read(ROBOT_UART_PORT, data,
+                                             (available > (int)sizeof(data)) ? sizeof(data) : (uint32_t)available);
+            if (read_len > 0) {
+                for (int i = 0; i < read_len; i++) {
+                    quaddle_robot_bridge_handle_robot_token((char)data[i]);
+                }
+            }
+        }
+        tal_system_sleep(20);
+    }
+}
+
+static void __second_uart_start_rx_task(void)
+{
+    OPERATE_RET rt;
+    THREAD_CFG_T cfg = {
+        .priority   = THREAD_PRIO_5,
+        .stackDepth = 2048,
+        .thrdname   = "robot_uart_rx",
+    };
+
+    if (s_rx_thread) {
+        return;
+    }
+
+    TUYA_CALL_ERR_LOG(tal_thread_create_and_start(&s_rx_thread, NULL, NULL, __second_uart_rx_task, NULL, &cfg));
+}
 
 static void __second_uart_log_tx(const uint8_t *data, size_t length)
 {
@@ -113,6 +153,7 @@ OPERATE_RET second_uart_init(void)
     if (rt == OPRT_INVALID_PARM) {
         PR_WARN("second_uart: tal_uart_init UART%d returned %d (port busy?)", (int)ROBOT_UART_PORT, rt);
         s_initialized = true;
+        __second_uart_start_rx_task();
         return OPRT_OK;
     }
     if (rt != OPRT_OK) {
@@ -122,6 +163,7 @@ OPERATE_RET second_uart_init(void)
 
     s_initialized = true;
     s_last_len    = 0;
+    __second_uart_start_rx_task();
     PR_NOTICE("second_uart: ready UART%d TX=GPIO%d RX=GPIO%d @ %d baud", (int)SECOND_UART_HW_PORT,
               (int)SECOND_UART_TX_PIN, (int)SECOND_UART_RX_PIN, SECOND_UART_BAUD_RATE);
     return OPRT_OK;

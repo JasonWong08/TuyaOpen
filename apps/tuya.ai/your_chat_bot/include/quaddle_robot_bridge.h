@@ -21,6 +21,7 @@ void        quaddle_robot_bridge_reset(void);
 void        quaddle_robot_bridge_poll(void);
 OPERATE_RET quaddle_robot_bridge_handle_line(const char *line);
 OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *source);
+void        quaddle_robot_bridge_handle_robot_token(char token);
 BOOL_T      quaddle_robot_bridge_gamepad_active(void);
 uint32_t    quaddle_robot_bridge_gamepad_active_remaining_ms(void);
 
