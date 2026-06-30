@@ -233,6 +233,49 @@ static const char *hat_name(uint8_t hat)
     }
 }
 
+static bool hat_nibble_known(uint8_t hat)
+{
+    switch (hat & 0x0F) {
+    case 0x00:
+    case 0x01:
+    case 0x02:
+    case 0x04:
+    case 0x05:
+    case 0x06:
+    case 0x08:
+    case 0x09:
+    case 0x0A:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool q34b_field4_known(uint8_t f4)
+{
+    switch (f4) {
+    case 0xFF:
+    case 0x00:
+    case 0x01:
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x05:
+    case 0x06:
+    case 0x07:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static uint32_t q34b_known_btn_word_mask(void)
+{
+    return (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5) |
+           (1u << 6) | (1u << 7) | (1u << 8) | (1u << 9) | (1u << 10) | (1u << 11) |
+           (0xFFu << 16) | (0xFFu << 24);
+}
+
 static int abs_i(int v)
 {
     return v < 0 ? -v : v;
@@ -477,11 +520,17 @@ static uint16_t q34b_button_mask(uint32_t w)
     if (w & (1u << 1)) {
         f |= 1u << 2;
     }
+    if (w & (1u << 2)) {
+        f |= 1u << 11;
+    }
     if (w & (1u << 3)) {
         f |= 1u << 5;
     }
     if (w & (1u << 4)) {
         f |= 1u << 4;
+    }
+    if (w & (1u << 5)) {
+        f |= 1u << 12;
     }
     if (w & (1u << 7)) {
         f |= 1u << 1;
@@ -516,12 +565,28 @@ static void emit_dpad_change(uint8_t now, uint8_t prev, const char *tag)
         return;
     }
     if (now == 0x00 && prev != 0x00) {
-        emitf("%s DPAD_%s-", tag, hat_name(prev));
+        if (hat_nibble_known(prev)) {
+            emitf("%s DPAD_%s-", tag, hat_name(prev));
+        } else {
+            emitf("%s HAT_RAW 0x%X-", tag, (unsigned)(prev & 0x0F));
+        }
     } else if (now != 0x00 && prev == 0x00) {
-        emitf("%s DPAD_%s+", tag, hat_name(now));
+        if (hat_nibble_known(now)) {
+            emitf("%s DPAD_%s+", tag, hat_name(now));
+        } else {
+            emitf("%s HAT_RAW 0x%X+", tag, (unsigned)(now & 0x0F));
+        }
     } else {
-        emitf("%s DPAD_%s-", tag, hat_name(prev));
-        emitf("%s DPAD_%s+", tag, hat_name(now));
+        if (hat_nibble_known(prev)) {
+            emitf("%s DPAD_%s-", tag, hat_name(prev));
+        } else {
+            emitf("%s HAT_RAW 0x%X-", tag, (unsigned)(prev & 0x0F));
+        }
+        if (hat_nibble_known(now)) {
+            emitf("%s DPAD_%s+", tag, hat_name(now));
+        } else {
+            emitf("%s HAT_RAW 0x%X+", tag, (unsigned)(now & 0x0F));
+        }
     }
 }
 
@@ -534,7 +599,7 @@ static void feed_canonical(const char *tag, uint8_t lx, uint8_t ly, uint8_t rx, 
     } btn_map[] = {
         {1u << 0, "L1"},   {1u << 1, "R1"},   {1u << 2, "B"},    {1u << 3, "A"},
         {1u << 4, "Y"},    {1u << 5, "X"},    {1u << 6, "MINUS"}, {1u << 7, "PLUS"},
-        {1u << 8, "HOME"}, {1u << 9, "ZL"}, {1u << 10, "R2"},
+        {1u << 8, "HOME"}, {1u << 9, "ZL"}, {1u << 10, "R2"}, {1u << 11, "O"}, {1u << 12, "T"},
     };
 
     if (!s_hid.prev_valid) {
@@ -552,6 +617,12 @@ static void feed_canonical(const char *tag, uint8_t lx, uint8_t ly, uint8_t rx, 
     for (uint8_t i = 0; i < sizeof(btn_map) / sizeof(btn_map[0]); i++) {
         if (changed & btn_map[i].mask) {
             emitf("%s %s%s", tag, btn_map[i].name, (buttons & btn_map[i].mask) ? "+" : "-");
+        }
+    }
+    {
+        const uint16_t unknown = (uint16_t)(changed & ~0x1FFFu);
+        if (unknown != 0) {
+            emitf("%s BTN_RAW 0x%04X%s", tag, unknown, (buttons & unknown) ? "+" : "-");
         }
     }
 
@@ -582,24 +653,32 @@ static void feed_report_q34b(const uint8_t *f)
 {
     const uint32_t btn_word = (uint32_t)f[5] | ((uint32_t)f[6] << 8) | ((uint32_t)f[7] << 16) |
                               ((uint32_t)f[8] << 24);
-    const uint16_t btn_mask = q34b_button_mask(btn_word);
+    const uint16_t btn_mask_live = q34b_button_mask(btn_word);
+    uint16_t btn_mask = btn_mask_live;
     const uint8_t  hat_nibble = q34b_hat(f[4]);
 
+    if (f[4] != 0xFF && s_hid.prev_valid) {
+        btn_mask = s_hid.prev_buttons;
+    }
     if (s_hid.prev_q34b_raw_valid) {
-        const uint32_t w_ch = btn_word ^ s_hid.prev_q34b_btn_word;
         if (f[4] == 0xFF && s_hid.prev_q34b_f4 == 0xFF) {
-            const uint32_t k_ot_mask = (1u << 2) | (1u << 5);
-            const uint32_t ot_ch = w_ch & k_ot_mask;
-            if (ot_ch & (1u << 2)) {
-                emitf("[Q34B] O%s", (btn_word & (1u << 2)) != 0 ? "+" : "-");
+            const uint32_t w_ch = btn_word ^ s_hid.prev_q34b_btn_word;
+            if (w_ch != 0) {
+                const uint16_t m_ch = (uint16_t)(btn_mask_live ^ s_hid.prev_buttons);
+                const uint32_t unknown = w_ch & ~q34b_known_btn_word_mask();
+                if (unknown != 0 || m_ch == 0) {
+                    emitf("[Q34B] Q34B_BTN_RAW 0x%08X", (unsigned)(unknown != 0 ? unknown : w_ch));
+                }
             }
-            if (ot_ch & (1u << 5)) {
-                emitf("[Q34B] T%s", (btn_word & (1u << 5)) != 0 ? "+" : "-");
-            }
+        }
+        if (f[4] != s_hid.prev_q34b_f4 && (!q34b_field4_known(f[4]) || !q34b_field4_known(s_hid.prev_q34b_f4))) {
+            emitf("[Q34B] FIELD4 %02X->%02X", (unsigned)s_hid.prev_q34b_f4, (unsigned)f[4]);
         }
     }
     s_hid.prev_q34b_f4 = f[4];
-    s_hid.prev_q34b_btn_word = btn_word;
+    if (f[4] == 0xFF) {
+        s_hid.prev_q34b_btn_word = btn_word;
+    }
     s_hid.prev_q34b_raw_valid = true;
     feed_canonical("[Q34B]", f[0], f[1], f[2], f[3], btn_mask, hat_nibble);
 }

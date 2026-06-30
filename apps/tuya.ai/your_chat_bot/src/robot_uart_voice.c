@@ -65,16 +65,16 @@ static bool __robot_voice_contains(const char *text, const char *phrase)
 
 /* Longer phrases first to avoid partial false matches */
 static const ROBOT_VOICE_RULE_T s_voice_rules[] = {
-    {"\xE5\x90\x91\xE5\x90\x8E\xE9\x80\x80", "kbk 3"},
-    {"move backward", "kbk 3"},
-    {"walk backward", "kbk 3"},
-    {"go backward", "kbk 3"},
-    {"\xE5\xBE\x80\xE5\x90\x8E\xE9\x80\x80", "kbk 3"},
-    {"move back", "kbk 3"},
-    {"walk back", "kbk 3"},
-    {"go back", "kbk 3"},
-    {"\xE5\x90\x91\xE5\x90\x8E\xE8\xB5\xB0", "kbk 3"},
-    {"step back", "kbk 3"},
+    {"\xE5\x90\x91\xE5\x90\x8E\xE9\x80\x80", "kbkF 3"},
+    {"move backward", "kbkF 3"},
+    {"walk backward", "kbkF 3"},
+    {"go backward", "kbkF 3"},
+    {"\xE5\xBE\x80\xE5\x90\x8E\xE9\x80\x80", "kbkF 3"},
+    {"move back", "kbkF 3"},
+    {"walk back", "kbkF 3"},
+    {"go back", "kbkF 3"},
+    {"\xE5\x90\x91\xE5\x90\x8E\xE8\xB5\xB0", "kbkF 3"},
+    {"step back", "kbkF 3"},
     {"\xE5\x90\x91\xE5\x89\x8D\xE8\xB5\xB0", "kwkF 3"},
     {"move forward", "kwkF 3"},
     {"walk forward", "kwkF 3"},
@@ -90,14 +90,14 @@ static const ROBOT_VOICE_RULE_T s_voice_rules[] = {
     {"forward", "kwkF 3"},
     {"\xE8\xB5\xB0\xE5\x87\xA0\xE6\xAD\xA5", "kwkF 3"},
     {"walk a few steps", "kwkF 3"},
-    {"\xE9\x80\x80\xE5\x87\xA0\xE6\xAD\xA5", "kbk 3"},
-    {"back a few steps", "kbk 3"},
-    {"\xE5\x90\x91\xE5\x90\x8E", "kbk 3"},
-    {"backward", "kbk 3"},
+    {"\xE9\x80\x80\xE5\x87\xA0\xE6\xAD\xA5", "kbkF 3"},
+    {"back a few steps", "kbkF 3"},
+    {"\xE5\x90\x91\xE5\x90\x8E", "kbkF 3"},
+    {"backward", "kbkF 3"},
     {"\xE5\xBE\x80\xE5\x89\x8D", "kwkF 3"},
     {"ahead", "kwkF 3"},
-    {"\xE5\x90\x8E\xE9\x80\x80", "kbk 3"},
-    {"\xE5\x80\x92\xE9\x80\x80", "kbk 3"},
+    {"\xE5\x90\x8E\xE9\x80\x80", "kbkF 3"},
+    {"\xE5\x80\x92\xE9\x80\x80", "kbkF 3"},
     {"\xE5\x89\x8D\xE8\xBF\x9B", "kwkF 3"},
     {"\xE5\xB7\xA6\xE8\xBD\xAC", "kvtL 90"},
     {"turn left", "kvtL 90"},
@@ -218,7 +218,7 @@ static bool __robot_voice_match_walk_cmd(const char *asr, char *cmd, size_t cmd_
     for (i = 0; i < sizeof(s_backward_phrases) / sizeof(s_backward_phrases[0]); i++) {
         if (__robot_voice_contains(asr, s_backward_phrases[i])) {
             steps = __robot_voice_parse_steps(asr);
-            snprintf(cmd, cmd_len, "kbk %d", steps);
+            snprintf(cmd, cmd_len, "kbkF %d", steps);
             return true;
         }
     }
@@ -353,7 +353,7 @@ void ai_app_on_asr_result(const char *text)
 
 static void __cli_robot_uart_cmd(int argc, char *argv[])
 {
-    const char *cmd = (argc >= 2) ? argv[1] : "kbk 3";
+    const char *cmd = (argc >= 2) ? argv[1] : "kbkF 3";
     OPERATE_RET rt  = second_uart_send_test(cmd);
 
     if (rt == OPRT_OK) {
@@ -364,7 +364,7 @@ static void __cli_robot_uart_cmd(int argc, char *argv[])
 }
 
 static const cli_cmd_t s_robot_uart_cli[] = {
-    {"robot_uart", "robot_uart [cmd]  e.g. robot_uart kbk 3  (UART1 TX17->dog RX)", __cli_robot_uart_cmd},
+    {"robot_uart", "robot_uart [cmd]  e.g. robot_uart kbkF 3  (UART1 TX17->dog RX)", __cli_robot_uart_cmd},
 };
 
 OPERATE_RET robot_uart_voice_init(void)

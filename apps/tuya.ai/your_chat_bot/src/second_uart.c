@@ -231,7 +231,7 @@ OPERATE_RET second_uart_send_data_force(const uint8_t *data, size_t length)
 OPERATE_RET second_uart_send_test(const char *cmd)
 {
     s_last_len = 0;
-    return second_uart_send_string(cmd ? cmd : "kbk 3");
+    return second_uart_send_string(cmd ? cmd : "kbkF 3");
 }
 
 static OPERATE_RET __second_uart_send_string(const char *str, bool force)

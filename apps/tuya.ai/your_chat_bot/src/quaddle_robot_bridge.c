@@ -28,7 +28,9 @@
 #define AI_COMMAND_ARBITRATION_MS  120
 #define AI_COMMAND_QUEUE_MAX       8
 #define AI_COMMAND_TOKEN_TIMEOUT_MS 20000
-#define PLUS_LONG_PRESS_MS         1500
+#define AI_COMMAND_ASR_MCP_DEDUPE_MS 5000
+#define PLUS_LONG_PRESS_MS         1000
+#define ZL_LONG_PRESS_MS           1000
 #define QUADDLE_MACRO_MAX_STEPS    48
 
 typedef enum {
@@ -57,13 +59,19 @@ typedef struct {
     int8_t   jr_ry;
 } QUADDLE_MACRO_STEP_T;
 
+typedef enum {
+    QUADDLE_NON_GAIT_HOLD_NONE = 0,
+    QUADDLE_NON_GAIT_HOLD_SOLO,
+    QUADDLE_NON_GAIT_HOLD_R1_COMBO,
+} QUADDLE_NON_GAIT_HOLD_KIND_E;
+
 static const char *const s_stick_cmd_base[6][9] = {
     {"up", "wkF", "wkL", "wkR", "wkB", "wkF", "vtL", "vtR", "wkB"},
     {"up", "trF", "trL", "trR", "bdF", "trF", "trL", "trR", "slide"},
-    {"up", "crF", "crL", "crR", "sadWkF", "crF", "crL", "crR", "sadWkF"},
-    {"up", "ff", "pinWheel", "jumpSlide", "bf", "ff", "pinWheel", "jumpSlide", "bf"},
-    {"up", "carryF", "sideL", "sideR", "smallWkF", "carryF", "vt2L", "vt2R", "smallTrF"},
-    {"", "triCatF", "triCatL", "triCatR", "circle2L", "triCatF", "triCatL", "triCatR", "noLeftFrontF"},
+    {"up", "crF", "crL", "crR", "dragWkF", "crF", "crL", "crR", "dragWkF"},
+    {"up", "ff", "flipRoll", "jumpSlide", "bf", "ff", "flipRoll", "jumpSlide", "bf"},
+    {"up", "tiptoeF", "sideL", "sideR", "marchF", "tiptoeF", "vt2L", "vt2R", "paceF"},
+    {"", "triCatF", "triCatL", "triCatR", "circle2L", "triCatF", "triCatL", "triCatR", "qDance"},
 };
 
 static const char s_minus_default_cmd[] = "T";
@@ -85,10 +93,12 @@ static bool     s_pending_stick_active;
 static uint32_t s_pending_stick_deadline_ms;
 static char     s_pending_stick_cmd[QUADDLE_CMD_MAX];
 static char     s_last_combo_k_cmd[QUADDLE_CMD_MAX];
-static bool     s_o_gb_upper_b;
+static bool     s_o_gu_upper_u;
 static TIMER_ID s_poll_timer;
 static bool     s_cli_registered;
 static uint32_t s_last_gamepad_input_ms;
+static char     s_solo_non_gait_hold_latch[QUADDLE_CMD_MAX];
+static char     s_r1_combo_non_gait_hold_latch[QUADDLE_CMD_MAX];
 
 static QUADDLE_MACRO_STEP_T s_macro_steps[QUADDLE_MACRO_MAX_STEPS];
 static uint8_t  s_macro_step_count;
@@ -102,6 +112,9 @@ static bool     s_macro_injecting;
 static bool     s_plus_held;
 static uint32_t s_plus_down_ms;
 static bool     s_plus_long_fired;
+static bool     s_zl_held;
+static uint32_t s_zl_down_ms;
+static bool     s_zl_long_fired;
 static bool     s_pending_ai_active;
 static uint32_t s_pending_ai_deadline_ms;
 static char     s_pending_ai_cmd[QUADDLE_CMD_MAX];
@@ -113,6 +126,9 @@ static char     s_ai_queue_cmd[AI_COMMAND_QUEUE_MAX][QUADDLE_CMD_MAX];
 static char     s_ai_queue_source[AI_COMMAND_QUEUE_MAX][12];
 static uint8_t  s_ai_queue_head;
 static uint8_t  s_ai_queue_count;
+static char     s_last_asr_cmd[QUADDLE_CMD_MAX];
+static char     s_last_asr_cmd_head[16];
+static uint32_t s_last_asr_cmd_ms;
 
 static int quaddle_abs(int v)
 {
@@ -132,6 +148,75 @@ static char ai_command_token(const char *cmd)
     return (cmd && cmd[0] != '\0') ? cmd[0] : '\0';
 }
 
+static void ai_command_head(const char *cmd, char *out, size_t out_len)
+{
+    size_t n = 0;
+
+    if (!out || out_len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    while (cmd && (*cmd == ' ' || *cmd == '\t')) {
+        cmd++;
+    }
+    while (cmd && cmd[n] != '\0' && cmd[n] != ' ' && cmd[n] != '\t' && n + 1 < out_len) {
+        out[n] = cmd[n];
+        n++;
+    }
+    out[n] = '\0';
+}
+
+static bool ai_source_is(const char *source, const char *name)
+{
+    return source && name && strcmp(source, name) == 0;
+}
+
+static bool ai_command_same_or_similar(const char *cmd_a, const char *head_a, const char *cmd_b)
+{
+    char head_b[sizeof(s_last_asr_cmd_head)];
+
+    if (!cmd_a || !cmd_b || cmd_a[0] == '\0' || cmd_b[0] == '\0') {
+        return false;
+    }
+    if (strcmp(cmd_a, cmd_b) == 0) {
+        return true;
+    }
+
+    ai_command_head(cmd_b, head_b, sizeof(head_b));
+    if (!head_a || head_a[0] == '\0' || head_b[0] == '\0' || strcmp(head_a, head_b) != 0) {
+        return false;
+    }
+
+    /* Same k-action with different parameter is still the same physical action
+     * for ASR/MCP duplicate suppression, e.g. "kbkF 5" vs "kbkF 3". */
+    return head_a[0] == 'k';
+}
+
+static void ai_record_asr_command(const char *cmd)
+{
+    if (!cmd || cmd[0] == '\0') {
+        return;
+    }
+    strncpy(s_last_asr_cmd, cmd, sizeof(s_last_asr_cmd) - 1);
+    s_last_asr_cmd[sizeof(s_last_asr_cmd) - 1] = '\0';
+    ai_command_head(cmd, s_last_asr_cmd_head, sizeof(s_last_asr_cmd_head));
+    s_last_asr_cmd_ms = now_ms();
+}
+
+static bool ai_should_drop_mcp_duplicate(const char *cmd)
+{
+    uint32_t now;
+
+    if (!cmd || s_last_asr_cmd[0] == '\0' || s_last_asr_cmd_ms == 0) {
+        return false;
+    }
+    now = now_ms();
+    if ((uint32_t)(now - s_last_asr_cmd_ms) > AI_COMMAND_ASR_MCP_DEDUPE_MS) {
+        return false;
+    }
+    return ai_command_same_or_similar(s_last_asr_cmd, s_last_asr_cmd_head, cmd);
+}
+
 static void clear_ai_command_queue(void)
 {
     s_pending_ai_active      = false;
@@ -143,6 +228,9 @@ static void clear_ai_command_queue(void)
     s_ai_token_deadline_ms   = 0;
     s_ai_queue_head          = 0;
     s_ai_queue_count         = 0;
+    s_last_asr_cmd[0]        = '\0';
+    s_last_asr_cmd_head[0]   = '\0';
+    s_last_asr_cmd_ms        = 0;
 }
 
 static const char *payload_after_bracket(const char *line)
@@ -284,6 +372,48 @@ static bool stick_full_cmd(int lx, int ly, char *out, size_t n)
     return out[0] != '\0';
 }
 
+static bool lstick_in_dead_zone(int lx, int ly)
+{
+    return quaddle_abs(lx) <= LSTICK_DEAD_ABS_MAX && quaddle_abs(ly) <= LSTICK_DEAD_ABS_MAX;
+}
+
+static bool r1_lstick_override_cmd(int lx, int ly, char *out, size_t n)
+{
+    int z;
+    const char *base = NULL;
+
+    if (!out || n == 0) {
+        return false;
+    }
+    out[0] = '\0';
+    if ((s_buttons & QUADDLE_BTN_R1) == 0 || lstick_in_dead_zone(lx, ly)) {
+        return false;
+    }
+    z = classify_stick_zone(lx, ly);
+    switch (z) {
+    case 1:
+    case 5:
+        base = "qBiped";
+        break;
+    case 4:
+    case 8:
+        base = "qScoot";
+        break;
+    case 2:
+    case 6:
+        base = "qFrontScoot";
+        break;
+    case 3:
+    case 7:
+        base = "glide";
+        break;
+    default:
+        return false;
+    }
+    format_k_cmd(base, out, n);
+    return out[0] != '\0';
+}
+
 static void update_button_state(const char *label, bool pressed)
 {
     uint32_t mask = 0;
@@ -335,13 +465,10 @@ static const char *cmd_for_pressed_label(const char *label)
         return "khi";
     }
     if (strcmp(label, "L1") == 0) {
-        return "kstepHalf";
-    }
-    if (strcmp(label, "ZL") == 0 || strcmp(label, "L2") == 0) {
-        return "kstep";
+        return "kqWheel";
     }
     if (strcmp(label, "R1") == 0) {
-        return "kqWheel";
+        return NULL;
     }
     if (strcmp(label, "R2") == 0 || strcmp(label, "ZR") == 0) {
         return "g";
@@ -389,6 +516,9 @@ static void macro_reset(void)
     s_plus_held = false;
     s_plus_down_ms = 0;
     s_plus_long_fired = false;
+    s_zl_held = false;
+    s_zl_down_ms = 0;
+    s_zl_long_fired = false;
 }
 
 static void macro_log_count(const char *verb)
@@ -405,7 +535,7 @@ static void macro_begin_record_clear(void)
     s_macro_has_first_step = false;
     s_macro_recording = true;
     s_macro_last_record_ms = now_ms();
-    PR_NOTICE("quaddle macro: recording (hold PLUS 1.5s), tap PLUS to stop");
+    PR_NOTICE("quaddle macro: recording (hold PLUS 1s), tap PLUS to stop");
 }
 
 static void macro_on_plus_short_press(void)
@@ -554,18 +684,110 @@ static void remember_combo_k_cmd(const char *cmd)
     s_last_combo_k_cmd[sizeof(s_last_combo_k_cmd) - 1] = '\0';
 }
 
-static bool solo_btn_k_cmd_no_dedup(const char *cmd)
+static bool non_gait_solo_k_cmd(const char *cmd)
 {
-    return strcmp(cmd, "khds") == 0 || strcmp(cmd, "khi") == 0 || strcmp(cmd, "kstepHalf") == 0 ||
-           strcmp(cmd, "kstep") == 0 || strcmp(cmd, "kqWheel") == 0;
+    return strcmp(cmd, "khds") == 0 || strcmp(cmd, "khi") == 0 || strcmp(cmd, "kqStepHalf") == 0 ||
+           strcmp(cmd, "kqStep") == 0 || strcmp(cmd, "kqWheel") == 0;
 }
 
-static bool k_cmd_should_emit(const char *cmd)
+static bool non_gait_r1_combo_k_cmd(const char *cmd)
+{
+    return strcmp(cmd, "kqBiped") == 0 || strcmp(cmd, "kqScoot") == 0 ||
+           strcmp(cmd, "kqFrontScoot") == 0 || strcmp(cmd, "kglide") == 0;
+}
+
+static bool non_gait_k_cmd(const char *cmd)
+{
+    return cmd && cmd[0] == 'k' && (non_gait_solo_k_cmd(cmd) || non_gait_r1_combo_k_cmd(cmd));
+}
+
+static char *non_gait_hold_latch_for(QUADDLE_NON_GAIT_HOLD_KIND_E hold_kind)
+{
+    if (hold_kind == QUADDLE_NON_GAIT_HOLD_SOLO) {
+        return s_solo_non_gait_hold_latch;
+    }
+    if (hold_kind == QUADDLE_NON_GAIT_HOLD_R1_COMBO) {
+        return s_r1_combo_non_gait_hold_latch;
+    }
+    return NULL;
+}
+
+static bool non_gait_hold_should_emit(const char *cmd, QUADDLE_NON_GAIT_HOLD_KIND_E hold_kind)
+{
+    char *latch = non_gait_hold_latch_for(hold_kind);
+
+    if (!latch) {
+        return true;
+    }
+    if (hold_kind == QUADDLE_NON_GAIT_HOLD_SOLO && !non_gait_solo_k_cmd(cmd)) {
+        return true;
+    }
+    if (hold_kind == QUADDLE_NON_GAIT_HOLD_R1_COMBO && !non_gait_r1_combo_k_cmd(cmd)) {
+        return true;
+    }
+    return latch[0] == '\0' || strcmp(latch, cmd) != 0;
+}
+
+static void non_gait_hold_commit(const char *cmd, QUADDLE_NON_GAIT_HOLD_KIND_E hold_kind)
+{
+    char *latch = non_gait_hold_latch_for(hold_kind);
+
+    if (!latch) {
+        return;
+    }
+    if (hold_kind == QUADDLE_NON_GAIT_HOLD_SOLO && !non_gait_solo_k_cmd(cmd)) {
+        return;
+    }
+    if (hold_kind == QUADDLE_NON_GAIT_HOLD_R1_COMBO && !non_gait_r1_combo_k_cmd(cmd)) {
+        return;
+    }
+    strncpy(latch, cmd, QUADDLE_CMD_MAX - 1);
+    latch[QUADDLE_CMD_MAX - 1] = '\0';
+}
+
+static void non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_KIND_E hold_kind)
+{
+    char *latch = non_gait_hold_latch_for(hold_kind);
+
+    if (latch) {
+        latch[0] = '\0';
+    }
+}
+
+static QUADDLE_NON_GAIT_HOLD_KIND_E non_gait_hold_kind_for_payload(const char *p, const char *cmd)
+{
+    if (!non_gait_k_cmd(cmd) || !p) {
+        return QUADDLE_NON_GAIT_HOLD_NONE;
+    }
+    if (strncmp(p, "LSTICK ", 7) == 0) {
+        return QUADDLE_NON_GAIT_HOLD_R1_COMBO;
+    }
+    return QUADDLE_NON_GAIT_HOLD_SOLO;
+}
+
+static void maybe_release_non_gait_hold_on_edge(const char *p)
+{
+    if (!p) {
+        return;
+    }
+    if (strcmp(p, "R1-") == 0) {
+        non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_R1_COMBO);
+        return;
+    }
+    if (strcmp(p, "L1-") == 0 || strcmp(p, "ZL-") == 0 || strcmp(p, "L2-") == 0) {
+        non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_SOLO);
+    }
+}
+
+static bool k_cmd_should_emit(const char *cmd, QUADDLE_NON_GAIT_HOLD_KIND_E hold_kind)
 {
     if (!cmd || cmd[0] != 'k') {
         return true;
     }
-    if (solo_btn_k_cmd_no_dedup(cmd)) {
+    if (hold_kind != QUADDLE_NON_GAIT_HOLD_NONE && non_gait_k_cmd(cmd)) {
+        return non_gait_hold_should_emit(cmd, hold_kind);
+    }
+    if (non_gait_k_cmd(cmd)) {
         return true;
     }
     return strcmp(s_last_k_cmd, cmd) != 0;
@@ -590,7 +812,7 @@ static OPERATE_RET send_combo_replay_k_cmd(const char *cmd)
     return rt;
 }
 
-static OPERATE_RET send_k_cmd(const char *cmd)
+static OPERATE_RET send_k_cmd_ex(const char *cmd, QUADDLE_NON_GAIT_HOLD_KIND_E hold_kind)
 {
     OPERATE_RET rt;
 
@@ -598,22 +820,25 @@ static OPERATE_RET send_k_cmd(const char *cmd)
         return OPRT_INVALID_PARM;
     }
     cancel_pending_stick();
-    if (!k_cmd_should_emit(cmd)) {
+    if (!k_cmd_should_emit(cmd, hold_kind)) {
         return OPRT_OK;
     }
     remember_combo_k_cmd(cmd);
     macro_before_robot_output();
-    /* Solo button commands are edge-triggered actions.  Repeating the same
-     * physical button press must reach the robot even when the previous UART
-     * payload is identical. */
-    rt = solo_btn_k_cmd_no_dedup(cmd) ? second_uart_send_string_force(cmd) : second_uart_send_string(cmd);
+    rt = non_gait_k_cmd(cmd) ? second_uart_send_string_force(cmd) : second_uart_send_string(cmd);
     if (rt == OPRT_OK) {
+        non_gait_hold_commit(cmd, hold_kind);
         strncpy(s_last_k_cmd, cmd, sizeof(s_last_k_cmd) - 1);
         s_last_k_cmd[sizeof(s_last_k_cmd) - 1] = '\0';
         s_r2_allow_next_g = true;
         macro_record_text_line(cmd);
     }
     return rt;
+}
+
+static OPERATE_RET send_k_cmd(const char *cmd)
+{
+    return send_k_cmd_ex(cmd, QUADDLE_NON_GAIT_HOLD_NONE);
 }
 
 static void mark_gamepad_input(void)
@@ -670,7 +895,7 @@ static OPERATE_RET flush_pending_solo(void)
     strncpy(cmd, s_pending_solo_cmd, sizeof(cmd) - 1);
     cmd[sizeof(cmd) - 1] = '\0';
     cancel_pending_solo();
-    return (cmd[0] == 'k') ? send_k_cmd(cmd) : send_raw_btn_cmd(cmd);
+    return (cmd[0] == 'k') ? send_k_cmd_ex(cmd, QUADDLE_NON_GAIT_HOLD_SOLO) : send_raw_btn_cmd(cmd);
 }
 
 static OPERATE_RET flush_pending_stick(void)
@@ -692,6 +917,9 @@ static bool zone_uses_delayed_k(int lx, int ly)
     const uint8_t row = stick_modifier_row();
     int           z;
 
+    if (s_buttons & QUADDLE_BTN_R1) {
+        return false;
+    }
     if (row == 0) {
         return true;
     }
@@ -701,7 +929,7 @@ static bool zone_uses_delayed_k(int lx, int ly)
 
 static const char *next_ot_gb_cmd(void)
 {
-    return s_o_gb_upper_b ? "gB" : "gb";
+    return s_o_gu_upper_u ? "gU" : "gu";
 }
 
 static OPERATE_RET send_ot_gb_toggle(void)
@@ -709,7 +937,7 @@ static OPERATE_RET send_ot_gb_toggle(void)
     const char *cmd = next_ot_gb_cmd();
     OPERATE_RET rt;
 
-    s_o_gb_upper_b = !s_o_gb_upper_b;
+    s_o_gu_upper_u = !s_o_gu_upper_u;
     cancel_pending_stick();
     macro_before_robot_output();
     rt = second_uart_send_string_force(cmd);
@@ -759,6 +987,32 @@ static bool is_dpad_x_cmd(const char *cmd)
         return false;
     }
     return cmd[1] == 'D' || cmd[1] == 'L' || cmd[1] == 'G' || cmd[1] == 'S';
+}
+
+static void poll_zl_hold(void)
+{
+    uint32_t now = now_ms();
+    bool zl_held = (s_buttons & QUADDLE_BTN_ZL) != 0;
+
+    if (zl_held) {
+        if (!s_zl_held) {
+            s_zl_held = true;
+            s_zl_down_ms = now;
+            s_zl_long_fired = false;
+        } else if (!s_zl_long_fired && (uint32_t)(now - s_zl_down_ms) >= ZL_LONG_PRESS_MS) {
+            s_zl_long_fired = true;
+            (void)send_k_cmd_ex("kqStep", QUADDLE_NON_GAIT_HOLD_SOLO);
+        }
+        return;
+    }
+    if (s_zl_held) {
+        if (!s_zl_long_fired) {
+            (void)send_k_cmd_ex("kqStepHalf", QUADDLE_NON_GAIT_HOLD_SOLO);
+        }
+        non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_SOLO);
+        s_zl_held = false;
+        s_zl_long_fired = false;
+    }
 }
 
 static void poll_timer_cb(TIMER_ID timer_id, void *arg)
@@ -832,11 +1086,20 @@ static bool build_robot_command(const char *line, char *out, size_t out_len)
         out[out_len - 1] = '\0';
         return out[0] != '\0';
     }
+    if (strncmp(p, "FIELD4 ", 7) == 0) {
+        return false;
+    }
 
     if (strncmp(p, "LSTICK ", 7) == 0) {
         int lx = 0;
         int ly = 0;
-        return sscanf(p + 7, "%d,%d", &lx, &ly) == 2 && stick_full_cmd(lx, ly, out, out_len);
+        if (sscanf(p + 7, "%d,%d", &lx, &ly) != 2) {
+            return false;
+        }
+        if (r1_lstick_override_cmd(lx, ly, out, out_len)) {
+            return true;
+        }
+        return stick_full_cmd(lx, ly, out, out_len);
     }
 
     if (strncmp(p, "RSTICK ", 7) == 0) {
@@ -935,8 +1198,10 @@ void quaddle_robot_bridge_reset(void)
     s_pending_solo_deadline_ms   = 0;
     s_pending_stick_deadline_ms = 0;
     s_last_combo_k_cmd[0]       = '\0';
-    s_o_gb_upper_b              = false;
+    s_o_gu_upper_u              = false;
     s_last_gamepad_input_ms     = 0;
+    s_solo_non_gait_hold_latch[0] = '\0';
+    s_r1_combo_non_gait_hold_latch[0] = '\0';
     clear_ai_command_queue();
     macro_reset();
 }
@@ -999,6 +1264,7 @@ void quaddle_robot_bridge_poll(void)
         }
     }
     macro_poll_plus_hold((s_buttons & QUADDLE_BTN_PLUS) != 0);
+    poll_zl_hold();
     macro_poll_playback();
 }
 
@@ -1023,6 +1289,7 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
                 update_button_state(label, p[len - 1] == '+');
             }
         }
+        maybe_release_non_gait_hold_on_edge(p);
 
         if (len == 2 && is_abxy(p[0]) && (p[1] == '+' || p[1] == '-')) {
             if (p[1] == '+') {
@@ -1038,8 +1305,11 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
                 return OPRT_OK;
             }
             if (s_pending_solo_active && p[0] == s_pending_solo_btn) {
-                return flush_pending_solo();
+                OPERATE_RET rt = flush_pending_solo();
+                non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_SOLO);
+                return rt;
             }
+            non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_SOLO);
             return OPRT_OK;
         }
 
@@ -1047,7 +1317,9 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
             s_r2_allow_next_g = true;
         }
 
-        if (strcmp(p, "PLUS+") == 0 || strcmp(p, "PLUS-") == 0) {
+        if (strcmp(p, "PLUS+") == 0 || strcmp(p, "PLUS-") == 0 ||
+            strcmp(p, "ZL+") == 0 || strcmp(p, "ZL-") == 0 ||
+            strcmp(p, "L2+") == 0 || strcmp(p, "L2-") == 0) {
             return OPRT_OK;
         }
 
@@ -1056,9 +1328,6 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
         }
 
         if (strcmp(p, "MINUS+") == 0) {
-            if (s_buttons & QUADDLE_BTN_ZL) {
-                return send_k_cmd("kstep");
-            }
             if (s_last_combo_k_cmd[0] != '\0') {
                 return send_combo_replay_k_cmd(s_last_combo_k_cmd);
             }
@@ -1090,10 +1359,17 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
             remember_combo_k_cmd(cmd);
             return OPRT_OK;
         }
+        if (sscanf(p + 7, "%d,%d", &lx, &ly) == 2) {
+            char r1cmd[QUADDLE_CMD_MAX];
+            if (r1_lstick_override_cmd(lx, ly, r1cmd, sizeof(r1cmd))) {
+                return send_k_cmd_ex(r1cmd, QUADDLE_NON_GAIT_HOLD_R1_COMBO);
+            }
+            non_gait_hold_release(QUADDLE_NON_GAIT_HOLD_R1_COMBO);
+        }
     }
 
     if (cmd[0] == 'k') {
-        return send_k_cmd(cmd);
+        return send_k_cmd_ex(cmd, non_gait_hold_kind_for_payload(p, cmd));
     }
     if (cmd[0] == 'J' && cmd[1] == 'r' && (cmd[2] == ' ' || cmd[2] == '\t')) {
         int rx = 0;
@@ -1139,27 +1415,36 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
 OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *source)
 {
     uint8_t tail;
+    const char *src = source ? source : "AI";
 
     if (!cmd || cmd[0] == '\0') {
         return OPRT_INVALID_PARM;
     }
     if (quaddle_robot_bridge_gamepad_active()) {
         PR_NOTICE("robot arbitration: AI command \"%s\" from %s skipped; gamepad priority active %ums", cmd,
-                  source ? source : "AI", quaddle_robot_bridge_gamepad_active_remaining_ms());
+                  src, quaddle_robot_bridge_gamepad_active_remaining_ms());
+        return OPRT_OK;
+    }
+    if (ai_source_is(src, "MCP") && ai_should_drop_mcp_duplicate(cmd)) {
+        PR_NOTICE("robot arbitration: MCP command \"%s\" skipped; recent ASR command \"%s\" already queued",
+                  cmd, s_last_asr_cmd);
         return OPRT_OK;
     }
 
     if (s_ai_queue_count >= AI_COMMAND_QUEUE_MAX) {
-        PR_WARN("robot arbitration: AI queue full, drop \"%s\" from %s", cmd, source ? source : "AI");
+        PR_WARN("robot arbitration: AI queue full, drop \"%s\" from %s", cmd, src);
         return OPRT_COM_ERROR;
     }
 
     tail = (uint8_t)((s_ai_queue_head + s_ai_queue_count) % AI_COMMAND_QUEUE_MAX);
     strncpy(s_ai_queue_cmd[tail], cmd, sizeof(s_ai_queue_cmd[tail]) - 1);
     s_ai_queue_cmd[tail][sizeof(s_ai_queue_cmd[tail]) - 1] = '\0';
-    strncpy(s_ai_queue_source[tail], source ? source : "AI", sizeof(s_ai_queue_source[tail]) - 1);
+    strncpy(s_ai_queue_source[tail], src, sizeof(s_ai_queue_source[tail]) - 1);
     s_ai_queue_source[tail][sizeof(s_ai_queue_source[tail]) - 1] = '\0';
     s_ai_queue_count++;
+    if (ai_source_is(src, "ASR")) {
+        ai_record_asr_command(s_ai_queue_cmd[tail]);
+    }
     PR_NOTICE("robot arbitration: AI command queued \"%s\" from %s depth=%u", s_ai_queue_cmd[tail],
               s_ai_queue_source[tail], s_ai_queue_count);
     return OPRT_OK;

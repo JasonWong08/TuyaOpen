@@ -7,6 +7,7 @@
  * Compiled only when CONFIG_ENABLE_CHAT_BOT_ROBOT_SECOND_UART=y (see CMakeLists.txt).
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include "tal_api.h"
@@ -24,6 +25,7 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
                                         void *user_data)
 {
     const char *text       = NULL;
+    char normalized_text[64];
     OPERATE_RET mcp_str_rt = OPRT_OK;
 
     (void)user_data;
@@ -43,6 +45,11 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
     if (!text || strlen(text) == 0) {
         mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "empty command");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
+    }
+
+    if (strncmp(text, "kbk", 3) == 0 && (text[3] == '\0' || text[3] == ' ' || text[3] == '\t')) {
+        snprintf(normalized_text, sizeof(normalized_text), "kbkF%s", text + 3);
+        text = normalized_text;
     }
 
     OPERATE_RET uart_rt = quaddle_robot_bridge_queue_ai_command(text, "MCP");
@@ -69,7 +76,7 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "Always use this tool for explicit robot body motions, including English requests such as sit down, stand up, go "
         "forward, turn left/right, run, crawl, nod, and shake head. Do not route these robot actions to smart_home. "
         "Reply to the user in the same language as the user's latest request. Head motion may use m0 or kwh.\n"
-        "Gait: kwkF forward, kbk backward, ktrF run, kcrF crawl, kvtL turn left, kvtR turn right. "
+        "Gait: kwkF forward, kbkF backward, ktrF run, kcrF crawl, kvtL turn left, kvtR turn right. "
         "Parameter <=200 means steps/default 3; >200 means milliseconds; turn parameter is usually degrees/default "
         "90.\n"
         "Basic: khi greet, ksit sit, kgdb good, kpu push-up, kjmp jump, d rest, kup stand, kstr stretch.\n"
