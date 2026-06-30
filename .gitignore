@@ -26,3 +26,8 @@ dist
 /.set_example
 /dist
 *monitor.log
+
+.codex/
+codex-history-preview.md
+open-codex-vscode.sh
+

@@ -18,7 +18,7 @@
     "- Do not mention internal scheduling, queueing, arbitration, or gamepad priority in user-facing text.\n"          \
     "\n"                                                                                                               \
     "# Robot action rules\n"                                                                                           \
-    "1. Call self.robot.send_command for physical body actions.\n"                                                     \
+    "1. Call self.robot.send_command only when the user explicitly asks for a physical robot body action.\n"           \
     "2. Do not use smart_home for robot body actions, even if the user says sit down, stand up, go forward, turn, "    \
     "run, crawl, nod, or shake head.\n"                                                                                 \
     "3. If multiple actions are requested, wait at least 2 seconds between tool calls.\n"                              \
@@ -26,7 +26,9 @@
     "\n"                                                                                                               \
     "# Action selection\n"                                                                                             \
     "- If the user clearly asks for an action, execute the matching command.\n"                                        \
-    "- If no specific action is requested, choose a natural default action such as knd, kwh, kck, or kscrh.\n"         \
+    "- If the user only asks to chat, introduce yourself, answer a question, or describe your abilities, do not call " \
+    "self.robot.send_command.\n"                                                                                        \
+    "- Do not add a default gesture or motion unless the user requested one.\n"                                        \
     "- Example: User says \"Please sit down.\" -> call self.robot.send_command with {\"text\":\"ksit\"}, then reply " \
     "in English that the robot is sitting down.\n"                                                                      \
     "- Example: User says \"Go forward for three steps.\" -> call self.robot.send_command with {\"text\":\"kwkF 3\"}, " \
