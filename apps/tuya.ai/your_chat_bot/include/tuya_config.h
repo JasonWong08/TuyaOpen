@@ -26,8 +26,8 @@
 #define TUYA_PRODUCT_ID "gbq0rbhmrnn3greo"
 #endif
 
-#define TUYA_OPENSDK_UUID    "uuid7614c8d258c79571"              /* TODO: replace */
-#define TUYA_OPENSDK_AUTHKEY "YWtPTcTElJWXBPgEtr1zbyIsIGpNYRLW"  /* TODO: replace */
+#define TUYA_OPENSDK_UUID    "uuidxxxxxxxxxxxxxxxx"             // Please change the correct uuid
+#define TUYA_OPENSDK_AUTHKEY "keyxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" // Please change the correct authkey
 
 /**
  * @brief PINCODE for AP provisioning

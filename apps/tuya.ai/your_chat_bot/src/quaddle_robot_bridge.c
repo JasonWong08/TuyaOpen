@@ -1022,6 +1022,7 @@ static void poll_timer_cb(TIMER_ID timer_id, void *arg)
     quaddle_robot_bridge_poll();
 }
 
+#if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
 static void cli_quaddle_evt(int argc, char *argv[])
 {
     char   line[96];
@@ -1053,6 +1054,7 @@ static void cli_quaddle_evt(int argc, char *argv[])
 static const cli_cmd_t s_quaddle_cli[] = {
     {"quaddle_evt", "quaddle_evt <Arduino-style gamepad event>", cli_quaddle_evt},
 };
+#endif
 
 static bool build_robot_command(const char *line, char *out, size_t out_len)
 {
@@ -1175,10 +1177,12 @@ OPERATE_RET quaddle_robot_bridge_init(void)
         TUYA_CALL_ERR_LOG(tal_sw_timer_start(s_poll_timer, QUADDLE_POLL_INTERVAL_MS, TAL_TIMER_CYCLE));
     }
 
+#if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
     if (!s_cli_registered) {
         tal_cli_cmd_register(s_quaddle_cli, 1);
         s_cli_registered = true;
     }
+#endif
 
     return OPRT_OK;
 }
@@ -1211,12 +1215,14 @@ void quaddle_robot_bridge_poll(void)
     uint32_t now = now_ms();
     bool     schedule_next = false;
 
+#if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
     if (s_pending_solo_active && (int32_t)(now - s_pending_solo_deadline_ms) >= 0) {
         (void)flush_pending_solo();
     }
     if (s_pending_stick_active && (int32_t)(now - s_pending_stick_deadline_ms) >= 0) {
         (void)flush_pending_stick();
     }
+#endif
     if (s_ai_waiting_token && (int32_t)(now - s_ai_token_deadline_ms) >= 0) {
         PR_WARN("robot arbitration: token '%c' timeout after AI command \"%s\"", s_ai_expected_token,
                 s_pending_ai_cmd);
@@ -1263,13 +1269,16 @@ void quaddle_robot_bridge_poll(void)
             s_pending_ai_active = false;
         }
     }
+#if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
     macro_poll_plus_hold((s_buttons & QUADDLE_BTN_PLUS) != 0);
     poll_zl_hold();
     macro_poll_playback();
+#endif
 }
 
 OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
 {
+#if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
     const char *p;
     char        cmd[160];
 
@@ -1410,6 +1419,10 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
         return rt;
     }
     return OPRT_OK;
+#else
+    (void)line;
+    return OPRT_NOT_SUPPORTED;
+#endif
 }
 
 OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *source)
@@ -1480,6 +1493,7 @@ BOOL_T quaddle_robot_bridge_gamepad_active(void)
 
 uint32_t quaddle_robot_bridge_gamepad_active_remaining_ms(void)
 {
+#if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
     uint32_t elapsed;
 
     if (s_last_gamepad_input_ms == 0) {
@@ -1490,6 +1504,9 @@ uint32_t quaddle_robot_bridge_gamepad_active_remaining_ms(void)
         return 0;
     }
     return GAMEPAD_PRIORITY_MS - elapsed;
+#else
+    return 0;
+#endif
 }
 
 #endif /* ENABLE_CHAT_BOT_ROBOT_SECOND_UART */

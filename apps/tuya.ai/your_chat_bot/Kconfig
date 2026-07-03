@@ -17,9 +17,18 @@ config ENABLE_CHAT_BOT_ROBOT_SECOND_UART
       Links your_chat_bot-only MCP tool self.robot.send_command (see robot_uart_ai_system_prompt.h).
       Does not affect other AI apps under apps/tuya.ai.
 
+config ENABLE_QUADDLE_GAMEPAD
+    bool "Quaddle gamepad connection and control"
+    depends on ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+    default n
+    help
+      Master switch for Quaddle gamepad features. When disabled, the app keeps
+      robot UART/ASR/MCP control available but does not connect BLE gamepads,
+      register quaddle_evt, or accept gamepad event control.
+
 config ENABLE_QUADDLE_BLE_HID_CENTRAL
     bool "Quaddle BLE HID central for BM769/Q34B gamepad"
-    depends on ENABLE_CHAT_BOT_ROBOT_SECOND_UART && ENABLE_BLUETOOTH
+    depends on ENABLE_QUADDLE_GAMEPAD && ENABLE_BLUETOOTH
     default n
     help
       Scan, connect, subscribe HID/vendor input reports, decode BM769/Q34B frames,

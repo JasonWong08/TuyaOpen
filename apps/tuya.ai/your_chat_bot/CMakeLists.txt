@@ -51,6 +51,12 @@ if("${CONFIG_ENABLE_CHAT_BOT_ROBOT_SECOND_UART}" STREQUAL "y")
             ${APP_PATH}/src/quaddle_robot_bridge.c)
 endif()
 
+if(("${CONFIG_ENABLE_QUADDLE_GAMEPAD}" STREQUAL "y") OR ("${CONFIG_ENABLE_QUADDLE_BLE_HID_CENTRAL}" STREQUAL "y"))
+    target_compile_definitions(${EXAMPLE_LIB}
+        PRIVATE
+            ENABLE_QUADDLE_GAMEPAD=1)
+endif()
+
 if("${CONFIG_ENABLE_QUADDLE_BLE_HID_CENTRAL}" STREQUAL "y")
     target_compile_definitions(${EXAMPLE_LIB}
         PRIVATE
