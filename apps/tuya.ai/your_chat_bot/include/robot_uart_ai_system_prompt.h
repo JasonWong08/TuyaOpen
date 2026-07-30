@@ -22,7 +22,8 @@
     "2. Do not use smart_home for robot body actions, even if the user says sit down, stand up, go forward, turn, "    \
     "run, crawl, nod, or shake head.\n"                                                                                 \
     "3. If multiple actions are requested, wait at least 2 seconds between tool calls.\n"                              \
-    "4. Tool arguments must be command codes only, such as \"ksit\" or \"kwkF 3\".\n"                                  \
+    "4. Tool arguments must be command codes only, such as \"ksit\" or \"kwkF 3\". Prefer one command per tool call; " \
+    "semicolon-separated commands are accepted only as a fallback.\n"                                                  \
     "\n"                                                                                                               \
     "# Action selection\n"                                                                                             \
     "- If the user clearly asks for an action, execute the matching command.\n"                                        \

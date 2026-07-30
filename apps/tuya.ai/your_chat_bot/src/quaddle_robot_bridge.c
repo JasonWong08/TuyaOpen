@@ -126,6 +126,8 @@ static char     s_ai_queue_cmd[AI_COMMAND_QUEUE_MAX][QUADDLE_CMD_MAX];
 static char     s_ai_queue_source[AI_COMMAND_QUEUE_MAX][12];
 static uint8_t  s_ai_queue_head;
 static uint8_t  s_ai_queue_count;
+static char     s_ai_token_line[64];
+static uint8_t  s_ai_token_line_len;
 static char     s_last_asr_cmd[QUADDLE_CMD_MAX];
 static char     s_last_asr_cmd_head[16];
 static uint32_t s_last_asr_cmd_ms;
@@ -146,6 +148,27 @@ static char ai_command_token(const char *cmd)
         cmd++;
     }
     return (cmd && cmd[0] != '\0') ? cmd[0] : '\0';
+}
+
+static void ai_token_line_reset(void)
+{
+    s_ai_token_line_len = 0;
+    s_ai_token_line[0]  = '\0';
+}
+
+static bool ai_token_line_matches_expected(void)
+{
+    char *start = s_ai_token_line;
+    char *end   = s_ai_token_line + s_ai_token_line_len;
+
+    while (start < end && (*start == ' ' || *start == '\t')) {
+        start++;
+    }
+    while (end > start && (end[-1] == ' ' || end[-1] == '\t')) {
+        end--;
+    }
+
+    return (end - start) == 1 && start[0] == s_ai_expected_token;
 }
 
 static void ai_command_head(const char *cmd, char *out, size_t out_len)
@@ -226,6 +249,7 @@ static void clear_ai_command_queue(void)
     s_ai_waiting_token       = false;
     s_ai_expected_token      = '\0';
     s_ai_token_deadline_ms   = 0;
+    ai_token_line_reset();
     s_ai_queue_head          = 0;
     s_ai_queue_count         = 0;
     s_last_asr_cmd[0]        = '\0';
@@ -1229,7 +1253,12 @@ void quaddle_robot_bridge_poll(void)
         s_ai_waiting_token     = false;
         s_ai_expected_token    = '\0';
         s_ai_token_deadline_ms = 0;
-        schedule_next          = true;
+        ai_token_line_reset();
+        s_pending_ai_cmd[0]    = '\0';
+        s_pending_ai_source[0] = '\0';
+        s_ai_queue_head        = 0;
+        s_ai_queue_count       = 0;
+        PR_WARN("robot arbitration: AI command queue cleared after token timeout");
     }
     if (!s_pending_ai_active && !s_ai_waiting_token && s_ai_queue_count > 0) {
         schedule_next = true;
@@ -1257,6 +1286,7 @@ void quaddle_robot_bridge_poll(void)
                 s_ai_expected_token    = ai_command_token(s_pending_ai_cmd);
                 s_ai_token_deadline_ms = now + AI_COMMAND_TOKEN_TIMEOUT_MS;
                 s_ai_waiting_token     = (s_ai_expected_token != '\0');
+                ai_token_line_reset();
                 PR_NOTICE("robot arbitration: AI command sent \"%s\" from %s", s_pending_ai_cmd,
                           s_pending_ai_source);
                 if (s_ai_waiting_token) {
@@ -1465,23 +1495,41 @@ OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *s
 
 void quaddle_robot_bridge_handle_robot_token(char token)
 {
-    if (token == '\0' || token == '\r' || token == '\n' || token == ' ' || token == '\t') {
+    if (token == '\0') {
         return;
     }
 
     if (!s_ai_waiting_token) {
+        ai_token_line_reset();
         return;
     }
 
-    if (token != s_ai_expected_token) {
-        PR_DEBUG("robot arbitration: ignored robot token '%c', waiting '%c'", token, s_ai_expected_token);
+    if (token == '\r' || token == '\n') {
+        if (s_ai_token_line_len == 0) {
+            return;
+        }
+        s_ai_token_line[s_ai_token_line_len] = '\0';
+        if (!ai_token_line_matches_expected()) {
+            PR_DEBUG("robot arbitration: ignored robot token line \"%s\", waiting '%c'", s_ai_token_line,
+                     s_ai_expected_token);
+            ai_token_line_reset();
+            return;
+        }
+    } else {
+        if (s_ai_token_line_len + 1 >= sizeof(s_ai_token_line)) {
+            PR_WARN("robot arbitration: robot token line overflow, waiting '%c'", s_ai_expected_token);
+            ai_token_line_reset();
+            return;
+        }
+        s_ai_token_line[s_ai_token_line_len++] = token;
         return;
     }
 
-    PR_NOTICE("robot arbitration: robot token '%c' completed \"%s\"", token, s_pending_ai_cmd);
+    PR_NOTICE("robot arbitration: robot token '%c' completed \"%s\"", s_ai_expected_token, s_pending_ai_cmd);
     s_ai_waiting_token     = false;
     s_ai_expected_token    = '\0';
     s_ai_token_deadline_ms = 0;
+    ai_token_line_reset();
     s_pending_ai_cmd[0]    = '\0';
     s_pending_ai_source[0] = '\0';
 }

@@ -63,11 +63,24 @@ tuya_iot_client_t ai_client;
 /* Tuya license information (uuid authkey) */
 tuya_iot_license_t license;
 
-static const cli_cmd_t sg_kv_cli_cmd[] = {
+static void cli_query_id(int argc, char *argv[]);
+static void cli_query_wifi(int argc, char *argv[]);
+
+static const cli_cmd_t sg_app_cli_cmd[] = {
     {
         .name = "kv",
         .help = "kv set/get/del/list",
         .func = tal_kv_cmd,
+    },
+    {
+        .name = "?id",
+        .help = "?id  print masked UUID and AUTHKEY",
+        .func = cli_query_id,
+    },
+    {
+        .name = "?w",
+        .help = "?w  print masked WiFi SSID and password",
+        .func = cli_query_wifi,
     },
 };
 
@@ -401,6 +414,101 @@ static void __printf_heap_tm_cb(TIMER_ID timer_id, void *arg)
 #endif
 }
 
+/* Mask middle chars. UUID is typically "uuid"+16hex (20); authkey is 32 alnum.
+ * Keep enough head/tail to tell licenses apart, hide enough to block reconstruction. */
+static void __mask_secret(const char *src, char *dst, size_t dst_size, size_t keep_head, size_t keep_tail)
+{
+    size_t len;
+    size_t i;
+
+    if (!dst || dst_size == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        snprintf(dst, dst_size, "(null)");
+        return;
+    }
+
+    len = strlen(src);
+    if (len + 1 > dst_size) {
+        len = dst_size - 1;
+    }
+
+    if (keep_head + keep_tail >= len) {
+        for (i = 0; i < len; i++) {
+            dst[i] = '*';
+        }
+        dst[len] = '\0';
+        return;
+    }
+
+    memcpy(dst, src, keep_head);
+    for (i = keep_head; i < len - keep_tail; i++) {
+        dst[i] = '*';
+    }
+    memcpy(dst + len - keep_tail, src + len - keep_tail, keep_tail);
+    dst[len] = '\0';
+}
+
+static void cli_query_id(int argc, char *argv[])
+{
+    tuya_iot_license_t lic = {0};
+    char uuid_mask[64] = {0};
+    char auth_mask[64] = {0};
+    char line[160];
+
+    (void)argc;
+    (void)argv;
+
+    if (OPRT_OK != tuya_authorize_read(&lic)) {
+        lic.uuid = license.uuid ? license.uuid : TUYA_OPENSDK_UUID;
+        lic.authkey = license.authkey ? license.authkey : TUYA_OPENSDK_AUTHKEY;
+    }
+
+    __mask_secret(lic.uuid, uuid_mask, sizeof(uuid_mask), 8, 4);
+    __mask_secret(lic.authkey, auth_mask, sizeof(auth_mask), 4, 4);
+    snprintf(line, sizeof(line), "UUID: %s", uuid_mask);
+    tal_cli_echo(line);
+    snprintf(line, sizeof(line), "AUTHKEY: %s", auth_mask);
+    tal_cli_echo(line);
+}
+
+static void cli_query_wifi(int argc, char *argv[])
+{
+    char ssid_mask[64] = {0};
+    char pswd_mask[64] = {0};
+    char line[160];
+
+    (void)argc;
+    (void)argv;
+
+#if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
+    {
+        netconn_wifi_info_t wifi_info = {0};
+
+        if (OPRT_OK != netmgr_conn_get(NETCONN_WIFI, NETCONN_CMD_SSID_PSWD, &wifi_info)) {
+            tal_cli_echo("WiFi: unavailable");
+            return;
+        }
+        if (wifi_info.ssid[0] == '\0') {
+            tal_cli_echo("WiFi: not configured");
+            return;
+        }
+
+        /* SSID: keep 2+2; password: keep 2+2 (short secrets become all '*'). */
+        __mask_secret(wifi_info.ssid, ssid_mask, sizeof(ssid_mask), 2, 2);
+        __mask_secret(wifi_info.pswd, pswd_mask, sizeof(pswd_mask), 2, 2);
+        snprintf(line, sizeof(line), "WiFi SSID: %s", ssid_mask);
+        tal_cli_echo(line);
+        snprintf(line, sizeof(line), "WiFi PSWD: %s", pswd_mask);
+        tal_cli_echo(line);
+    }
+#else
+    tal_cli_echo("WiFi: not supported on this build");
+#endif
+}
+
 void user_main(void)
 {
     int ret = OPRT_OK;
@@ -443,7 +551,7 @@ void user_main(void)
     tal_workq_init();
     tal_time_service_init();
     tal_cli_init();
-    tal_cli_cmd_register(sg_kv_cli_cmd, sizeof(sg_kv_cli_cmd) / sizeof(sg_kv_cli_cmd[0]));
+    tal_cli_cmd_register(sg_app_cli_cmd, sizeof(sg_app_cli_cmd) / sizeof(sg_app_cli_cmd[0]));
     tuya_authorize_init();
 
     reset_netconfig_start();
@@ -453,6 +561,16 @@ void user_main(void)
         license.authkey = TUYA_OPENSDK_AUTHKEY;
         PR_WARN("Replace the TUYA_OPENSDK_UUID and TUYA_OPENSDK_AUTHKEY contents, otherwise the demo cannot work.\n \
                 Visit https://platform.tuya.com/purchase/index?type=6 to get the open-sdk uuid and authkey.");
+    }
+    {
+        char uuid_mask[64] = {0};
+        char auth_mask[64] = {0};
+        /* UUID: "uuid"+16hex → keep "uuidXXXX" + last 4hex, hide middle 8hex. */
+        __mask_secret(license.uuid, uuid_mask, sizeof(uuid_mask), 8, 4);
+        /* AuthKey: 32 alnum → keep 4+4, hide middle 24. */
+        __mask_secret(license.authkey, auth_mask, sizeof(auth_mask), 4, 4);
+        PR_NOTICE("TUYA_OPENSDK_UUID:    %s", uuid_mask);
+        PR_NOTICE("TUYA_OPENSDK_AUTHKEY: %s", auth_mask);
     }
 
     /* Initialize Tuya device configuration */

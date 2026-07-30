@@ -21,12 +21,44 @@
 #include "second_uart.h"
 #include "quaddle_robot_bridge.h"
 
+static void __robot_trim_command(char **start, char **end)
+{
+    while (*start < *end && (**start == ' ' || **start == '\t' || **start == '\r' || **start == '\n')) {
+        (*start)++;
+    }
+    while (*end > *start &&
+           ((*end)[-1] == ' ' || (*end)[-1] == '\t' || (*end)[-1] == '\r' || (*end)[-1] == '\n')) {
+        (*end)--;
+    }
+}
+
+static bool __robot_normalize_command(char *cmd, size_t cmd_len)
+{
+    size_t len;
+
+    if (!cmd || cmd_len == 0) {
+        return false;
+    }
+    if (strncmp(cmd, "kbk", 3) == 0 && (cmd[3] == '\0' || cmd[3] == ' ' || cmd[3] == '\t')) {
+        len = strlen(cmd);
+        if (len + 1 >= cmd_len) {
+            return false;
+        }
+        memmove(cmd + 4, cmd + 3, len - 2);
+        cmd[3] = 'F';
+    }
+    return true;
+}
+
 static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, MCP_RETURN_VALUE_T *ret_val,
                                         void *user_data)
 {
     const char *text       = NULL;
-    char normalized_text[64];
+    char command_text[64];
     OPERATE_RET mcp_str_rt = OPRT_OK;
+    OPERATE_RET uart_rt    = OPRT_OK;
+    char       *cursor;
+    unsigned    queued_count = 0;
 
     (void)user_data;
 
@@ -47,18 +79,62 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
     }
 
-    if (strncmp(text, "kbk", 3) == 0 && (text[3] == '\0' || text[3] == ' ' || text[3] == '\t')) {
-        snprintf(normalized_text, sizeof(normalized_text), "kbkF%s", text + 3);
-        text = normalized_text;
+    if (strlen(text) >= sizeof(command_text)) {
+        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "command too long");
+        return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_INVALID_PARM;
+    }
+    snprintf(command_text, sizeof(command_text), "%s", text);
+
+    cursor = command_text;
+    while (cursor && *cursor != '\0') {
+        char *segment = cursor;
+        char *end     = strchr(cursor, ';');
+        char  cmd[64];
+        size_t cmd_len;
+
+        if (end) {
+            cursor = end + 1;
+        } else {
+            end = cursor + strlen(cursor);
+            cursor = NULL;
+        }
+
+        __robot_trim_command(&segment, &end);
+        if (segment == end) {
+            continue;
+        }
+
+        cmd_len = (size_t)(end - segment);
+        if (cmd_len >= sizeof(cmd)) {
+            PR_WARN("MCP robot send_command segment too long, drop \"%s\"", text);
+            uart_rt = OPRT_INVALID_PARM;
+            break;
+        }
+        memcpy(cmd, segment, cmd_len);
+        cmd[cmd_len] = '\0';
+        if (!__robot_normalize_command(cmd, sizeof(cmd))) {
+            PR_WARN("MCP robot send_command normalize failed, drop \"%s\"", text);
+            uart_rt = OPRT_INVALID_PARM;
+            break;
+        }
+
+        uart_rt = quaddle_robot_bridge_queue_ai_command(cmd, "MCP");
+        if (uart_rt != OPRT_OK) {
+            break;
+        }
+        queued_count++;
+        PR_NOTICE("MCP robot send_command queued segment %u \"%s\"", queued_count, cmd);
     }
 
-    OPERATE_RET uart_rt = quaddle_robot_bridge_queue_ai_command(text, "MCP");
+    if (queued_count == 0 && uart_rt == OPRT_OK) {
+        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "empty command");
+        return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
+    }
+
     if (uart_rt != OPRT_OK) {
         mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "uart command queue failed");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : uart_rt;
     }
-
-    PR_NOTICE("MCP robot send_command queued \"%s\"", text);
 
     mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "ok");
     return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
@@ -69,7 +145,8 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
     return AI_MCP_TOOL_ADD(
         "self.robot.send_command",
         "Send physical robot dog motion commands over UART1; this is not for LCD expressions.\n"
-        "Arguments must contain command codes only, never natural-language descriptions.\n"
+        "Arguments must contain command codes only, never natural-language descriptions. Prefer one command per tool call; "
+        "semicolon-separated commands are accepted only as a fallback.\n"
         "Do not mention internal scheduling, queueing, arbitration, or gamepad priority in user-facing replies.\n"
         "Use this tool only when the user explicitly asks for a physical robot body motion. Do not call it for normal "
         "chat, self-introductions, ability descriptions, or question answering. Do not add default gestures or motions. "
