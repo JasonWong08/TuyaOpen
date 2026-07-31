@@ -9,7 +9,7 @@
 | 内容 | 仓库 | 分支/提交 |
 | --- | --- | --- |
 | TuyaOpen 主工程及应用代码 | `https://github.com/JasonWong08/TuyaOpen.git` | `cursor/add-ai-board` |
-| ESP32 平台、唤醒词模型及底层驱动 | `https://github.com/JasonWong08/TuyaOpen-esp32.git` | `72c3414138af1e73265783df88b72805657beb38` |
+| ESP32 平台、唤醒词模型及底层驱动 | `https://github.com/JasonWong08/TuyaOpen-esp32.git` | `639777e5c8f2e3a5a22b9453b55de14f07b67738` |
 
 主工程的 `platform/platform_config.yaml` 已固定 ESP32 平台仓库、分支和提交。正常执行构建或平台更新时，工具会自动下载正确的平台代码。
 
@@ -133,7 +133,7 @@ tos.py build
 
 ```text
 multinet model in flash: mn5q8_cn
-Custom wake ready: '嗨 Quaddle' (hai kua dou)
+Custom wake ready: 'Hi, Quaddle' (hai kua dou)
 quaddle ble hid: pre-network gamepad discovery enabled
 ```
 
@@ -142,7 +142,7 @@ quaddle ble hid: pre-network gamepad discovery enabled
 1. 配网前短按手柄 Home 键，确认手柄可以连接并控制设备。
 2. 短按主板 Boot 键完成手机配网。
 3. 联网后确认手柄可继续连接。
-4. 使用“嗨 Quaddle”（发音“嗨夸豆”）唤醒并进行多轮对话。
+4. 使用“Hi, Quaddle”（发音“嗨夸豆”）唤醒并进行多轮对话。
 5. 结束对话进入 IDLE 后，再验证手柄扫描与重连。
 
 ## 常见问题
