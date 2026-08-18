@@ -1281,7 +1281,8 @@ void quaddle_robot_bridge_poll(void)
             s_pending_ai_active = false;
             s_pending_ai_cmd[0] = '\0';
         } else {
-            OPERATE_RET rt = second_uart_send_string(s_pending_ai_cmd);
+            /* ASR/MCP dedupe is handled when queued; each accepted AI command must reach the robot. */
+            OPERATE_RET rt = second_uart_send_string_force(s_pending_ai_cmd);
             if (rt == OPRT_OK) {
                 s_ai_expected_token    = ai_command_token(s_pending_ai_cmd);
                 s_ai_token_deadline_ms = now + AI_COMMAND_TOKEN_TIMEOUT_MS;

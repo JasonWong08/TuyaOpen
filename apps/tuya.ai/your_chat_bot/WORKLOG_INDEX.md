@@ -7,6 +7,7 @@
 1. 先读本文档，了解当前项目的关键背景和记录索引。
 2. 如果任务涉及机器狗控制、手柄、语音或 MCP，优先读：
    - `2026-06-30_robot_control_fixes_summary.md`
+   - `2026-08-18_ai_uart_duplicate_fix_summary.md`
 3. 如果任务涉及 BLE 手柄连接、配网共存或启动重连，按时间顺序读：
    - `2026-06-02_quaddle_gamepad_integration_summary.md`
    - `2026-06-03_quaddle_ble_hid_debug_worklog.md`
@@ -60,6 +61,15 @@ git diff --check
 
 这些记录覆盖了从 Arduino 手柄项目移植到 TuyaOpen、USB CLI 调试、BLE HID 报文解析、Notify/Poll 接收、Tuya BLE 配网共存、BOOT 键触发配网、配网后恢复手柄连接等工作。
 
+### 2026-08-18 AI UART 重复命令误判修复
+
+详见 `2026-08-18_ai_uart_duplicate_fix_summary.md`。
+
+- 修复离散 AI 命令被 UART 上一包去重逻辑静默跳过的问题。
+- AI 仲裁发送改用 `second_uart_send_string_force()`。
+- 保留 ASR/MCP 5 秒防重逻辑，避免同一语音意图执行两次。
+- ESP32-S3 `AI_BOARD` 完整构建验证通过。
+
 ## 记录索引
 
 | 日期 | 文件 | 主题 |
@@ -72,6 +82,7 @@ git diff --check
 | 2026-06-08 | `2026-06-08_quaddle_ble_boot_netcfg_reconnect_worklog.md` | 手柄优先连接、BOOT 触发配网、配网后恢复手柄 |
 | 2026-06-30 | `2026-06-30_robot_control_fixes_summary.md` | 手柄映射同步、重复按键修复、`kbkF`、ASR/MCP 去重 |
 | 2026-07-03 | `2026-07-03_quaddle_gamepad_switch_summary.md` | 新增 Quaddle 手柄连接与操控总开关 |
+| 2026-08-18 | `2026-08-18_ai_uart_duplicate_fix_summary.md` | 修复 AI 重复动作被 UART 去重后误报发送成功 |
 
 ## 给后续 Codex/Cursor 的约定
 
