@@ -536,6 +536,9 @@ void user_main(void)
         .seed = "vmlkasdh93dlvlcy",
         .key  = "dflfuap134ddlduq",
     });
+#if defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) && (YOUR_CHAT_BOT_FIXED_FREE_MODE == 1)
+    PR_NOTICE("AI chat mode fixed: 3 (FREE); persisted chat_mode is ignored");
+#else
     uint8_t *value = NULL;
     size_t len = 0;
     if (tal_kv_get("ty_ai_chat_par", &value, &len) == OPRT_OK) {
@@ -544,6 +547,7 @@ void user_main(void)
     } else {
         PR_NOTICE("ty_ai_chat_par not found");
     }
+#endif
 
     tal_sw_timer_init();
     tal_sw_timer_create(__printf_heap_tm_cb, NULL, &sg_printf_heap_tm);

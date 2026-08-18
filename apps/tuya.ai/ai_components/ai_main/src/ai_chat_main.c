@@ -78,7 +78,12 @@ static OPERATE_RET __ai_chat_save_config(uint32_t mode, int volume)
     char buf[64] = {0};
 
     memset(buf, 0, sizeof(buf));
+#if defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) && (YOUR_CHAT_BOT_FIXED_FREE_MODE == 1)
+    /* The chat mode is a product policy, not a runtime preference. */
+    snprintf(buf, sizeof(buf), "{\"volume\": %d}", volume);
+#else
     snprintf(buf, sizeof(buf), "{\"volume\": %d, \"chat_mode\":%d}", volume, (int)mode);
+#endif
     TUYA_CALL_ERR_RETURN(tal_kv_set(TUYA_AI_CHAT_PAR, (const uint8_t *)buf, strlen(buf)));
 
     PR_DEBUG("save chat mode config: %s", buf);
@@ -96,7 +101,7 @@ static OPERATE_RET __ai_chat_load_config(uint32_t *mode, int *volume)
     OPERATE_RET rt = OPRT_OK;
     uint8_t *value = NULL;
     size_t len = 0;
-    uint32_t read_mode = 0;
+    uint32_t read_mode = sg_ai_default_mode;
     int read_vol = sg_ai_default_vol;
 
     if(NULL == mode || NULL == volume) {
@@ -120,10 +125,14 @@ static OPERATE_RET __ai_chat_load_config(uint32_t *mode, int *volume)
     }
 
     /* Read trigger mode */
+#if defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) && (YOUR_CHAT_BOT_FIXED_FREE_MODE == 1)
+    read_mode = AI_CHAT_MODE_FREE;
+#else
     cJSON *chat_mode = cJSON_GetObjectItem(root, "chat_mode");
     if (chat_mode) {
         read_mode = (uint32_t)chat_mode->valueint;
     }
+#endif
 
     cJSON_Delete(root);
 
@@ -258,6 +267,7 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
 {
     PR_DEBUG("ai chat button event: %d", event);
 
+#if !defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) || (YOUR_CHAT_BOT_FIXED_FREE_MODE != 1)
     if(TDL_BUTTON_PRESS_DOUBLE_CLICK == event) {
         #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         ai_audio_player_stop(AI_AUDIO_PLAYER_ALL);
@@ -283,6 +293,7 @@ static void __ai_button_function_cb(char *name, TDL_BUTTON_TOUCH_EVENT_E event, 
 
         return;
     }
+#endif
 
     ai_mode_handle_key(event, arg);
 }
@@ -307,7 +318,11 @@ static OPERATE_RET __ai_chat_mode_open_button(void)
     tdl_button_event_register(sg_button_hdl, TDL_BUTTON_PRESS_DOWN, __ai_button_function_cb);
     tdl_button_event_register(sg_button_hdl, TDL_BUTTON_PRESS_UP, __ai_button_function_cb);
     tdl_button_event_register(sg_button_hdl, TDL_BUTTON_PRESS_SINGLE_CLICK, __ai_button_function_cb);
+#if !defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) || (YOUR_CHAT_BOT_FIXED_FREE_MODE != 1)
     tdl_button_event_register(sg_button_hdl, TDL_BUTTON_PRESS_DOUBLE_CLICK, __ai_button_function_cb);
+#else
+    /* your_chat_bot fixes chat mode to FREE (3), so double-click mode switching is intentionally disabled. */
+#endif
     tdl_button_event_register(sg_button_hdl, TDL_BUTTON_LONG_PRESS_START, __ai_button_function_cb);
 
     return rt;
@@ -380,6 +395,10 @@ OPERATE_RET ai_chat_init(AI_CHAT_MODE_CFG_T *cfg)
 
     sg_ai_default_mode = cfg->default_mode;
     sg_ai_default_vol  = cfg->default_vol;
+
+#if defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) && (YOUR_CHAT_BOT_FIXED_FREE_MODE == 1)
+    sg_ai_default_mode = AI_CHAT_MODE_FREE;
+#endif
 
 #if defined(ENABLE_COMP_AI_DISPLAY) && (ENABLE_COMP_AI_DISPLAY == 1)
     TUYA_CALL_ERR_RETURN(ai_chat_ui_init());

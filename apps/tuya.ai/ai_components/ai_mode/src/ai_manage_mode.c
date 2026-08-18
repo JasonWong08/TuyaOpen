@@ -270,6 +270,13 @@ OPERATE_RET ai_mode_switch(AI_CHAT_MODE_E mode)
     OPERATE_RET rt = OPRT_OK;
     AI_MODE_CTRL_T *mode_ctrl = NULL;
 
+#if defined(YOUR_CHAT_BOT_FIXED_FREE_MODE) && (YOUR_CHAT_BOT_FIXED_FREE_MODE == 1)
+    if (mode != AI_CHAT_MODE_FREE) {
+        PR_WARN("chat mode is fixed to free mode (3), reject mode %d", mode);
+        return OPRT_NOT_SUPPORTED;
+    }
+#endif
+
     if(sg_curr_mode_ctrl && sg_curr_mode_ctrl->mode == mode) {
         PR_DEBUG("chat mode %d is current mode", mode);
         return OPRT_OK;

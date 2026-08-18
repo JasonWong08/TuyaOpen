@@ -29,6 +29,13 @@ set(APP_INC ${APP_PATH}/include)
 ########################################
 add_library(${EXAMPLE_LIB})
 
+# This product always runs in wake-word free-chat mode.  Keep the policy
+# application-specific even though the AI components are compiled into the
+# same target.
+target_compile_definitions(${EXAMPLE_LIB}
+    PRIVATE
+        YOUR_CHAT_BOT_FIXED_FREE_MODE=1)
+
 target_sources(${EXAMPLE_LIB}
     PRIVATE
         ${APP_SRCS}
