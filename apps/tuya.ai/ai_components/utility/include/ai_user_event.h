@@ -119,6 +119,12 @@ void ai_user_event_notify(AI_USER_EVT_TYPE_E type, void *data);
  */
 void ai_app_on_asr_result(const char *text);
 
+/**
+ * Optional hook when user-speech recording actually starts (after tuya_ai_input_start).
+ * Apps such as your_chat_bot may override with a strong symbol for local UART control.
+ */
+void ai_app_on_record_start(void);
+
 #ifdef __cplusplus
 }
 #endif

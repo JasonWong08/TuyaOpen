@@ -18,6 +18,57 @@
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 
+#define ROBOT_UART_CMD_LISTEN   "vetL"
+#define ROBOT_UART_CMD_TALK     "velT"
+#define ROBOT_UART_CMD_TALK_END "vet"
+
+static bool s_expect_vet = false;
+
+static void __robot_uart_voice_send_now(const char *cmd)
+{
+    OPERATE_RET rt;
+
+    rt = second_uart_send_string_force(cmd);
+    if (rt != OPRT_OK) {
+        PR_ERR("robot voice: send \"%s\" failed %d", cmd, rt);
+        return;
+    }
+
+    PR_NOTICE("robot voice: sent UART \"%s\"", cmd);
+}
+
+void ai_app_on_record_start(void)
+{
+    /* vetL already ends talk on the MCU. Ignore a later PLAY_END so it
+     * does not send a redundant vet after listen animation has started. */
+    s_expect_vet = false;
+    __robot_uart_voice_send_now(ROBOT_UART_CMD_LISTEN);
+}
+
+void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
+{
+    if (!event) {
+        return;
+    }
+
+    switch (event->type) {
+    case AI_USER_EVT_TTS_PRE:
+        s_expect_vet = true;
+        __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK);
+        break;
+    case AI_USER_EVT_TTS_ABORT:
+    case AI_USER_EVT_PLAY_END:
+        if (!s_expect_vet) {
+            break;
+        }
+        s_expect_vet = false;
+        __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK_END);
+        break;
+    default:
+        break;
+    }
+}
+
 typedef struct {
     const char *phrase;
     const char *cmd;
@@ -378,7 +429,7 @@ OPERATE_RET robot_uart_voice_init(void)
 
     tal_cli_cmd_register(s_robot_uart_cli, 1);
 
-    PR_NOTICE("robot voice: ASR->UART1 enabled; CLI: robot_uart [cmd]");
+    PR_NOTICE("robot voice: ASR->UART1 enabled; record/talk cues vetL, velT, vet; CLI: robot_uart [cmd]");
     return OPRT_OK;
 }
 

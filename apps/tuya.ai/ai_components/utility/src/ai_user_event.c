@@ -57,3 +57,7 @@ void ai_user_event_notify(AI_USER_EVT_TYPE_E type,  void *data)
         sg_event_notify_cb(&event);
     }
 }
+
+__attribute__((weak)) void ai_app_on_record_start(void)
+{
+}

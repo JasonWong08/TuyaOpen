@@ -272,6 +272,7 @@ static OPERATE_RET __ai_mode_wakeup_vad_change(AI_AUDIO_VAD_STATE_E vad_flag)
     if (AI_AUDIO_VAD_START == vad_flag) {
         tuya_ai_agent_set_scode(AI_AGENT_SCODE_DEFAULT);
         tuya_ai_input_start(false);
+        ai_app_on_record_start();
     } else {
         tuya_ai_input_stop();
     }

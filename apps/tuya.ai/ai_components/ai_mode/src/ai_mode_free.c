@@ -136,6 +136,7 @@ static void __ai_mode_free_start_input(void)
     tuya_ai_agent_set_scode(AI_AGENT_SCODE_DEFAULT);
     tuya_ai_input_start(false);
     ai_audio_input_output_set(true);
+    ai_app_on_record_start();
 }
 
 static void __ai_mode_enter_idle(void)

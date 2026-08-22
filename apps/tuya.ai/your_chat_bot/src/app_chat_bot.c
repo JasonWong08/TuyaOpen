@@ -29,15 +29,26 @@ static bool __ai_state_blocks_gamepad_scan(AI_MODE_STATE_E state)
     return state == AI_MODE_STATE_LISTEN || state == AI_MODE_STATE_UPLOAD || state == AI_MODE_STATE_THINK ||
            state == AI_MODE_STATE_SPEAK;
 }
+#endif
 
+#if (defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART) || \
+    (defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL)
 static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
 {
-    if (!event || event->type != AI_USER_EVT_MODE_STATE_UPDATE) {
+    if (!event) {
         return;
     }
 
-    AI_MODE_STATE_E state = (AI_MODE_STATE_E)event->data;
-    quaddle_ble_hid_central_set_chat_busy(__ai_state_blocks_gamepad_scan(state));
+#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+    if (event->type == AI_USER_EVT_MODE_STATE_UPDATE) {
+        AI_MODE_STATE_E state = (AI_MODE_STATE_E)event->data;
+        quaddle_ble_hid_central_set_chat_busy(__ai_state_blocks_gamepad_scan(state));
+    }
+#endif
+
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+    robot_uart_voice_on_event(event);
+#endif
 }
 #endif
 
@@ -188,7 +199,8 @@ OPERATE_RET app_chat_bot_init(void)
     AI_CHAT_MODE_CFG_T ai_chat_cfg = {
         .default_mode = AI_CHAT_MODE_FREE,
         .default_vol  = 70,
-#if defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL
+#if (defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART) || \
+    (defined(ENABLE_QUADDLE_BLE_HID_CENTRAL) && ENABLE_QUADDLE_BLE_HID_CENTRAL)
         .evt_cb       = __ai_chat_handle_event,
 #else
         .evt_cb       = NULL,
