@@ -14,6 +14,7 @@
 - 英语对话使用英语告别语，中文对话使用中文告别语。
 - 修复云端 NLG 文本中残留的字面量 `\u0020`。
 - 避免云端 Agent 在同一次退出请求中生成两遍告别语。
+- 用户主动说中文或英文告别语时，复用云端自然告别回复，不再追加固定告别语。
 
 ## 2. 最终状态流程
 
@@ -244,6 +245,82 @@ Custom wake ... enabled
 
 注意：云端 `timeIndex` 在同一组普通 NLG 分片内也可能回退，例如 `450 -> 4750 -> 3750`。因此去重不能只根据时间回退判断，代码还同时要求处于告别流程并重新匹配告别语开头，以避免误伤正常回答。
 
+### 3.9 主动说“再见”后又追加固定告别语
+
+现象：用户主动说“再见”后，云端已经自然回复：
+
+```text
+拜拜啦！下次有需要随时叫我哦~
+```
+
+自然回复播放结束后，设备又调用固定告别流程，再播放：
+
+```text
+好的，如果你没有什么想聊的话题或者要求，我们下次再聊。
+```
+
+问题日志的关键过程：
+
+```text
+text -> ASR result: 再见。
+mode free request exit after current response
+# 云端自然告别回复并播放完成
+ai player FG eof
+mode free announce exit before idle
+# 再次请求并播放固定告别语
+```
+
+根因：
+
+- 退出短语识别后，`ai_mode_free_request_exit()` 将 `sg_exit_pending` 设为真，含义是等待当前云端回复完成后退出。
+- 旧的 `PLAY_END` 分支只把 `sg_goodbye_pending` 当作可以直接完成退出的状态。
+- 当自然告别播放结束时，`sg_exit_pending` 仍为真，代码进入 `__ai_mode_free_begin_exit()`，错误地把“主动告别”继续当成“无人说话退出”，从而又发送一次固定告别提示词。
+
+最终修复将退出场景明确分开：
+
+- 10 秒无人说话、连续 3 次空 ASR/识别错误：用户尚未收到自然告别，继续请求固定中英文告别语。
+- 用户主动说中文或英文退出短语：允许云端生成一次自然告别；该 TTS 播放完成后直接执行 `ved -> IDLE -> KWS`，不再请求固定告别语。
+- 新增 `sg_exit_reply_started`，只有在显式退出后真正收到 `AI_USER_EVT_TTS_START`，才把后续 `PLAY_END` 视为自然告别完成，避免旧播放器的迟到事件误触发退出。
+- 显式退出的 TTS 如果中止或报错，也直接完成退出，不再追加固定告别。
+- `__ai_mode_free_complete_exit()` 的幂等入口同时接受 `sg_goodbye_pending` 和 `sg_exit_pending`。
+
+中英文使用完全相同的状态逻辑，不依赖机器人回复文本的具体语言。英文退出短语包括原有的：
+
+```text
+goodbye
+bye bye
+bye
+end conversation
+exit conversation
+stop conversation
+end chat
+exit chat
+```
+
+并补充常见表达：
+
+```text
+see you
+talk to you later
+that's all
+that is all
+```
+
+最终预期流程：
+
+```text
+用户：“再见”或 “Goodbye”
+-> mode free request exit after current response
+-> mode free explicit exit reply started
+-> 云端自然告别回复完整播放
+-> ai player FG eof
+-> ved
+-> IDLE
+-> KWS enabled
+```
+
+该流程中不应再出现 `mode free announce exit before idle`，也不应再播放预设的中文或英文固定告别语。最终固件已完成中英文相关实机测试，用户确认未发现问题。
+
 ## 4. 文件修改清单
 
 ### `apps/tuya.ai/ai_components/ai_mode/src/ai_mode_free.c`
@@ -257,6 +334,8 @@ Custom wake ... enabled
 - 增加告别 NLG 二阶段去重。
 - 重复阶段命中后等待已缓存音频自然播放完成。
 - 为退出完成流程增加幂等保护，消除双 `ved` 竞态。
+- 区分主动退出的自然回复与无人说话触发的固定告别。
+- 使用 `sg_exit_reply_started` 将显式退出与对应 TTS 的真实开始/结束事件关联。
 - 播放结束、错误、超时等路径统一完成 IDLE/KWS 收尾。
 
 ### `apps/tuya.ai/ai_components/ai_skills/src/ai_skill.c`
@@ -290,6 +369,7 @@ Custom wake ... enabled
 - Free Talk 完成退出时发送 `ved`。
 - 清理 `s_expect_vet`，避免退出后的播放结束事件发送多余 `vet`。
 - ASR 命中退出短语时调用 Free Talk 退出请求。
+- 补充 `see you`、`talk to you later`、`that's all` 和 `that is all` 等英文退出表达。
 
 `apps/tuya.ai/your_chat_bot/include/tuya_config.h` 中可能因构建工具自动选择有效凭据而出现注释位置变化；这不是本次功能逻辑修改，本文不记录或展示任何设备凭据。
 
@@ -355,6 +435,8 @@ Error: clang-format is not installed or not in PATH
 - 退出后正常进入 IDLE。
 - KWS 正常恢复。
 
+主动告别重复问题修复后也已完成实机测试：中文“再见”和英文退出短语场景中，机器人只播放云端自然告别，不再追加预设固定告别语；自然回复结束后只发送一次 `ved`，并正常进入 IDLE、恢复 KWS。用户确认测试完成且未发现问题。
+
 ## 7. 已知非阻塞观察项
 
 ### 音频输入偶发拥塞
@@ -388,4 +470,6 @@ not found emoji: U+1F91D return NEUTRAL as default
 - 检查原始 NLG 包含 `\\u0020` 时，应用层文本不再显示字面量 `\u0020`。
 - 动作命令存在动作前/动作后回复时，正常回复不得被告别去重逻辑误杀。
 - 云端返回两阶段重复告别时：第一遍必须完整播放、第二遍必须被抑制、`ved` 只能发送一次。
+- 中文主动说“再见/拜拜”：自然告别后不得追加固定中文告别语。
+- 英文主动说 `Goodbye/Bye/See you`：自然告别后不得追加固定英文告别语。
 - 退出后再次说话不应直接唤醒，必须使用配置的 KWS 唤醒词。

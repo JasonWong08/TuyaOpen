@@ -343,6 +343,10 @@ static bool __robot_voice_is_exit_phrase(const char *asr)
         "goodbye",
         "bye bye",
         "bye",
+        "see you",
+        "talk to you later",
+        "that's all",
+        "that is all",
     };
     size_t i;
 

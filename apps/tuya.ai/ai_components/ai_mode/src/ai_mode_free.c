@@ -63,6 +63,7 @@ static AI_MODE_STATE_E sg_mode_cur_state = AI_MODE_STATE_INVALID;
 static bool            sg_is_wakeup = false;
 static bool            sg_pending_vad_start = false;
 static bool            sg_exit_pending = false;
+static bool            sg_exit_reply_started = false;
 static bool            sg_goodbye_pending = false;
 static bool            sg_goodbye_duplicate_suppressed = false;
 static bool            sg_goodbye_nlg_time_valid = false;
@@ -147,7 +148,7 @@ static void __ai_mode_free_complete_exit(void)
 {
     bool duplicate_suppressed;
 
-    if (!sg_goodbye_pending) {
+    if (!sg_goodbye_pending && !sg_exit_pending) {
         PR_DEBUG("mode free exit already completed");
         return;
     }
@@ -167,6 +168,7 @@ static void __ai_mode_free_complete_exit(void)
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
+    sg_exit_reply_started = false;
     sg_goodbye_nlg_time_valid = false;
     sg_goodbye_nlg_last_timeindex = 0;
     sg_empty_asr_count = 0;
@@ -193,6 +195,7 @@ static void __ai_mode_free_begin_exit(void)
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
+    sg_exit_reply_started = false;
     sg_goodbye_pending = true;
     sg_goodbye_duplicate_suppressed = false;
     sg_goodbye_nlg_time_valid = false;
@@ -276,6 +279,7 @@ static void __ai_mode_kws_wakeup(TKL_KWS_WAKEUP_WORD_E wakeup_word)
     sg_is_wakeup = true;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
+    sg_exit_reply_started = false;
     sg_goodbye_pending = false;
     sg_empty_asr_count = 0;
 }
@@ -339,6 +343,7 @@ static void __ai_mode_enter_idle(void)
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
+    sg_exit_reply_started = false;
     sg_goodbye_pending = false;
     sg_empty_asr_count = 0;
 
@@ -580,6 +585,13 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
             MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_SPEAK);
         }
         break;
+        case AI_USER_EVT_TTS_START: {
+            if (sg_exit_pending && !sg_goodbye_pending) {
+                sg_exit_reply_started = true;
+                PR_NOTICE("mode free explicit exit reply started");
+            }
+        }
+        break;
         case AI_USER_EVT_TEXT_STREAM_START:
         case AI_USER_EVT_TEXT_STREAM_DATA: {
             __ai_mode_free_suppress_duplicate_goodbye((const AI_NOTIFY_TEXT_T *)event->data);
@@ -591,15 +603,19 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
         break;
         case AI_USER_EVT_TTS_ABORT:
         case AI_USER_EVT_TTS_ERROR: {
-            if (sg_goodbye_pending) {
+            if (sg_goodbye_pending || sg_exit_pending) {
                 __ai_mode_free_complete_exit();
             }
         }
         break;
     case AI_USER_EVT_PLAY_CTL_END:
     case AI_USER_EVT_PLAY_END:{
-            if (sg_goodbye_pending) {
+            if (sg_goodbye_pending || (sg_exit_pending && sg_exit_reply_started)) {
                 __ai_mode_free_complete_exit();
+            } else if (sg_exit_pending) {
+                /* Ignore a stale PLAY_END while waiting for the cloud's
+                 * natural reply to an explicit goodbye. */
+                PR_DEBUG("mode free ignore play end before explicit exit reply");
             } else if (sg_is_wakeup && !sg_exit_pending) {
                 sg_empty_asr_count = 0;
                 MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
@@ -686,6 +702,7 @@ static OPERATE_RET __ai_mode_free_handle_key(TDL_BUTTON_TOUCH_EVENT_E event, voi
             MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
             sg_is_wakeup = true;
             sg_exit_pending = false;
+            sg_exit_reply_started = false;
             sg_goodbye_pending = false;
             sg_empty_asr_count = 0;
             __ai_mode_free_schedule_listen_arm(AI_CHAT_LISTEN_ARM_DELAY_MS);
@@ -733,6 +750,7 @@ void ai_mode_free_request_exit(void)
 
     PR_NOTICE("mode free request exit after current response");
     sg_exit_pending = true;
+    sg_exit_reply_started = false;
     sg_pending_vad_start = false;
     ai_audio_input_output_set(false);
     ai_audio_input_wakeup_set(false);
