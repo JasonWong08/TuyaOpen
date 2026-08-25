@@ -21,6 +21,8 @@
 #include "second_uart.h"
 #include "quaddle_robot_bridge.h"
 
+#define ROBOT_COMMAND_COMPLETION_TIMEOUT_MS 21000
+
 static void __robot_trim_command(char **start, char **end)
 {
     while (*start < *end && (**start == ' ' || **start == '\t' || **start == '\r' || **start == '\n')) {
@@ -87,10 +89,11 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
 
     cursor = command_text;
     while (cursor && *cursor != '\0') {
-        char *segment = cursor;
-        char *end     = strchr(cursor, ';');
-        char  cmd[64];
-        size_t cmd_len;
+        char    *segment = cursor;
+        char    *end     = strchr(cursor, ';');
+        char     cmd[64];
+        size_t   cmd_len;
+        uint32_t ticket = 0;
 
         if (end) {
             cursor = end + 1;
@@ -118,12 +121,20 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
             break;
         }
 
-        uart_rt = quaddle_robot_bridge_queue_ai_command(cmd, "MCP");
+        uart_rt = quaddle_robot_bridge_queue_ai_command_tracked(cmd, "MCP", &ticket);
         if (uart_rt != OPRT_OK) {
             break;
         }
         queued_count++;
-        PR_NOTICE("MCP robot send_command queued segment %u \"%s\"", queued_count, cmd);
+        PR_NOTICE("MCP robot send_command tracking segment %u \"%s\" ticket=%u", queued_count, cmd, ticket);
+
+        uart_rt = quaddle_robot_bridge_wait_ai_command(ticket, ROBOT_COMMAND_COMPLETION_TIMEOUT_MS);
+        if (uart_rt != OPRT_OK) {
+            PR_WARN("MCP robot send_command completion failed segment %u \"%s\" ticket=%u rt=%d", queued_count,
+                    cmd, ticket, uart_rt);
+            break;
+        }
+        PR_NOTICE("MCP robot send_command completed segment %u \"%s\" ticket=%u", queued_count, cmd, ticket);
     }
 
     if (queued_count == 0 && uart_rt == OPRT_OK) {
@@ -132,11 +143,11 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
     }
 
     if (uart_rt != OPRT_OK) {
-        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "uart command queue failed");
+        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "robot action not completed; do not claim completion");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : uart_rt;
     }
 
-    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "ok");
+    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "completed: robot completion token received");
     return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
 }
 
@@ -148,6 +159,9 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "Arguments must contain command codes only, never natural-language descriptions. Prefer one command per tool call; "
         "semicolon-separated commands are accepted only as a fallback.\n"
         "Do not mention internal scheduling, queueing, arbitration, or gamepad priority in user-facing replies.\n"
+        "This tool waits for the robot completion token. Before it returns, only say that the action is in progress. "
+        "Say the action is complete only when the tool returns 'completed'. If it reports failure or timeout, say that "
+        "completion could not be confirmed; never claim the action completed.\n"
         "Use this tool only when the user explicitly asks for a physical robot body motion. Do not call it for normal "
         "chat, self-introductions, ability descriptions, or question answering. Do not add default gestures or motions. "
         "Always use this tool for explicit robot body motions, including English requests such as sit down, stand up, go "

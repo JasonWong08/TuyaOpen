@@ -8,6 +8,7 @@
 2. 如果任务涉及机器狗控制、手柄、语音或 MCP，优先读：
    - `2026-06-30_robot_control_fixes_summary.md`
    - `2026-08-18_ai_uart_duplicate_fix_summary.md`
+   - `2026-08-24_robot_completion_reply_summary.md`
 3. 如果任务涉及 BLE 手柄连接、配网共存或启动重连，按时间顺序读：
    - `2026-06-02_quaddle_gamepad_integration_summary.md`
    - `2026-06-03_quaddle_ble_hid_debug_worklog.md`
@@ -70,6 +71,16 @@ git diff --check
 - 保留 ASR/MCP 5 秒防重逻辑，避免同一语音意图执行两次。
 - ESP32-S3 `AI_BOARD` 完整构建验证通过。
 
+### 2026-08-24 机器人完成令牌与语音回复联动
+
+详见 `2026-08-24_robot_completion_reply_summary.md`。
+
+- 为 ASR/MCP AI 命令增加 ticket 跟踪。
+- MCP 命中 ASR 去重时复用同一 ticket，避免重复动作但继续等待真实完成结果。
+- `self.robot.send_command` 只有收到对应机器人完成令牌后才返回完成；失败或超时不得声称动作已完成。
+- 工具描述和补充提示词统一为“执行中可提示，完成后才确认”。
+- ESP32-S3 `AI_BOARD` 完整构建验证通过。
+
 ## 记录索引
 
 | 日期 | 文件 | 主题 |
@@ -83,6 +94,7 @@ git diff --check
 | 2026-06-30 | `2026-06-30_robot_control_fixes_summary.md` | 手柄映射同步、重复按键修复、`kbkF`、ASR/MCP 去重 |
 | 2026-07-03 | `2026-07-03_quaddle_gamepad_switch_summary.md` | 新增 Quaddle 手柄连接与操控总开关 |
 | 2026-08-18 | `2026-08-18_ai_uart_duplicate_fix_summary.md` | 修复 AI 重复动作被 UART 去重后误报发送成功 |
+| 2026-08-24 | `2026-08-24_robot_completion_reply_summary.md` | 机器人完成令牌与语音回复严格联动 |
 
 ## 给后续 Codex/Cursor 的约定
 

@@ -119,11 +119,13 @@ static bool     s_pending_ai_active;
 static uint32_t s_pending_ai_deadline_ms;
 static char     s_pending_ai_cmd[QUADDLE_CMD_MAX];
 static char     s_pending_ai_source[12];
+static uint32_t s_pending_ai_ticket;
 static bool     s_ai_waiting_token;
 static char     s_ai_expected_token;
 static uint32_t s_ai_token_deadline_ms;
 static char     s_ai_queue_cmd[AI_COMMAND_QUEUE_MAX][QUADDLE_CMD_MAX];
 static char     s_ai_queue_source[AI_COMMAND_QUEUE_MAX][12];
+static uint32_t s_ai_queue_ticket[AI_COMMAND_QUEUE_MAX];
 static uint8_t  s_ai_queue_head;
 static uint8_t  s_ai_queue_count;
 static char     s_ai_token_line[64];
@@ -131,6 +133,12 @@ static uint8_t  s_ai_token_line_len;
 static char     s_last_asr_cmd[QUADDLE_CMD_MAX];
 static char     s_last_asr_cmd_head[16];
 static uint32_t s_last_asr_cmd_ms;
+static uint32_t s_last_asr_ticket;
+static uint32_t s_ai_next_ticket;
+static volatile uint32_t s_ai_completed_tickets[AI_COMMAND_QUEUE_MAX + 1];
+static volatile uint32_t s_ai_failed_tickets[AI_COMMAND_QUEUE_MAX + 1];
+static uint8_t  s_ai_completed_ticket_index;
+static uint8_t  s_ai_failed_ticket_index;
 
 static int quaddle_abs(int v)
 {
@@ -215,7 +223,7 @@ static bool ai_command_same_or_similar(const char *cmd_a, const char *head_a, co
     return head_a[0] == 'k';
 }
 
-static void ai_record_asr_command(const char *cmd)
+static void ai_record_asr_command(const char *cmd, uint32_t ticket)
 {
     if (!cmd || cmd[0] == '\0') {
         return;
@@ -224,6 +232,44 @@ static void ai_record_asr_command(const char *cmd)
     s_last_asr_cmd[sizeof(s_last_asr_cmd) - 1] = '\0';
     ai_command_head(cmd, s_last_asr_cmd_head, sizeof(s_last_asr_cmd_head));
     s_last_asr_cmd_ms = now_ms();
+    s_last_asr_ticket = ticket;
+}
+
+static uint32_t ai_next_ticket(void)
+{
+    s_ai_next_ticket++;
+    if (s_ai_next_ticket == 0) {
+        s_ai_next_ticket++;
+    }
+    return s_ai_next_ticket;
+}
+
+static void ai_fail_ticket(uint32_t ticket)
+{
+    if (ticket != 0) {
+        s_ai_failed_tickets[s_ai_failed_ticket_index] = ticket;
+        s_ai_failed_ticket_index = (uint8_t)((s_ai_failed_ticket_index + 1) % (AI_COMMAND_QUEUE_MAX + 1));
+    }
+}
+
+static void ai_complete_ticket(uint32_t ticket)
+{
+    if (ticket != 0) {
+        s_ai_completed_tickets[s_ai_completed_ticket_index] = ticket;
+        s_ai_completed_ticket_index = (uint8_t)((s_ai_completed_ticket_index + 1) % (AI_COMMAND_QUEUE_MAX + 1));
+    }
+}
+
+static bool ai_ticket_recorded(const volatile uint32_t *tickets, uint32_t ticket)
+{
+    uint8_t i;
+
+    for (i = 0; i < AI_COMMAND_QUEUE_MAX + 1; i++) {
+        if (tickets[i] == ticket) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool ai_should_drop_mcp_duplicate(const char *cmd)
@@ -242,10 +288,18 @@ static bool ai_should_drop_mcp_duplicate(const char *cmd)
 
 static void clear_ai_command_queue(void)
 {
+    uint8_t i;
+
+    ai_fail_ticket(s_pending_ai_ticket);
+    for (i = 0; i < s_ai_queue_count; i++) {
+        uint8_t index = (uint8_t)((s_ai_queue_head + i) % AI_COMMAND_QUEUE_MAX);
+        ai_fail_ticket(s_ai_queue_ticket[index]);
+    }
     s_pending_ai_active      = false;
     s_pending_ai_deadline_ms = 0;
     s_pending_ai_cmd[0]      = '\0';
     s_pending_ai_source[0]   = '\0';
+    s_pending_ai_ticket      = 0;
     s_ai_waiting_token       = false;
     s_ai_expected_token      = '\0';
     s_ai_token_deadline_ms   = 0;
@@ -255,6 +309,7 @@ static void clear_ai_command_queue(void)
     s_last_asr_cmd[0]        = '\0';
     s_last_asr_cmd_head[0]   = '\0';
     s_last_asr_cmd_ms        = 0;
+    s_last_asr_ticket        = 0;
 }
 
 static const char *payload_after_bracket(const char *line)
@@ -1213,6 +1268,8 @@ OPERATE_RET quaddle_robot_bridge_init(void)
 
 void quaddle_robot_bridge_reset(void)
 {
+    uint8_t i;
+
     s_buttons                    = 0;
     s_last_k_cmd[0]              = '\0';
     s_jr_inited                  = false;
@@ -1231,6 +1288,13 @@ void quaddle_robot_bridge_reset(void)
     s_solo_non_gait_hold_latch[0] = '\0';
     s_r1_combo_non_gait_hold_latch[0] = '\0';
     clear_ai_command_queue();
+    s_ai_next_ticket             = 0;
+    s_ai_completed_ticket_index  = 0;
+    s_ai_failed_ticket_index     = 0;
+    for (i = 0; i < AI_COMMAND_QUEUE_MAX + 1; i++) {
+        s_ai_completed_tickets[i] = 0;
+        s_ai_failed_tickets[i]    = 0;
+    }
     macro_reset();
 }
 
@@ -1250,12 +1314,14 @@ void quaddle_robot_bridge_poll(void)
     if (s_ai_waiting_token && (int32_t)(now - s_ai_token_deadline_ms) >= 0) {
         PR_WARN("robot arbitration: token '%c' timeout after AI command \"%s\"", s_ai_expected_token,
                 s_pending_ai_cmd);
+        ai_fail_ticket(s_pending_ai_ticket);
         s_ai_waiting_token     = false;
         s_ai_expected_token    = '\0';
         s_ai_token_deadline_ms = 0;
         ai_token_line_reset();
         s_pending_ai_cmd[0]    = '\0';
         s_pending_ai_source[0] = '\0';
+        s_pending_ai_ticket    = 0;
         s_ai_queue_head        = 0;
         s_ai_queue_count       = 0;
         PR_WARN("robot arbitration: AI command queue cleared after token timeout");
@@ -1268,6 +1334,7 @@ void quaddle_robot_bridge_poll(void)
         s_pending_ai_cmd[sizeof(s_pending_ai_cmd) - 1] = '\0';
         strncpy(s_pending_ai_source, s_ai_queue_source[s_ai_queue_head], sizeof(s_pending_ai_source) - 1);
         s_pending_ai_source[sizeof(s_pending_ai_source) - 1] = '\0';
+        s_pending_ai_ticket = s_ai_queue_ticket[s_ai_queue_head];
         s_ai_queue_head = (uint8_t)((s_ai_queue_head + 1) % AI_COMMAND_QUEUE_MAX);
         s_ai_queue_count--;
         s_pending_ai_deadline_ms = now + AI_COMMAND_ARBITRATION_MS;
@@ -1279,6 +1346,8 @@ void quaddle_robot_bridge_poll(void)
         if (quaddle_robot_bridge_gamepad_active()) {
             PR_NOTICE("robot arbitration: skipped AI command \"%s\"; gamepad priority active", s_pending_ai_cmd);
             s_pending_ai_active = false;
+            ai_fail_ticket(s_pending_ai_ticket);
+            s_pending_ai_ticket = 0;
             s_pending_ai_cmd[0] = '\0';
         } else {
             /* ASR/MCP dedupe is handled when queued; each accepted AI command must reach the robot. */
@@ -1296,6 +1365,8 @@ void quaddle_robot_bridge_poll(void)
                 }
             } else {
                 PR_ERR("robot arbitration: AI command send failed %d", rt);
+                ai_fail_ticket(s_pending_ai_ticket);
+                s_pending_ai_ticket = 0;
             }
             s_pending_ai_active = false;
         }
@@ -1456,10 +1527,15 @@ OPERATE_RET quaddle_robot_bridge_handle_line(const char *line)
 #endif
 }
 
-OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *source)
+OPERATE_RET quaddle_robot_bridge_queue_ai_command_tracked(const char *cmd, const char *source, uint32_t *ticket)
 {
     uint8_t tail;
+    uint32_t command_ticket;
     const char *src = source ? source : "AI";
+
+    if (ticket) {
+        *ticket = 0;
+    }
 
     if (!cmd || cmd[0] == '\0') {
         return OPRT_INVALID_PARM;
@@ -1470,6 +1546,9 @@ OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *s
         return OPRT_OK;
     }
     if (ai_source_is(src, "MCP") && ai_should_drop_mcp_duplicate(cmd)) {
+        if (ticket) {
+            *ticket = s_last_asr_ticket;
+        }
         PR_NOTICE("robot arbitration: MCP command \"%s\" skipped; recent ASR command \"%s\" already queued",
                   cmd, s_last_asr_cmd);
         return OPRT_OK;
@@ -1481,17 +1560,49 @@ OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *s
     }
 
     tail = (uint8_t)((s_ai_queue_head + s_ai_queue_count) % AI_COMMAND_QUEUE_MAX);
+    command_ticket = ai_next_ticket();
     strncpy(s_ai_queue_cmd[tail], cmd, sizeof(s_ai_queue_cmd[tail]) - 1);
     s_ai_queue_cmd[tail][sizeof(s_ai_queue_cmd[tail]) - 1] = '\0';
     strncpy(s_ai_queue_source[tail], src, sizeof(s_ai_queue_source[tail]) - 1);
     s_ai_queue_source[tail][sizeof(s_ai_queue_source[tail]) - 1] = '\0';
+    s_ai_queue_ticket[tail] = command_ticket;
     s_ai_queue_count++;
     if (ai_source_is(src, "ASR")) {
-        ai_record_asr_command(s_ai_queue_cmd[tail]);
+        ai_record_asr_command(s_ai_queue_cmd[tail], command_ticket);
     }
-    PR_NOTICE("robot arbitration: AI command queued \"%s\" from %s depth=%u", s_ai_queue_cmd[tail],
-              s_ai_queue_source[tail], s_ai_queue_count);
+    if (ticket) {
+        *ticket = command_ticket;
+    }
+    PR_NOTICE("robot arbitration: AI command queued \"%s\" from %s depth=%u ticket=%u", s_ai_queue_cmd[tail],
+              s_ai_queue_source[tail], s_ai_queue_count, command_ticket);
     return OPRT_OK;
+}
+
+OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *source)
+{
+    return quaddle_robot_bridge_queue_ai_command_tracked(cmd, source, NULL);
+}
+
+OPERATE_RET quaddle_robot_bridge_wait_ai_command(uint32_t ticket, uint32_t timeout_ms)
+{
+    uint32_t deadline;
+
+    if (ticket == 0 || timeout_ms == 0) {
+        return OPRT_INVALID_PARM;
+    }
+
+    deadline = now_ms() + timeout_ms;
+    while ((int32_t)(now_ms() - deadline) < 0) {
+        if (ai_ticket_recorded(s_ai_completed_tickets, ticket)) {
+            return OPRT_OK;
+        }
+        if (ai_ticket_recorded(s_ai_failed_tickets, ticket)) {
+            return OPRT_COM_ERROR;
+        }
+        tal_system_sleep(20);
+    }
+
+    return OPRT_TIMEOUT;
 }
 
 void quaddle_robot_bridge_handle_robot_token(char token)
@@ -1527,12 +1638,14 @@ void quaddle_robot_bridge_handle_robot_token(char token)
     }
 
     PR_NOTICE("robot arbitration: robot token '%c' completed \"%s\"", s_ai_expected_token, s_pending_ai_cmd);
+    ai_complete_ticket(s_pending_ai_ticket);
     s_ai_waiting_token     = false;
     s_ai_expected_token    = '\0';
     s_ai_token_deadline_ms = 0;
     ai_token_line_reset();
     s_pending_ai_cmd[0]    = '\0';
     s_pending_ai_source[0] = '\0';
+    s_pending_ai_ticket    = 0;
 }
 
 BOOL_T quaddle_robot_bridge_gamepad_active(void)
