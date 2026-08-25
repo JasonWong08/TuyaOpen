@@ -46,6 +46,103 @@ __attribute__((weak)) void ai_app_on_asr_result(const char *text)
 /***********************************************************
 ***********************function define**********************
 ***********************************************************/
+static int __ai_hex_to_value(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+
+    return -1;
+}
+
+static bool __ai_parse_unicode_escape(const char *text, size_t remaining, unsigned int *codepoint)
+{
+    unsigned int value = 0;
+    int          digit = 0;
+    size_t       i     = 0;
+
+    if (remaining < 6 || text[0] != '\\' || text[1] != 'u') {
+        return false;
+    }
+
+    for (i = 2; i < 6; i++) {
+        digit = __ai_hex_to_value(text[i]);
+        if (digit < 0) {
+            return false;
+        }
+        value = (value << 4) | (unsigned int)digit;
+    }
+
+    *codepoint = value;
+    return true;
+}
+
+/*
+ * Some cloud responses contain a second JSON-escaped layer, for example
+ * "\\u0020hello" after cJSON has already parsed the outer JSON object.
+ * Decode that remaining Unicode escape layer in place. UTF-8 output is never
+ * longer than the corresponding escape, so no additional buffer is needed.
+ */
+static bool __ai_decode_literal_unicode_escapes(char *text)
+{
+    size_t       read_pos  = 0;
+    size_t       write_pos = 0;
+    size_t       text_len  = strlen(text);
+    bool         decoded   = false;
+    unsigned int codepoint = 0;
+
+    while (read_pos < text_len) {
+        size_t escape_len = 6;
+
+        if (!__ai_parse_unicode_escape(text + read_pos, text_len - read_pos, &codepoint) || codepoint == 0 ||
+            (codepoint >= 0xDC00 && codepoint <= 0xDFFF)) {
+            text[write_pos++] = text[read_pos++];
+            continue;
+        }
+
+        if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+            unsigned int low_surrogate = 0;
+
+            if (!__ai_parse_unicode_escape(text + read_pos + 6, text_len - read_pos - 6, &low_surrogate) ||
+                low_surrogate < 0xDC00 || low_surrogate > 0xDFFF) {
+                text[write_pos++] = text[read_pos++];
+                continue;
+            }
+
+            codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + (low_surrogate - 0xDC00);
+            escape_len = 12;
+        }
+
+        if (codepoint <= 0x7F) {
+            text[write_pos++] = (char)codepoint;
+        } else if (codepoint <= 0x7FF) {
+            text[write_pos++] = (char)(0xC0 | (codepoint >> 6));
+            text[write_pos++] = (char)(0x80 | (codepoint & 0x3F));
+        } else if (codepoint <= 0xFFFF) {
+            text[write_pos++] = (char)(0xE0 | (codepoint >> 12));
+            text[write_pos++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+            text[write_pos++] = (char)(0x80 | (codepoint & 0x3F));
+        } else {
+            text[write_pos++] = (char)(0xF0 | (codepoint >> 18));
+            text[write_pos++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+            text[write_pos++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+            text[write_pos++] = (char)(0x80 | (codepoint & 0x3F));
+        }
+
+        read_pos += escape_len;
+        decoded = true;
+    }
+
+    text[write_pos] = '\0';
+    return decoded;
+}
+
 /**
  * @brief Process AI skill data from JSON.
  *
@@ -202,12 +299,19 @@ static OPERATE_RET __ai_nlg_process(cJSON *root, bool eof)
     char *content = cJSON_GetStringValue(cJSON_GetObjectItem(root, "content"));
     if (!content) {
         content = "";
+    } else if (__ai_decode_literal_unicode_escapes(content)) {
+        PR_DEBUG("decoded literal Unicode escapes in NLG content");
     }
 
-    AI_NOTIFY_TEXT_T text;
+    AI_NOTIFY_TEXT_T text = {0};
+    cJSON           *time_index = cJSON_GetObjectItem(root, "timeIndex");
+
     text.data    = content;
     text.datalen = strlen(content);
-    PR_NOTICE("text -> NLG eof: %d, content: %s, time: %d", eof, content, text.timeindex);
+    if (cJSON_IsNumber(time_index) && time_index->valuedouble >= 0) {
+        text.timeindex = (uint32_t)time_index->valuedouble;
+    }
+    PR_NOTICE("text -> NLG eof: %d, content: %s, time: %u", eof, content, (unsigned int)text.timeindex);
 
     /* Send data to register callback */
     static AI_USER_EVT_TYPE_E event_type = AI_USER_EVT_TEXT_STREAM_STOP;

@@ -441,6 +441,8 @@ OPERATE_RET ai_audio_player_stop(AI_AUDIO_PLAYER_TYPE_E type)
     switch (type)
     {
     case AI_AUDIO_PLAYER_FG:
+        /* Reject any late packets from the stream being stopped. */
+        __s_tts_play_flag = FALSE;
         TUYA_CALL_ERR_LOG(tuya_ai_playlist_clear(__s_tone_playlist));
         TUYA_CALL_ERR_LOG(tuya_ai_player_stop(__s_tone_player));
         break;
@@ -449,6 +451,8 @@ OPERATE_RET ai_audio_player_stop(AI_AUDIO_PLAYER_TYPE_E type)
         TUYA_CALL_ERR_LOG(tuya_ai_player_stop(__s_music_player));
         break;
     case AI_AUDIO_PLAYER_ALL:
+        /* Reject any late packets from the stream being stopped. */
+        __s_tts_play_flag = FALSE;
         TUYA_CALL_ERR_LOG(tuya_ai_playlist_clear(__s_tone_playlist));
         TUYA_CALL_ERR_LOG(tuya_ai_player_stop(__s_tone_player));
         TUYA_CALL_ERR_LOG(tuya_ai_playlist_clear(__s_music_playlist));

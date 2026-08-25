@@ -23,6 +23,7 @@
 
 #include "ai_audio_input.h"
 #include "ai_audio_player.h"
+#include "ai_agent.h"
 #include "ai_manage_mode.h"
 #include "ai_mode_free.h"
 #include "tuya_ai_input.h"
@@ -37,12 +38,13 @@ do { \
     _old = _new; \
 }while (0)
 
-#define AI_CHAT_WAKEUP_TIME_MS     (30 * 1000)      // 30sec
+#define AI_CHAT_LISTEN_TIMEOUT_MS    (10 * 1000)    // 10sec
+#define AI_CHAT_RESPONSE_TIMEOUT_MS (30 * 1000)     // 30sec
 #define AI_CHAT_LISTEN_ARM_DELAY_MS 250
 #define AI_CHAT_POST_PLAY_ARM_DELAY_MS 20
 #define AI_CHAT_LISTEN_ARM_RETRY_MS 100
 #define AI_CHAT_LISTEN_ARM_LOG_RETRIES 10
-#define AI_CHAT_EMPTY_IDLE_LIMIT    2
+#define AI_CHAT_EMPTY_IDLE_LIMIT    3
 
 /***********************************************************
 ***********************typedef define***********************
@@ -61,12 +63,26 @@ static AI_MODE_STATE_E sg_mode_cur_state = AI_MODE_STATE_INVALID;
 static bool            sg_is_wakeup = false;
 static bool            sg_pending_vad_start = false;
 static bool            sg_exit_pending = false;
+static bool            sg_goodbye_pending = false;
+static bool            sg_goodbye_nlg_time_valid = false;
 static uint8_t         sg_empty_asr_count = 0;
 static uint8_t         sg_listen_arm_retries = 0;
 static uint32_t        sg_listen_armed_ms = 0;
+static uint32_t        sg_goodbye_nlg_last_timeindex = 0;
 static TIMER_ID        sg_enter_idle_timer = NULL;
 static TIMER_ID        sg_listen_arm_timer = NULL;
-static uint32_t        sg_wakeup_time_ms = AI_CHAT_WAKEUP_TIME_MS;
+static uint32_t        sg_listen_timeout_ms = AI_CHAT_LISTEN_TIMEOUT_MS;
+static uint32_t        sg_response_timeout_ms = AI_CHAT_RESPONSE_TIMEOUT_MS;
+static char            sg_exit_prompt_zh[] =
+    "请只回复下面这句话，不要添加任何其他内容:好的，如果你没有什么想聊的话题或者要求，我们下次再聊。";
+static char sg_exit_prompt_en[] =
+    "Reply in English with exactly this sentence and nothing else:Okay, if there is nothing else you would like to "
+    "talk about or ask, let's chat again next time.";
+#if defined(ENABLE_AI_LANGUAGE_ENGLISH) && (ENABLE_AI_LANGUAGE_ENGLISH == 1)
+static bool sg_use_english_exit_prompt = true;
+#else
+static bool sg_use_english_exit_prompt = false;
+#endif
 
 /***********************************************************
 ***********************function define**********************
@@ -80,6 +96,148 @@ static void __ai_mode_free_stop_active_input(void)
         PR_NOTICE("mode free stop active ai input");
         tuya_ai_input_stop();
     }
+}
+
+static void __ai_mode_free_update_language(const AI_NOTIFY_TEXT_T *text)
+{
+    bool has_ascii_letter = false;
+    bool has_cjk = false;
+    uint16_t i;
+
+    if (!text || !text->data || text->datalen == 0) {
+        return;
+    }
+
+    for (i = 0; i < text->datalen; i++) {
+        const uint8_t ch = (uint8_t)text->data[i];
+
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+            has_ascii_letter = true;
+            continue;
+        }
+
+        /* Chinese characters U+3400..U+9FFF encoded as three-byte UTF-8. */
+        if (i + 2 < text->datalen && ch >= 0xE3 && ch <= 0xE9) {
+            const uint8_t ch2 = (uint8_t)text->data[i + 1];
+            const uint8_t ch3 = (uint8_t)text->data[i + 2];
+            uint32_t codepoint;
+
+            if ((ch2 & 0xC0) == 0x80 && (ch3 & 0xC0) == 0x80) {
+                codepoint = ((uint32_t)(ch & 0x0F) << 12) | ((uint32_t)(ch2 & 0x3F) << 6) | (ch3 & 0x3F);
+                if (codepoint >= 0x3400 && codepoint <= 0x9FFF) {
+                    has_cjk = true;
+                    break;
+                }
+                i += 2;
+            }
+        }
+    }
+
+    if (has_cjk) {
+        sg_use_english_exit_prompt = false;
+        PR_DEBUG("mode free language context: Chinese");
+    } else if (has_ascii_letter) {
+        sg_use_english_exit_prompt = true;
+        PR_DEBUG("mode free language context: English");
+    }
+}
+
+static void __ai_mode_free_complete_exit(void)
+{
+    sg_is_wakeup = false;
+    sg_pending_vad_start = false;
+    sg_exit_pending = false;
+    sg_goodbye_pending = false;
+    sg_goodbye_nlg_time_valid = false;
+    sg_goodbye_nlg_last_timeindex = 0;
+    sg_empty_asr_count = 0;
+    ai_audio_input_output_set(false);
+    ai_app_on_free_mode_exit();
+    MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
+}
+
+static void __ai_mode_free_begin_exit(void)
+{
+    OPERATE_RET rt;
+
+    if (sg_goodbye_pending || sg_mode_set_state == AI_MODE_STATE_IDLE) {
+        return;
+    }
+
+    PR_NOTICE("mode free announce exit before idle");
+    tal_sw_timer_stop(sg_enter_idle_timer);
+    if (sg_listen_arm_timer) {
+        tal_sw_timer_stop(sg_listen_arm_timer);
+    }
+    __ai_mode_free_stop_active_input();
+    ai_audio_input_wakeup_set(false);
+    sg_is_wakeup = false;
+    sg_pending_vad_start = false;
+    sg_exit_pending = false;
+    sg_goodbye_pending = true;
+    sg_goodbye_nlg_time_valid = false;
+    sg_goodbye_nlg_last_timeindex = 0;
+    MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_THINK);
+
+    rt = ai_agent_send_text(sg_use_english_exit_prompt ? sg_exit_prompt_en : sg_exit_prompt_zh);
+    if (rt != OPRT_OK) {
+        PR_WARN("mode free exit announcement request failed: %d", rt);
+        __ai_mode_free_complete_exit();
+        return;
+    }
+
+    /* Protect against a cloud request which never produces TTS. */
+    tal_sw_timer_start(sg_enter_idle_timer, sg_response_timeout_ms, TAL_TIMER_ONCE);
+}
+
+static bool __ai_mode_free_is_goodbye_prefix(const AI_NOTIFY_TEXT_T *text)
+{
+    const char *prefix = sg_use_english_exit_prompt ? "Okay" : "好的";
+    size_t      prefix_len = strlen(prefix);
+    size_t      offset = 0;
+
+    if (!text || !text->data) {
+        return false;
+    }
+
+    while (offset < text->datalen &&
+           (text->data[offset] == ' ' || text->data[offset] == '\t' || text->data[offset] == '\r' ||
+            text->data[offset] == '\n')) {
+        offset++;
+    }
+
+    return text->datalen - offset >= prefix_len && memcmp(text->data + offset, prefix, prefix_len) == 0;
+}
+
+static bool __ai_mode_free_suppress_duplicate_goodbye(const AI_NOTIFY_TEXT_T *text)
+{
+    if (!sg_goodbye_pending || !text || !text->data || text->datalen == 0) {
+        return false;
+    }
+
+    /*
+     * The cloud agent may produce a preliminary answer and then start a
+     * second final-answer phase in the same request. Its NLG timeIndex resets
+     * at that boundary. For the fixed goodbye prompt both phases can contain
+     * the same sentence, which otherwise makes the TTS stream speak twice.
+     */
+    if (text->timeindex > 0 && sg_goodbye_nlg_time_valid &&
+        text->timeindex < sg_goodbye_nlg_last_timeindex && __ai_mode_free_is_goodbye_prefix(text)) {
+        PR_WARN("mode free suppress duplicate goodbye phase, timeIndex %u -> %u",
+                (unsigned int)sg_goodbye_nlg_last_timeindex, (unsigned int)text->timeindex);
+        tal_sw_timer_stop(sg_enter_idle_timer);
+        tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
+        ai_audio_player_stop(AI_AUDIO_PLAYER_FG);
+        __ai_mode_free_complete_exit();
+        return true;
+    }
+
+    if (text->timeindex > 0) {
+        sg_goodbye_nlg_last_timeindex = text->timeindex;
+        sg_goodbye_nlg_time_valid = true;
+    }
+
+    return false;
 }
 
 static void __ai_mode_kws_wakeup(TKL_KWS_WAKEUP_WORD_E wakeup_word)
@@ -97,6 +255,7 @@ static void __ai_mode_kws_wakeup(TKL_KWS_WAKEUP_WORD_E wakeup_word)
     sg_is_wakeup = true;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
+    sg_goodbye_pending = false;
     sg_empty_asr_count = 0;
 }
 
@@ -159,6 +318,7 @@ static void __ai_mode_enter_idle(void)
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
+    sg_goodbye_pending = false;
     sg_empty_asr_count = 0;
 
     tkl_vad_set_threshold(TKL_AUDIO_VAD_LOW);
@@ -170,7 +330,7 @@ static void __ai_mode_enter_listen(void)
     tdl_led_flash(sg_led_hdl, 500);
 #endif
 
-    tal_sw_timer_start(sg_enter_idle_timer, sg_wakeup_time_ms, TAL_TIMER_ONCE);
+    tal_sw_timer_start(sg_enter_idle_timer, sg_listen_timeout_ms, TAL_TIMER_ONCE);
 
     sg_is_wakeup = true;
     __ai_mode_free_schedule_listen_arm(AI_CHAT_LISTEN_ARM_DELAY_MS);
@@ -187,13 +347,17 @@ static void __ai_mode_enter_think(void)
     tdl_led_flash(sg_led_hdl, 2000);
 #endif
 
-    tal_sw_timer_start(sg_enter_idle_timer, sg_wakeup_time_ms, TAL_TIMER_ONCE);
+    tal_sw_timer_start(sg_enter_idle_timer, sg_response_timeout_ms, TAL_TIMER_ONCE);
 
     // ASR may complete before VAD STOP. Close that input session here so the
     // next LISTEN cycle cannot remain blocked in AI_INPUT_PROC.
-    __ai_mode_free_stop_active_input();
+    // The goodbye text input is started after the original audio input has
+    // already been stopped. Do not cancel that new text request here.
+    if (!sg_goodbye_pending) {
+        __ai_mode_free_stop_active_input();
+    }
     ai_audio_input_wakeup_set(false);
-    if (sg_exit_pending) {
+    if (sg_exit_pending || sg_goodbye_pending) {
         sg_is_wakeup = false;
     } else {
         sg_is_wakeup = true;
@@ -258,14 +422,22 @@ static void __ai_mode_listen_arm_time_cb(TIMER_ID timer_id, void *arg)
 
 static void __ai_mode_enter_idle_time_cb(TIMER_ID timer_id, void *arg)
 {
+    if (sg_goodbye_pending) {
+        PR_WARN("mode free exit announcement timed out");
+        __ai_mode_free_complete_exit();
+        return;
+    }
+
     if (ai_audio_player_is_playing()) {
         //! if player is playing, start idle timer again
         PR_NOTICE("player is playing, idle timer reset");
-        tal_sw_timer_start(timer_id, sg_wakeup_time_ms, TAL_TIMER_ONCE);
+        uint32_t timeout_ms = (sg_mode_set_state == AI_MODE_STATE_LISTEN) ? sg_listen_timeout_ms
+                                                                          : sg_response_timeout_ms;
+        tal_sw_timer_start(timer_id, timeout_ms, TAL_TIMER_ONCE);
         return;
-    } 
+    }
 
-    MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
+    __ai_mode_free_begin_exit();
 }
 
 static OPERATE_RET __ai_mode_free_init(void)
@@ -360,20 +532,25 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
     switch (event->type) {
         case AI_USER_EVT_ASR_EMPTY:
         case AI_USER_EVT_ASR_ERROR: {
+            if (sg_goodbye_pending) {
+                PR_WARN("mode free exit announcement returned empty ASR");
+                __ai_mode_free_complete_exit();
+                break;
+            }
+
             sg_empty_asr_count++;
             if (sg_empty_asr_count >= AI_CHAT_EMPTY_IDLE_LIMIT) {
-                PR_NOTICE("mode free idle after %d empty asr", sg_empty_asr_count);
-                sg_is_wakeup = false;
-                sg_pending_vad_start = false;
-                ai_audio_input_output_set(false);
-                MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
+                PR_NOTICE("mode free exit after %d empty asr", sg_empty_asr_count);
+                __ai_mode_free_begin_exit();
             } else {
                 MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
+                tal_sw_timer_start(sg_enter_idle_timer, sg_listen_timeout_ms, TAL_TIMER_ONCE);
                 __ai_mode_free_schedule_listen_arm(AI_CHAT_LISTEN_ARM_DELAY_MS);
             }
         }
         break;
         case AI_USER_EVT_ASR_OK: {
+            __ai_mode_free_update_language((const AI_NOTIFY_TEXT_T *)event->data);
             sg_empty_asr_count = 0;
             MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_THINK);
         }
@@ -382,17 +559,27 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
             MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_SPEAK);
         }
         break;
+        case AI_USER_EVT_TEXT_STREAM_START:
+        case AI_USER_EVT_TEXT_STREAM_DATA: {
+            __ai_mode_free_suppress_duplicate_goodbye((const AI_NOTIFY_TEXT_T *)event->data);
+        }
+        break;
         case AI_USER_EVT_EXIT: {
-            sg_is_wakeup = false;
-            sg_pending_vad_start = false;
-            sg_exit_pending = false;
-            ai_audio_input_output_set(false);
-            MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
+            __ai_mode_free_begin_exit();
+        }
+        break;
+        case AI_USER_EVT_TTS_ABORT:
+        case AI_USER_EVT_TTS_ERROR: {
+            if (sg_goodbye_pending) {
+                __ai_mode_free_complete_exit();
+            }
         }
         break;
     case AI_USER_EVT_PLAY_CTL_END:
     case AI_USER_EVT_PLAY_END:{
-            if (sg_is_wakeup && !sg_exit_pending) {
+            if (sg_goodbye_pending) {
+                __ai_mode_free_complete_exit();
+            } else if (sg_is_wakeup && !sg_exit_pending) {
                 sg_empty_asr_count = 0;
                 MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
                 /* Arm almost immediately after playback ends. Waiting the normal
@@ -400,12 +587,7 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
                  * started a short utterance and clip its first syllable. */
                 __ai_mode_free_schedule_listen_arm(AI_CHAT_POST_PLAY_ARM_DELAY_MS);
             } else {
-                sg_is_wakeup = false;
-                sg_pending_vad_start = false;
-                sg_exit_pending = false;
-                sg_empty_asr_count = 0;
-                ai_audio_input_output_set(false);
-                MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
+                __ai_mode_free_begin_exit();
             }
         }
         break;        
@@ -447,6 +629,7 @@ static OPERATE_RET __ai_mode_free_vad_change(AI_AUDIO_VAD_STATE_E vad_flag)
 
     if (AI_AUDIO_VAD_START == vad_flag) {
         uint32_t now_ms = tal_system_get_millisecond();
+        tal_sw_timer_stop(sg_enter_idle_timer);
         PR_DEBUG("mode free vad start %u ms after listen arm",
                  sg_listen_armed_ms ? (unsigned int)(now_ms - sg_listen_armed_ms) : 0U);
         __ai_mode_free_start_input();
@@ -482,6 +665,7 @@ static OPERATE_RET __ai_mode_free_handle_key(TDL_BUTTON_TOUCH_EVENT_E event, voi
             MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
             sg_is_wakeup = true;
             sg_exit_pending = false;
+            sg_goodbye_pending = false;
             sg_empty_asr_count = 0;
             __ai_mode_free_schedule_listen_arm(AI_CHAT_LISTEN_ARM_DELAY_MS);
         }

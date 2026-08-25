@@ -125,6 +125,12 @@ void ai_app_on_asr_result(const char *text);
  */
 void ai_app_on_record_start(void);
 
+/**
+ * Optional hook immediately before free-talk mode returns to idle.
+ * Robot applications may override it to restore their neutral expression.
+ */
+void ai_app_on_free_mode_exit(void);
+
 #ifdef __cplusplus
 }
 #endif

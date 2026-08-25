@@ -18,9 +18,10 @@
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 
-#define ROBOT_UART_CMD_LISTEN   "vetL"
-#define ROBOT_UART_CMD_TALK     "velT"
-#define ROBOT_UART_CMD_TALK_END "vet"
+#define ROBOT_UART_CMD_LISTEN     "vetL"
+#define ROBOT_UART_CMD_TALK       "velT"
+#define ROBOT_UART_CMD_TALK_END   "vet"
+#define ROBOT_UART_CMD_EFFECT_END "ved"
 
 static bool s_expect_vet = false;
 
@@ -43,6 +44,14 @@ void ai_app_on_record_start(void)
      * does not send a redundant vet after listen animation has started. */
     s_expect_vet = false;
     __robot_uart_voice_send_now(ROBOT_UART_CMD_LISTEN);
+}
+
+void ai_app_on_free_mode_exit(void)
+{
+    /* The free-mode state handler runs before the app event callback. Clear
+     * this flag so the same PLAY_END does not overwrite ved with vet. */
+    s_expect_vet = false;
+    __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
 }
 
 void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
