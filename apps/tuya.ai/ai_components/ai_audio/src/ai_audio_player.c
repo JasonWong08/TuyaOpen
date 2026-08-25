@@ -406,6 +406,15 @@ OPERATE_RET ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_STATE_E state, AI_AUDIO
     return rt;
 }
 
+OPERATE_RET ai_audio_player_finish_tts_stream(void)
+{
+    /* Drop packets belonging to a duplicate cloud phase, but do not stop or
+     * clear the player: the first response may still be draining its buffer. */
+    __s_tts_play_flag = FALSE;
+    PR_NOTICE("audio player -> finish current tts stream after buffered audio");
+    return tuya_ai_player_feed(__s_tone_player, NULL, 0);
+}
+
 /**
 @brief Play local audio file
 @param url Audio file URL

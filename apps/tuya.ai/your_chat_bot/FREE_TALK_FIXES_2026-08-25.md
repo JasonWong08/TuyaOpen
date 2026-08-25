@@ -182,23 +182,53 @@ cJSON 完成外层解析后，`content` 中仍可能残留六个普通字符 `\u
 - 不是播放器把一个已完成文件重新播放。
 - 同一个云端 Agent 请求产生了“前置回复”和“最终回复”两个阶段；固定告别提示词使两个阶段都生成了相同句子，并进入同一 TTS 输出过程。
 
-修复策略仅在 `sg_goodbye_pending` 时启用：
+第一阶段修复策略仅在 `sg_goodbye_pending` 时启用：
 
 - 从 NLG JSON 正确读取 `timeIndex`。
 - 保存本次告别 NLG 最近的有效时间位置。
 - 如果时间位置明显回退，并且新文本又从当前语言的告别语开头（`Okay`/`好的`）开始，则判定为重复告别阶段。
-- 立即发送 `AI_EVENT_CHAT_BREAK`、停止前景 TTS，并完成 `IDLE`/`ved`/KWS 收尾。
 - 正常聊天和机器人动作允许存在动作前、动作后两段回复，不应用此去重规则。
 
-同时修改播放器停止逻辑：停止前景 TTS 或全部播放器时，立即清除 `__s_tts_play_flag`。云端在停止后迟到的音频包会被丢弃，不会再次续播。
+第一阶段曾在检测到重复后立即发送 `AI_EVENT_CHAT_BREAK` 并调用 `ai_audio_player_stop(AI_AUDIO_PLAYER_FG)`。实机中文测试证明重复检测能够命中：
 
-预期命中日志：
+```text
+mode free suppress duplicate goodbye phase, timeIndex 7350 -> 950
+```
+
+但该处理方式暴露了两个新问题：
+
+- 完整 NLG 文本已经收到，不代表对应 TTS 已经播放完毕。检测到第二阶段时，第一遍音频仍在播放器缓冲区中；强制停止和清空前景播放器会把第一遍告别语截断。
+- `ai_audio_player_stop()` 触发 `STOPPED -> AI_USER_EVT_PLAY_END`，该回调会执行一次 `__ai_mode_free_complete_exit()`；去重函数返回前又直接执行一次退出完成，形成竞态并发送两次 `ved`。
+
+问题日志表现为：
+
+```text
+mode free suppress duplicate goodbye phase, timeIndex 7350 -> 950
+robot voice: sent UART "ved"
+robot voice: sent UART "ved"
+```
+
+最终修复改为“封口而非强停”：
+
+- 新增 `ai_audio_player_finish_tts_stream()`。
+- 检测到重复阶段后，将 `__s_tts_play_flag` 置为 `FALSE`，拒收该云端流后续到达的重复 TTS 数据。
+- 向播放器送入 EOF，但不调用强制停止，也不清空播放列表，使第一遍已经缓存的告别音频自然播放完整。
+- 不在重复检测回调中立即进入 IDLE；等待真正的 `AI_USER_EVT_PLAY_END` 后，再发送 `AI_EVENT_CHAT_BREAK` 并统一执行 `ved`、IDLE、KWS 收尾。
+- `__ai_mode_free_complete_exit()` 增加幂等保护，并在任何可能触发重入的外部调用之前关闭 `sg_goodbye_pending`。即使 `PLAY_END`、超时或错误回调同时到达，也只允许完成一次退出。
+- 如果给播放器送入 EOF 失败，才回退为强制停止前景播放器。
+
+最终预期日志顺序：
 
 ```text
 mode free suppress duplicate goodbye phase, timeIndex 24350 -> 1450
+audio player -> finish current tts stream after buffered audio
+# 第一遍告别语完整播放
+ai player FG eof
+robot voice: sent UART "ved"
+Custom wake ... enabled
 ```
 
-最新测试中云端只生成了一轮告别语，因此没有命中这条保护日志；实际听感和退出行为均为单次告别。保护分支需要在云端未来再次产生重复阶段时继续验证。
+最终固件已完成实机测试，未再发现问题：第一遍告别语能够完整播放，第二遍被抑制，`ved` 只发送一次，随后正常进入 IDLE 并恢复 KWS。
 
 ### 3.8 NLG `timeindex` 随机值
 
@@ -225,6 +255,8 @@ mode free suppress duplicate goodbye phase, timeIndex 24350 -> 1450
 - 增加中英文上下文检测及告别提示词选择。
 - 修复告别文本请求被 THINK 状态再次停止的问题。
 - 增加告别 NLG 二阶段去重。
+- 重复阶段命中后等待已缓存音频自然播放完成。
+- 为退出完成流程增加幂等保护，消除双 `ved` 竞态。
 - 播放结束、错误、超时等路径统一完成 IDLE/KWS 收尾。
 
 ### `apps/tuya.ai/ai_components/ai_skills/src/ai_skill.c`
@@ -236,7 +268,12 @@ mode free suppress duplicate goodbye phase, timeIndex 24350 -> 1450
 ### `apps/tuya.ai/ai_components/ai_audio/src/ai_audio_player.c`
 
 - 主动停止前景或全部播放器时立即关闭 TTS 流接收标志。
-- 防止退出后迟到的云端音频数据继续进入播放器。
+- 新增 `ai_audio_player_finish_tts_stream()`，支持停止接收后续 TTS 包并自然排空已缓存音频。
+- 防止退出后迟到的云端音频数据继续进入播放器，同时避免截断第一遍告别语。
+
+### `apps/tuya.ai/ai_components/ai_audio/include/ai_audio_player.h`
+
+- 声明 `ai_audio_player_finish_tts_stream()` 接口。
 
 ### `apps/tuya.ai/ai_components/utility/include/ai_user_event.h`
 
@@ -285,9 +322,9 @@ git diff --check
 Error: clang-format is not installed or not in PATH
 ```
 
-## 6. 最新英文测试结论
+## 6. 最新实机测试结论
 
-最新测试时间线：
+英文测试时间线：
 
 ```text
 16:00:55  空 ASR，重新进入 LISTEN
@@ -307,6 +344,16 @@ Error: clang-format is not installed or not in PATH
 - 最终进入 IDLE 并恢复 KWS。
 - `\u0020` 已在 NLG 层正确还原为空格。
 - `timeIndex` 日志已修复。
+
+后续中文测试实际触发了云端两阶段重复告别，确认重复检测日志能够出现。第一版去重处理暴露的“第一遍被截断”和“双 `ved`”问题已按最终方案修复。用户重新烧录并实机测试后确认未再发现问题。
+
+最终确认：
+
+- 中文告别语完整说完。
+- 云端第二阶段重复语音没有播放。
+- `ved` 只发送一次。
+- 退出后正常进入 IDLE。
+- KWS 正常恢复。
 
 ## 7. 已知非阻塞观察项
 
@@ -330,16 +377,6 @@ not found emoji: U+1F91D return NEUTRAL as default
 
 当前会回退为 `NEUTRAL`，不影响语音、动作和退出流程。后续如需握手表情，可在 emotion 映射中补充 `U+1F91D`。
 
-### 云端重复告别保护仍需机会性验证
-
-最新固件测试时云端没有再次生成两阶段重复告别，因此实际保护分支尚未在最新固件日志中命中。未来若再次出现云端重复，应确认：
-
-```text
-mode free suppress duplicate goodbye phase
-```
-
-出现后第二遍音频应立即被抑制，随后只发送一次 `ved` 并恢复 KWS。
-
 ## 8. 建议回归测试清单
 
 - 中文对话一轮后保持安静 10 秒：中文告别一次、`ved` 一次、KWS 恢复。
@@ -350,5 +387,5 @@ mode free suppress duplicate goodbye phase
 - 告别 TTS 中止或报错：立即完成 `ved`、IDLE、KWS 收尾。
 - 检查原始 NLG 包含 `\\u0020` 时，应用层文本不再显示字面量 `\u0020`。
 - 动作命令存在动作前/动作后回复时，正常回复不得被告别去重逻辑误杀。
+- 云端返回两阶段重复告别时：第一遍必须完整播放、第二遍必须被抑制、`ved` 只能发送一次。
 - 退出后再次说话不应直接唤醒，必须使用配置的 KWS 唤醒词。
-

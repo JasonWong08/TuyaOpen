@@ -64,6 +64,7 @@ static bool            sg_is_wakeup = false;
 static bool            sg_pending_vad_start = false;
 static bool            sg_exit_pending = false;
 static bool            sg_goodbye_pending = false;
+static bool            sg_goodbye_duplicate_suppressed = false;
 static bool            sg_goodbye_nlg_time_valid = false;
 static uint8_t         sg_empty_asr_count = 0;
 static uint8_t         sg_listen_arm_retries = 0;
@@ -144,10 +145,28 @@ static void __ai_mode_free_update_language(const AI_NOTIFY_TEXT_T *text)
 
 static void __ai_mode_free_complete_exit(void)
 {
+    bool duplicate_suppressed;
+
+    if (!sg_goodbye_pending) {
+        PR_DEBUG("mode free exit already completed");
+        return;
+    }
+
+    /* Close the guard before any external call which may synchronously emit
+     * PLAY_END and re-enter this function. */
+    sg_goodbye_pending = false;
+    duplicate_suppressed = sg_goodbye_duplicate_suppressed;
+    sg_goodbye_duplicate_suppressed = false;
+
+    if (duplicate_suppressed) {
+        /* The buffered first sentence has finished. It is now safe to stop
+         * the duplicate cloud response without cutting the audible goodbye. */
+        tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
+    }
+
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
-    sg_goodbye_pending = false;
     sg_goodbye_nlg_time_valid = false;
     sg_goodbye_nlg_last_timeindex = 0;
     sg_empty_asr_count = 0;
@@ -175,6 +194,7 @@ static void __ai_mode_free_begin_exit(void)
     sg_pending_vad_start = false;
     sg_exit_pending = false;
     sg_goodbye_pending = true;
+    sg_goodbye_duplicate_suppressed = false;
     sg_goodbye_nlg_time_valid = false;
     sg_goodbye_nlg_last_timeindex = 0;
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_THINK);
@@ -221,14 +241,15 @@ static bool __ai_mode_free_suppress_duplicate_goodbye(const AI_NOTIFY_TEXT_T *te
      * at that boundary. For the fixed goodbye prompt both phases can contain
      * the same sentence, which otherwise makes the TTS stream speak twice.
      */
-    if (text->timeindex > 0 && sg_goodbye_nlg_time_valid &&
+    if (!sg_goodbye_duplicate_suppressed && text->timeindex > 0 && sg_goodbye_nlg_time_valid &&
         text->timeindex < sg_goodbye_nlg_last_timeindex && __ai_mode_free_is_goodbye_prefix(text)) {
         PR_WARN("mode free suppress duplicate goodbye phase, timeIndex %u -> %u",
                 (unsigned int)sg_goodbye_nlg_last_timeindex, (unsigned int)text->timeindex);
-        tal_sw_timer_stop(sg_enter_idle_timer);
-        tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
-        ai_audio_player_stop(AI_AUDIO_PLAYER_FG);
-        __ai_mode_free_complete_exit();
+        sg_goodbye_duplicate_suppressed = true;
+        if (ai_audio_player_finish_tts_stream() != OPRT_OK) {
+            PR_WARN("mode free failed to finish buffered goodbye audio");
+            ai_audio_player_stop(AI_AUDIO_PLAYER_FG);
+        }
         return true;
     }
 

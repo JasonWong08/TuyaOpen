@@ -164,6 +164,12 @@ OPERATE_RET ai_audio_play_data(AI_AUDIO_CODEC_E format, uint8_t *data, uint32_t 
 OPERATE_RET ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_STATE_E state, AI_AUDIO_CODEC_E codec, char *data,  int len);
 
 /**
+ * @brief Stop accepting TTS packets and let already buffered audio drain.
+ * @return OPERATE_RET Operation result code.
+ */
+OPERATE_RET ai_audio_player_finish_tts_stream(void);
+
+/**
 @brief Play music from playlist
 @param music Pointer to music structure containing playlist
 @return OPERATE_RET Operation result
