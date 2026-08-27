@@ -21,6 +21,11 @@
 #include "ai_user_event.h"
 #include "ai_skill.h"
 
+__attribute__((weak)) bool ai_app_should_suppress_tts_audio(void)
+{
+    return false;
+}
+
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
 #include "tdl_audio_manage.h"
 #include "ai_audio_player.h"
@@ -43,6 +48,7 @@
 ***********************************************************/
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
 static uint16_t __s_audio_codec_type = AI_AUDIO_CODEC_MP3;
+static bool     __s_tts_start_deferred = false;
 #endif
 /***********************************************************
 ***********************function define**********************
@@ -61,13 +67,19 @@ OPERATE_RET __ai_agent_event_cb(AI_EVENT_TYPE type, AI_PACKET_PT ptype, AI_EVENT
     if (AI_EVENT_START == type) {
         if (AI_PT_AUDIO == ptype) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-            /* Start audio player */
-            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_START, __s_audio_codec_type, (char*)eid, strlen(eid));
+            if (ai_app_should_suppress_tts_audio()) {
+                __s_tts_start_deferred = true;
+                PR_NOTICE("ai agent: defer TTS while app suppresses preliminary audio");
+            } else {
+                __s_tts_start_deferred = false;
+                ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_START, __s_audio_codec_type, (char *)eid, strlen(eid));
+            }
 #endif
         }
     } else if ((AI_EVENT_CHAT_BREAK == type)) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
         /* Cloud break, stop audio player */
+        __s_tts_start_deferred = false;
         ai_audio_player_stop(AI_AUDIO_PLAYER_FG);
 #endif
         ai_user_event_notify(AI_USER_EVT_CHAT_BREAK, NULL);
@@ -76,8 +88,12 @@ OPERATE_RET __ai_agent_event_cb(AI_EVENT_TYPE type, AI_PACKET_PT ptype, AI_EVENT
 	} else if ((AI_EVENT_END == type)) {
         if (AI_PT_AUDIO == ptype) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-            /* Stop audio player */
-            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_STOP, __s_audio_codec_type, (char*)eid, strlen(eid));
+            if (__s_tts_start_deferred) {
+                __s_tts_start_deferred = false;
+                PR_NOTICE("ai agent: discarded suppressed preliminary TTS stream");
+            } else {
+                ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_STOP, __s_audio_codec_type, (char *)eid, strlen(eid));
+            }
 #endif
         }
     } else if (AI_EVENT_CHAT_EXIT == type) {
@@ -129,7 +145,15 @@ OPERATE_RET __ai_agent_media_data_cb(AI_PACKET_PT type, char *data, uint32_t len
     OPERATE_RET rt = OPRT_OK;
     if(type == AI_PT_AUDIO) {
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
-        rt = ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_DATA, __s_audio_codec_type, (char*)data, len);
+        if (ai_app_should_suppress_tts_audio()) {
+            return OPRT_OK;
+        }
+        if (__s_tts_start_deferred) {
+            __s_tts_start_deferred = false;
+            ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_START, __s_audio_codec_type, NULL, 0);
+            PR_NOTICE("ai agent: start TTS after suppressed preliminary audio");
+        }
+        rt = ai_audio_play_tts_stream(AI_AUDIO_PLAYER_TTS_DATA, __s_audio_codec_type, (char *)data, len);
 #endif
     } else if(type == AI_PT_VIDEO) {
         /* TBD */

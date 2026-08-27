@@ -7,6 +7,8 @@
 #ifndef ROBOT_UART_VOICE_H
 #define ROBOT_UART_VOICE_H
 
+#include <stddef.h>
+
 #include "tuya_cloud_types.h"
 #include "ai_user_event.h"
 
@@ -16,6 +18,12 @@ OPERATE_RET robot_uart_voice_init(void);
 
 /** Call from app ASR event handler (AI_USER_EVT_ASR_OK). */
 void robot_uart_voice_on_asr(const char *asr_text);
+
+/** Return the locally matched eye-color command while its cloud reply is pending. */
+bool robot_uart_voice_get_pending_eye_color_command(char *cmd, size_t cmd_len);
+
+/** Mark that MCP confirmed the pending eye-color command completed. */
+void robot_uart_voice_mark_eye_color_mcp_completed(void);
 
 /** Map TTS start/end to second-UART listen/talk cues. */
 void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event);

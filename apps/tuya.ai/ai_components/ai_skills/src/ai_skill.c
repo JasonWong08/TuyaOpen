@@ -20,6 +20,12 @@ __attribute__((weak)) void ai_app_on_asr_result(const char *text)
     (void)text;
 }
 
+__attribute__((weak)) void ai_app_filter_nlg_text(char *text, bool eof)
+{
+    (void)text;
+    (void)eof;
+}
+
 #if defined(ENABLE_COMP_AI_AUDIO) && (ENABLE_COMP_AI_AUDIO == 1)
 #include "ai_audio_player.h"
 #include "skill_music_story.h"
@@ -302,6 +308,8 @@ static OPERATE_RET __ai_nlg_process(cJSON *root, bool eof)
     } else if (__ai_decode_literal_unicode_escapes(content)) {
         PR_DEBUG("decoded literal Unicode escapes in NLG content");
     }
+
+    ai_app_filter_nlg_text(content, eof);
 
     AI_NOTIFY_TEXT_T text = {0};
     cJSON           *time_index = cJSON_GetObjectItem(root, "timeIndex");

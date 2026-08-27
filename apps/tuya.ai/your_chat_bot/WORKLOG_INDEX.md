@@ -9,6 +9,7 @@
    - `2026-06-30_robot_control_fixes_summary.md`
    - `2026-08-18_ai_uart_duplicate_fix_summary.md`
    - `2026-08-24_robot_completion_reply_summary.md`
+   - `2026-08-27_eye_color_voice_reply_summary.md`
 3. 如果任务涉及 BLE 手柄连接、配网共存或启动重连，按时间顺序读：
    - `2026-06-02_quaddle_gamepad_integration_summary.md`
    - `2026-06-03_quaddle_ble_hid_debug_worklog.md`
@@ -81,6 +82,16 @@ git diff --check
 - 工具描述和补充提示词统一为“执行中可提示，完成后才确认”。
 - ESP32-S3 `AI_BOARD` 完整构建验证通过。
 
+### 2026-08-27 眼睛颜色语音控制与回复修复
+
+详见 `2026-08-27_eye_color_voice_reply_summary.md`。
+
+- 增加红、蓝、橙、黄、绿、粉、紫七种眼睛颜色的中英文 ASR 映射。
+- MCP 明确支持 `vc*` 颜色协议，禁止把颜色转换成 `m0` 头部角度。
+- 机器人使用“我的眼睛”描述自身，清除“眼部灯光”等错误 NLG 表述。
+- 中文眼睛颜色请求会丢弃最终完成句之前的 TTS 音频，只播放完成回复。
+- ESP32-S3 `AI_BOARD` 增量编译和完整固件构建验证通过。
+
 ## 记录索引
 
 | 日期 | 文件 | 主题 |
@@ -95,6 +106,7 @@ git diff --check
 | 2026-07-03 | `2026-07-03_quaddle_gamepad_switch_summary.md` | 新增 Quaddle 手柄连接与操控总开关 |
 | 2026-08-18 | `2026-08-18_ai_uart_duplicate_fix_summary.md` | 修复 AI 重复动作被 UART 去重后误报发送成功 |
 | 2026-08-24 | `2026-08-24_robot_completion_reply_summary.md` | 机器人完成令牌与语音回复严格联动 |
+| 2026-08-27 | `2026-08-27_eye_color_voice_reply_summary.md` | 眼睛颜色 ASR/MCP 协议、第一人称回复与前置 TTS 屏蔽 |
 
 ## 给后续 Codex/Cursor 的约定
 

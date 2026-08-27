@@ -24,6 +24,10 @@
 #define ROBOT_UART_CMD_EFFECT_END "ved"
 
 static bool s_expect_vet = false;
+static bool s_eye_color_reply_pending = false;
+static bool s_eye_color_mcp_completed = false;
+static bool s_eye_color_tts_suppressed = false;
+static char s_eye_color_pending_cmd[16] = {0};
 
 static void __robot_uart_voice_send_now(const char *cmd)
 {
@@ -303,12 +307,98 @@ static bool __robot_voice_match_walk_cmd(const char *asr, char *cmd, size_t cmd_
     return false;
 }
 
+static bool __robot_voice_match_eye_color_cmd(const char *asr, char *cmd, size_t cmd_len)
+{
+    static const ROBOT_VOICE_RULE_T s_eye_color_rules[] = {
+        {"\xE7\xB2\x89\xE7\xBA\xA2\xE8\x89\xB2", "vcp"},
+        {"\xE7\xB2\x89\xE7\xBA\xA2", "vcp"},
+        {"\xE7\xBA\xA2\xE8\x89\xB2", "vcr"},
+        {"\xE8\x93\x9D\xE8\x89\xB2", "vcb"},
+        {"\xE6\xA9\x99\xE8\x89\xB2", "vco"},
+        {"\xE6\xA9\x98\xE8\x89\xB2", "vco"},
+        {"\xE9\xBB\x84\xE8\x89\xB2", "vcy"},
+        {"\xE7\xBB\xBF\xE8\x89\xB2", "vcg"},
+        {"\xE7\xB2\x89\xE8\x89\xB2", "vcp"},
+        {"\xE7\xB4\xAB\xE8\x89\xB2", "vcu"},
+        {"orange", "vco"},
+        {"yellow", "vcy"},
+        {"purple", "vcu"},
+        {"green", "vcg"},
+        {"blue", "vcb"},
+        {"pink", "vcp"},
+        {"red", "vcr"},
+        {"\xE7\xBA\xA2", "vcr"},
+        {"\xE8\x93\x9D", "vcb"},
+        {"\xE6\xA9\x99", "vco"},
+        {"\xE6\xA9\x98", "vco"},
+        {"\xE9\xBB\x84", "vcy"},
+        {"\xE7\xBB\xBF", "vcg"},
+        {"\xE7\xB2\x89", "vcp"},
+        {"\xE7\xB4\xAB", "vcu"},
+    };
+    static const char *s_eye_targets[] = {
+        "\xE7\x9C\xBC\xE7\x9D\x9B",
+        "\xE7\x9C\xBC\xE8\x89\xB2",
+        "eye color",
+        "eyes",
+        "eye",
+    };
+    static const char *s_change_words[] = {
+        "\xE8\xAE\xBE\xE7\xBD\xAE",
+        "\xE6\x94\xB9",
+        "\xE8\xB0\x83",
+        "\xE6\x8D\xA2",
+        "\xE5\x8F\x98",
+        "change",
+        "set",
+        "turn",
+        "make",
+        "switch",
+        "adjust",
+        "modify",
+        "color",
+        "colour",
+    };
+    size_t i;
+    bool has_eye_target = false;
+    bool has_change_word = false;
+
+    for (i = 0; i < sizeof(s_eye_targets) / sizeof(s_eye_targets[0]); i++) {
+        if (__robot_voice_contains(asr, s_eye_targets[i])) {
+            has_eye_target = true;
+            break;
+        }
+    }
+    for (i = 0; i < sizeof(s_change_words) / sizeof(s_change_words[0]); i++) {
+        if (__robot_voice_contains(asr, s_change_words[i])) {
+            has_change_word = true;
+            break;
+        }
+    }
+    if (!has_eye_target || !has_change_word) {
+        return false;
+    }
+
+    for (i = 0; i < sizeof(s_eye_color_rules) / sizeof(s_eye_color_rules[0]); i++) {
+        if (__robot_voice_contains(asr, s_eye_color_rules[i].phrase)) {
+            snprintf(cmd, cmd_len, "%s", s_eye_color_rules[i].cmd);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static bool __robot_voice_match_cmd(const char *asr, char *cmd, size_t cmd_len)
 {
     size_t i;
 
     if (!asr || asr[0] == '\0' || !cmd || cmd_len == 0) {
         return false;
+    }
+
+    if (__robot_voice_match_eye_color_cmd(asr, cmd, cmd_len)) {
+        return true;
     }
 
     if (__robot_voice_match_walk_cmd(asr, cmd, cmd_len)) {
@@ -408,11 +498,77 @@ void robot_uart_voice_on_asr(const char *asr_text)
 
 void ai_app_on_asr_result(const char *text)
 {
+    char eye_color_cmd[16] = {0};
+
+    s_eye_color_reply_pending = __robot_voice_match_eye_color_cmd(text, eye_color_cmd, sizeof(eye_color_cmd));
+    s_eye_color_mcp_completed = false;
+    s_eye_color_tts_suppressed =
+        s_eye_color_reply_pending && (__robot_voice_contains(text, "\xE7\x9C\xBC\xE7\x9D\x9B") ||
+                                      __robot_voice_contains(text, "\xE7\x9C\xBC\xE8\x89\xB2"));
+    if (s_eye_color_reply_pending) {
+        snprintf(s_eye_color_pending_cmd, sizeof(s_eye_color_pending_cmd), "%s", eye_color_cmd);
+    } else {
+        s_eye_color_pending_cmd[0] = '\0';
+    }
+
     if (__robot_voice_is_exit_phrase(text)) {
         ai_mode_free_request_exit();
     }
 
     robot_uart_voice_on_asr(text);
+}
+
+bool robot_uart_voice_get_pending_eye_color_command(char *cmd, size_t cmd_len)
+{
+    if (!s_eye_color_reply_pending || s_eye_color_pending_cmd[0] == '\0' || !cmd || cmd_len == 0) {
+        return false;
+    }
+
+    snprintf(cmd, cmd_len, "%s", s_eye_color_pending_cmd);
+    return true;
+}
+
+void robot_uart_voice_mark_eye_color_mcp_completed(void)
+{
+    if (s_eye_color_reply_pending) {
+        s_eye_color_mcp_completed = true;
+    }
+}
+
+bool ai_app_should_suppress_tts_audio(void)
+{
+    return s_eye_color_tts_suppressed;
+}
+
+void ai_app_filter_nlg_text(char *text, bool eof)
+{
+    static const char second_person[] = "\xE4\xBD\xA0\xE7\x9A\x84";
+    static const char first_person[]  = "\xE6\x88\x91\xE7\x9A\x84";
+    char             *match;
+
+    if (s_eye_color_reply_pending && text) {
+        if (strstr(text, "\xE7\x9C\xBC\xE9\x83\xA8\xE7\x81\xAF\xE5\x85\x89") != NULL) {
+            text[0] = '\0';
+            PR_NOTICE("robot voice: removed incorrect eye-lighting NLG text");
+        }
+        while ((match = strstr(text, second_person)) != NULL) {
+            memcpy(match, first_person, sizeof(first_person) - 1);
+            text = match + sizeof(first_person) - 1;
+            PR_NOTICE("robot voice: corrected eye-color reply to first person");
+        }
+        if ((s_eye_color_mcp_completed && text[0] != '\0') ||
+            strstr(text, "\xE5\xB7\xB2\xE7\xBB\x8F") != NULL) {
+            s_eye_color_tts_suppressed = false;
+            PR_NOTICE("robot voice: allow completed eye-color TTS reply");
+        }
+    }
+
+    if (eof) {
+        s_eye_color_reply_pending = false;
+        s_eye_color_mcp_completed = false;
+        s_eye_color_tts_suppressed = false;
+        s_eye_color_pending_cmd[0] = '\0';
+    }
 }
 
 static void __cli_robot_uart_cmd(int argc, char *argv[])

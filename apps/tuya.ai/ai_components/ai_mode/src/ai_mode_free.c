@@ -76,10 +76,10 @@ static TIMER_ID        sg_listen_arm_timer = NULL;
 static uint32_t        sg_listen_timeout_ms = AI_CHAT_LISTEN_TIMEOUT_MS;
 static uint32_t        sg_response_timeout_ms = AI_CHAT_RESPONSE_TIMEOUT_MS;
 static char            sg_exit_prompt_zh[] =
-    "请只回复下面这句话，不要添加任何其他内容:好的，如果你没有什么想聊的话题或者要求，我们下次再聊。";
+    "请只回复下面这句话，不要添加任何其他内容：没听到你说话，我先休息一会儿啦。需要我的时候，再叫我哦！";
 static char sg_exit_prompt_en[] =
-    "Reply in English with exactly this sentence and nothing else:Okay, if there is nothing else you would like to "
-    "talk about or ask, let's chat again next time.";
+    "Reply in English with exactly this sentence and nothing else:I didn't hear you, so I'll rest for a while."
+    "Call me when you need me!";
 #if defined(ENABLE_AI_LANGUAGE_ENGLISH) && (ENABLE_AI_LANGUAGE_ENGLISH == 1)
 static bool sg_use_english_exit_prompt = true;
 #else
@@ -215,7 +215,7 @@ static void __ai_mode_free_begin_exit(void)
 
 static bool __ai_mode_free_is_goodbye_prefix(const AI_NOTIFY_TEXT_T *text)
 {
-    const char *prefix = sg_use_english_exit_prompt ? "Okay" : "好的";
+    const char *prefix = sg_use_english_exit_prompt ? "I didn't hear you" : "没听到你说话";
     size_t      prefix_len = strlen(prefix);
     size_t      offset = 0;
 

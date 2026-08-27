@@ -371,7 +371,6 @@ that is all
 - ASR 命中退出短语时调用 Free Talk 退出请求。
 - 补充 `see you`、`talk to you later`、`that's all` 和 `that is all` 等英文退出表达。
 
-`apps/tuya.ai/your_chat_bot/include/tuya_config.h` 中可能因构建工具自动选择有效凭据而出现注释位置变化；这不是本次功能逻辑修改，本文不记录或展示任何设备凭据。
 
 ## 5. 构建和验证
 

@@ -20,6 +20,7 @@
 
 #include "second_uart.h"
 #include "quaddle_robot_bridge.h"
+#include "robot_uart_voice.h"
 
 #define ROBOT_COMMAND_COMPLETION_TIMEOUT_MS 21000
 
@@ -61,6 +62,7 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
     OPERATE_RET uart_rt    = OPRT_OK;
     char       *cursor;
     unsigned    queued_count = 0;
+    bool        eye_color_request = false;
 
     (void)user_data;
 
@@ -85,7 +87,13 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
         mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "command too long");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_INVALID_PARM;
     }
-    snprintf(command_text, sizeof(command_text), "%s", text);
+    eye_color_request = robot_uart_voice_get_pending_eye_color_command(command_text, sizeof(command_text));
+    if (eye_color_request) {
+        PR_NOTICE("MCP robot send_command: replace \"%s\" with pending eye-color command \"%s\"", text,
+                  command_text);
+    } else {
+        snprintf(command_text, sizeof(command_text), "%s", text);
+    }
 
     cursor = command_text;
     while (cursor && *cursor != '\0') {
@@ -147,7 +155,15 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : uart_rt;
     }
 
-    mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "completed: robot completion token received");
+    if (eye_color_request) {
+        robot_uart_voice_mark_eye_color_mcp_completed();
+        mcp_str_rt = ai_mcp_return_value_set_str(
+            ret_val,
+            "completed: the robot's eye color was changed. In the user-facing reply, speak as the robot in first "
+            "person. In Chinese say '我的眼睛' or '我的眼睛颜色'; never say '你的眼睛' or '眼部灯光'.");
+    } else {
+        mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "completed: robot completion token received");
+    }
     return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
 }
 
@@ -155,17 +171,24 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
 {
     return AI_MCP_TOOL_ADD(
         "self.robot.send_command",
-        "Send physical robot dog motion commands over UART1; this is not for LCD expressions.\n"
+        "Send robot dog body-motion or eye-color commands over UART1; this is not for LCD expressions.\n"
         "Arguments must contain command codes only, never natural-language descriptions. Prefer one command per tool call; "
         "semicolon-separated commands are accepted only as a fallback.\n"
         "Do not mention internal scheduling, queueing, arbitration, or gamepad priority in user-facing replies.\n"
+        "Speak as the robot in first person. Refer to the robot's own body and features as my/mine, never your/yours.\n"
+        "Eye color is the color of the robot's eyes, not eye lighting and not a head/neck angle. For an eye-color "
+        "request, call the matching command: red vcr, blue vcb, orange vco, yellow vcy, green vcg, pink vcp, purple "
+        "vcu. Never convert a color to an m0 angle. For an eye-color request, call the tool immediately without any "
+        "before-call speech or progress acknowledgement. After completion, in Chinese say '已经把我的眼睛调成<颜色>啦。' "
+        "Never say '眼部灯光' or '你的眼睛'.\n"
         "This tool waits for the robot completion token. Before it returns, only say that the action is in progress. "
         "Say the action is complete only when the tool returns 'completed'. If it reports failure or timeout, say that "
         "completion could not be confirmed; never claim the action completed.\n"
-        "Use this tool only when the user explicitly asks for a physical robot body motion. Do not call it for normal "
-        "chat, self-introductions, ability descriptions, or question answering. Do not add default gestures or motions. "
-        "Always use this tool for explicit robot body motions, including English requests such as sit down, stand up, go "
-        "forward, turn left/right, run, crawl, nod, and shake head. Do not route these robot actions to smart_home. "
+        "Use this tool only when the user explicitly asks for a physical robot body motion or an eye-color change. Do not "
+        "call it for normal chat, self-introductions, ability descriptions, or question answering. Do not add default "
+        "gestures or motions. Always use this tool for explicit robot body motions or eye-color changes, including English "
+        "requests such as sit down, stand up, go forward, turn left/right, run, crawl, nod, shake head, or make the eyes "
+        "purple. Do not route these robot commands to smart_home. "
         "Reply to the user in the same language as the user's latest request. Head motion may use m0 or kwh.\n"
         "Gait: kwkF forward, kbkF backward, ktrF run, kcrF crawl, kvtL turn left, kvtR turn right. "
         "Parameter <=200 means steps/default 3; >200 means milliseconds; turn parameter is usually degrees/default "
@@ -175,7 +198,8 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "Skills: kbf backflip, kff frontflip, khds handstand, kmw moonwalk, krl roll, kbx boxing, kkc kick.\n"
         "Interaction: kcmh come, khsk handshake, khu raise hand, ksnf sniff, kscrh scratch, kdg dig, kpee pee, kpd "
         "play dead.\n"
-        "Head/joints: kwh shake/tilt head, knd nod, m0 angle turns head (positive left, negative right, e.g. m0 45). "
+        "Head/joints: kwh shake/tilt head, knd nod, m0 angle physically turns the neck/head (positive left, negative "
+        "right, e.g. m0 45); m0 never controls color or hue. "
         "m<number> <angle>: head=0, left hand=8, right hand=9; negative is forward, positive is backward.\n"
         "Examples: sit -> ksit; run -> ktrF 3; tilt head -> kwh; turn head left -> m0 45; raise left hand -> m8 -30.",
         __robot_send_command, NULL, MCP_PROP_STR("text", "Machine command code only; no Chinese or descriptions."));
