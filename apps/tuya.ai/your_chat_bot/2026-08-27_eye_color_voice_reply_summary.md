@@ -63,7 +63,7 @@ text -> NLG ... 已经把我的眼睛调成紫色啦
 | 黄色 / yellow | `vcy` |
 | 绿色 / green | `vcg` |
 | 粉色 / pink | `vcp` |
-| 紫色 / purple | `vcu` |
+| 紫色 / purple | `vcv` |
 
 命中后沿用现有机器人仲裁链路，将命令以 `ASR` 来源加入队列并等待机器人返回 `v` 完成令牌。
 

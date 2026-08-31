@@ -319,10 +319,10 @@ static bool __robot_voice_match_eye_color_cmd(const char *asr, char *cmd, size_t
         {"\xE9\xBB\x84\xE8\x89\xB2", "vcy"},
         {"\xE7\xBB\xBF\xE8\x89\xB2", "vcg"},
         {"\xE7\xB2\x89\xE8\x89\xB2", "vcp"},
-        {"\xE7\xB4\xAB\xE8\x89\xB2", "vcu"},
+        {"\xE7\xB4\xAB\xE8\x89\xB2", "vcv"},
         {"orange", "vco"},
         {"yellow", "vcy"},
-        {"purple", "vcu"},
+        {"purple", "vcv"},
         {"green", "vcg"},
         {"blue", "vcb"},
         {"pink", "vcp"},
@@ -334,7 +334,7 @@ static bool __robot_voice_match_eye_color_cmd(const char *asr, char *cmd, size_t
         {"\xE9\xBB\x84", "vcy"},
         {"\xE7\xBB\xBF", "vcg"},
         {"\xE7\xB2\x89", "vcp"},
-        {"\xE7\xB4\xAB", "vcu"},
+        {"\xE7\xB4\xAB", "vcv"},
     };
     static const char *s_eye_targets[] = {
         "\xE7\x9C\xBC\xE7\x9D\x9B",
