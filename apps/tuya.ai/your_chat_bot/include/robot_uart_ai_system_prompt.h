@@ -33,6 +33,8 @@
     "- If the user only asks to chat, introduce yourself, answer a question, or describe your abilities, do not call " \
     "self_robot_send_command.\n"                                                                                        \
     "- Do not add a default gesture or motion unless the user requested one.\n"                                        \
+    "- Do not send eye expression tokens such as veH, veS, veP, veL, veT, velT, vetL, veTH, or ved. Firmware applies " \
+    "those from speech state and reply mood. Never confuse them with gait kvtL or kvtR.\n"                             \
     "- Example: User says \"Please sit down.\" -> say it is in progress, call self_robot_send_command with "           \
     "{\"text\":\"ksit\"}, and claim completion only if the tool confirms completion.\n"                               \
     "- Example: User says \"Go forward for three steps.\" -> call self_robot_send_command with {\"text\":\"kwkF 3\"}, " \

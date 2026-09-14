@@ -46,7 +46,18 @@ AI_AGENT_EMO_T cAI_AGENT_EMO[] = {
     {"U+1F60F", EMOJI_CONFIDENT},    /* 😏 */
     {"U+1F634", EMOJI_SLEEP},        /* 😴 */
     {"U+1F61C", EMOJI_SILLY},        /* 😜 */
-    {"U+1F644", EMOJI_CONFUSED}      /* 🙄 */
+    {"U+1F644", EMOJI_CONFUSED},     /* 🙄 */
+    {"U+1F60A", EMOJI_HAPPY},        /* 😊 */
+    {"U+1F600", EMOJI_HAPPY},        /* 😀 */
+    {"U+1F603", EMOJI_LAUGHING},     /* 😃 */
+    {"U+1F604", EMOJI_LAUGHING},     /* 😄 */
+    {"U+1F601", EMOJI_FUNNY},        /* 😁 */
+    {"U+1F605", EMOJI_LAUGHING},     /* 😅 */
+    {"U+1F970", EMOJI_LOVING},       /* 🥰 */
+    {"U+1F622", EMOJI_SAD},          /* 😢 */
+    {"U+1F61E", EMOJI_SAD},          /* 😞 */
+    {"U+1F641", EMOJI_SAD},          /* 🙁 */
+    {"U+1F621", EMOJI_ANGRY}         /* 😡 */
 };
 
 /***********************************************************

@@ -22,12 +22,37 @@
 #define ROBOT_UART_CMD_TALK       "velT"
 #define ROBOT_UART_CMD_TALK_END   "vet"
 #define ROBOT_UART_CMD_EFFECT_END "ved"
+#define ROBOT_UART_CMD_TALK_HAPPY "veTH"
+#define ROBOT_UART_CMD_TALK_SAD   "veTS"
+#define ROBOT_UART_CMD_TALK_SQUINT "veTP"
+#define ROBOT_UART_CMD_MOOD_HAPPY "veH"
+#define ROBOT_UART_CMD_MOOD_SAD   "veS"
+#define ROBOT_UART_CMD_MOOD_SQUINT "veP"
+#define ROBOT_UART_NLG_MOOD_MAX   256
+
+typedef enum {
+    ROBOT_EYE_MOOD_NONE = 0,
+    ROBOT_EYE_MOOD_HAPPY,
+    ROBOT_EYE_MOOD_SAD,
+    ROBOT_EYE_MOOD_SQUINT,
+} ROBOT_EYE_MOOD_E;
 
 static bool s_expect_vet = false;
+static bool s_talking = false;
+static ROBOT_EYE_MOOD_E s_reply_mood = ROBOT_EYE_MOOD_NONE;
+static ROBOT_EYE_MOOD_E s_applied_mood = ROBOT_EYE_MOOD_NONE;
+static char   s_nlg_mood_buf[ROBOT_UART_NLG_MOOD_MAX];
+static size_t s_nlg_mood_len = 0;
 static bool s_eye_color_reply_pending = false;
 static bool s_eye_color_mcp_completed = false;
 static bool s_eye_color_tts_suppressed = false;
 static char s_eye_color_pending_cmd[16] = {0};
+
+static void __robot_uart_voice_reset_reply_mood(void);
+static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool is_start);
+static void __robot_uart_voice_on_emotion(const AI_NOTIFY_EMO_T *emo);
+static void __robot_uart_voice_send_talk_with_mood(void);
+static void __robot_uart_voice_send_mood_only(ROBOT_EYE_MOOD_E mood);
 
 static void __robot_uart_voice_send_now(const char *cmd)
 {
@@ -55,6 +80,9 @@ void ai_app_on_free_mode_exit(void)
     /* The free-mode state handler runs before the app event callback. Clear
      * this flag so the same PLAY_END does not overwrite ved with vet. */
     s_expect_vet = false;
+    s_talking = false;
+    s_applied_mood = ROBOT_EYE_MOOD_NONE;
+    __robot_uart_voice_reset_reply_mood();
     __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
 }
 
@@ -65,12 +93,28 @@ void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
     }
 
     switch (event->type) {
+    case AI_USER_EVT_TEXT_STREAM_START:
+        __robot_uart_voice_on_text_stream((const AI_NOTIFY_TEXT_T *)event->data, true);
+        break;
+    case AI_USER_EVT_TEXT_STREAM_DATA:
+        __robot_uart_voice_on_text_stream((const AI_NOTIFY_TEXT_T *)event->data, false);
+        break;
+    case AI_USER_EVT_LLM_EMOTION:
+    case AI_USER_EVT_EMOTION:
+        __robot_uart_voice_on_emotion((const AI_NOTIFY_EMO_T *)event->data);
+        break;
+    case AI_USER_EVT_CHAT_BREAK:
+        s_talking = false;
+        __robot_uart_voice_reset_reply_mood();
+        break;
     case AI_USER_EVT_TTS_PRE:
         s_expect_vet = true;
-        __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK);
+        s_talking = true;
+        __robot_uart_voice_send_talk_with_mood();
         break;
     case AI_USER_EVT_TTS_ABORT:
     case AI_USER_EVT_PLAY_END:
+        s_talking = false;
         if (!s_expect_vet) {
             break;
         }
@@ -125,6 +169,359 @@ static bool __robot_voice_contains(const char *text, const char *phrase)
     }
 
     return false;
+}
+
+static size_t __robot_voice_find(const char *text, const char *phrase)
+{
+    size_t text_len;
+    size_t phrase_len;
+    size_t i;
+    size_t j;
+
+    if (!text || !phrase || phrase[0] == '\0') {
+        return (size_t)-1;
+    }
+
+    text_len = strlen(text);
+    phrase_len = strlen(phrase);
+    if (phrase_len > text_len) {
+        return (size_t)-1;
+    }
+
+    for (i = 0; i <= text_len - phrase_len; i++) {
+        for (j = 0; j < phrase_len; j++) {
+            if (__robot_voice_ascii_tolower(text[i + j]) != __robot_voice_ascii_tolower(phrase[j])) {
+                break;
+            }
+        }
+        if (j == phrase_len) {
+            return i;
+        }
+    }
+
+    return (size_t)-1;
+}
+
+typedef struct {
+    const char         *phrase;
+    ROBOT_EYE_MOOD_E    mood;
+} ROBOT_NLG_MOOD_RULE_T;
+
+static const ROBOT_NLG_MOOD_RULE_T s_nlg_mood_rules[] = {
+    {"hahaha", ROBOT_EYE_MOOD_HAPPY},
+    {"haha", ROBOT_EYE_MOOD_HAPPY},
+    {"ha ha", ROBOT_EYE_MOOD_HAPPY},
+    {"woohoo", ROBOT_EYE_MOOD_HAPPY},
+    {"grinning", ROBOT_EYE_MOOD_HAPPY},
+    {"smiling", ROBOT_EYE_MOOD_HAPPY},
+    {"smile", ROBOT_EYE_MOOD_HAPPY},
+    {"happy", ROBOT_EYE_MOOD_HAPPY},
+    {"cute", ROBOT_EYE_MOOD_HAPPY},
+    {"cheer", ROBOT_EYE_MOOD_HAPPY},
+    {"lmao", ROBOT_EYE_MOOD_HAPPY},
+    {"lol", ROBOT_EYE_MOOD_HAPPY},
+    {"yay", ROBOT_EYE_MOOD_HAPPY},
+    {"awesome", ROBOT_EYE_MOOD_HAPPY},
+    {"funny", ROBOT_EYE_MOOD_HAPPY},
+    {"glad", ROBOT_EYE_MOOD_HAPPY},
+    {"\xF0\x9F\x98\x8A", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\x93\x88\xE5\x93\x88", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\x91\xB5\xE5\x91\xB5", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\x98\xBF\xE5\x98\xBF", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\x98\xBB\xE5\x98\xBB", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\xBC\x80\xE5\xBF\x83", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE9\xAB\x98\xE5\x85\xB4", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\xA4\xAA\xE5\xA5\xBD\xE4\xBA\x86", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE5\xA4\xAA\xE6\xa3\x92", ROBOT_EYE_MOOD_HAPPY},
+    {"\xE7\x9C\x9F\xE6\xA3\x92", ROBOT_EYE_MOOD_HAPPY},
+    {"unfortunately", ROBOT_EYE_MOOD_SAD},
+    {"unhappy", ROBOT_EYE_MOOD_SAD},
+    {"sorry", ROBOT_EYE_MOOD_SAD},
+    {"sad", ROBOT_EYE_MOOD_SAD},
+    {"pity", ROBOT_EYE_MOOD_SAD},
+    {"\xE5\xAF\xB9\xE4\xB8\x8D\xE8\xB5\xB7", ROBOT_EYE_MOOD_SAD},
+    {"\xE9\x9A\xBE\xE8\xBF\x87", ROBOT_EYE_MOOD_SAD},
+    {"\xE4\xBC\xA4\xE5\xBF\x83", ROBOT_EYE_MOOD_SAD},
+    {"\xE6\x8A\xB1\xE6\xad\x89", ROBOT_EYE_MOOD_SAD},
+    {"\xE9\x81\x97\xE6\x86\xBE", ROBOT_EYE_MOOD_SAD},
+    {"\xE5\x8F\xAF\xE6\x83\x9C", ROBOT_EYE_MOOD_SAD},
+    {"\xE5\x91\x9C\xE5\x91\x9C", ROBOT_EYE_MOOD_SAD},
+    {"not smiling", ROBOT_EYE_MOOD_SQUINT},
+    {"furrowed", ROBOT_EYE_MOOD_SQUINT},
+    {"fuming", ROBOT_EYE_MOOD_SQUINT},
+    {"angry", ROBOT_EYE_MOOD_SQUINT},
+    {"not sure", ROBOT_EYE_MOOD_SQUINT},
+    {"really?", ROBOT_EYE_MOOD_SQUINT},
+    {"perhaps", ROBOT_EYE_MOOD_SQUINT},
+    {"maybe", ROBOT_EYE_MOOD_SQUINT},
+    {"doubt", ROBOT_EYE_MOOD_SQUINT},
+    {"confused", ROBOT_EYE_MOOD_SQUINT},
+    {"hmm", ROBOT_EYE_MOOD_SQUINT},
+    {"\xE4\xB8\x8D\xE7\xa1\xae\xE5\xae\x9a", ROBOT_EYE_MOOD_SQUINT},
+    {"\xE8\xae\xa9\xE6\x88\x91\xE6\x83\xB3\xE6\x83\xB3", ROBOT_EYE_MOOD_SQUINT},
+    {"\xE7\x9c\x9f\xE7\x9a\x84\xE5\x90\x97", ROBOT_EYE_MOOD_SQUINT},
+    {"\xE6\x80\x80\xE7\x96\x91", ROBOT_EYE_MOOD_SQUINT},
+    {"\xE5\xa5\x87\xE6\x80\xaa", ROBOT_EYE_MOOD_SQUINT},
+    {"\xE6\x9c\xaa\xE5\xbf\x85", ROBOT_EYE_MOOD_SQUINT},
+};
+
+static ROBOT_EYE_MOOD_E __robot_uart_mood_from_text(const char *text)
+{
+    size_t i;
+    size_t best_pos = (size_t)-1;
+    ROBOT_EYE_MOOD_E best_mood = ROBOT_EYE_MOOD_NONE;
+
+    if (!text || text[0] == '\0') {
+        return ROBOT_EYE_MOOD_NONE;
+    }
+
+    for (i = 0; i < sizeof(s_nlg_mood_rules) / sizeof(s_nlg_mood_rules[0]); i++) {
+        size_t pos = __robot_voice_find(text, s_nlg_mood_rules[i].phrase);
+        if (pos == (size_t)-1) {
+            continue;
+        }
+        if (pos < best_pos) {
+            best_pos = pos;
+            best_mood = s_nlg_mood_rules[i].mood;
+        }
+    }
+
+    return best_mood;
+}
+
+static ROBOT_EYE_MOOD_E __robot_uart_mood_from_emoji_name(const char *name)
+{
+    if (!name || name[0] == '\0') {
+        return ROBOT_EYE_MOOD_NONE;
+    }
+
+    if (strcmp(name, EMOJI_HAPPY) == 0 || strcmp(name, EMOJI_LAUGHING) == 0 || strcmp(name, EMOJI_FUNNY) == 0 ||
+        strcmp(name, EMOJI_LOVING) == 0 || strcmp(name, EMOJI_WINK) == 0 || strcmp(name, EMOJI_COOL) == 0 ||
+        strcmp(name, EMOJI_RELAXED) == 0 || strcmp(name, EMOJI_DELICIOUS) == 0 || strcmp(name, EMOJI_KISSY) == 0 ||
+        strcmp(name, EMOJI_CONFIDENT) == 0 || strcmp(name, EMOJI_SILLY) == 0) {
+        return ROBOT_EYE_MOOD_HAPPY;
+    }
+
+    if (strcmp(name, EMOJI_SAD) == 0 || strcmp(name, EMOJI_FEARFUL) == 0 ||
+        strcmp(name, EMOJI_DISAPPOINTED) == 0 || strcmp(name, EMOJI_EMBARRASSED) == 0) {
+        return ROBOT_EYE_MOOD_SAD;
+    }
+
+    if (strcmp(name, EMOJI_THINKING) == 0 || strcmp(name, EMOJI_CONFUSED) == 0 || strcmp(name, EMOJI_ANGRY) == 0 ||
+        strcmp(name, EMOJI_ANNOYED) == 0 || strcmp(name, EMOJI_SURPRISE) == 0 || strcmp(name, EMOJI_SHOCKED) == 0) {
+        return ROBOT_EYE_MOOD_SQUINT;
+    }
+
+    return ROBOT_EYE_MOOD_NONE;
+}
+
+static int __robot_uart_hex_val(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    return -1;
+}
+
+static uint32_t __robot_uart_parse_emoji_code(const char *emoji)
+{
+    uint32_t code = 0;
+    const char *p;
+    int digit;
+
+    if (!emoji || emoji[0] == '\0') {
+        return 0;
+    }
+    p = emoji;
+    if ((p[0] == 'U' || p[0] == 'u') && p[1] == '+') {
+        p += 2;
+    }
+    while (*p) {
+        digit = __robot_uart_hex_val(*p++);
+        if (digit < 0) {
+            return 0;
+        }
+        code = (code << 4) | (uint32_t)digit;
+    }
+    return code;
+}
+
+static ROBOT_EYE_MOOD_E __robot_uart_mood_from_emoji_code(uint32_t code)
+{
+    switch (code) {
+    case 0x1F60A:
+    case 0x1F600:
+    case 0x1F601:
+    case 0x1F603:
+    case 0x1F604:
+    case 0x1F605:
+    case 0x1F642:
+    case 0x1F606:
+    case 0x1F602:
+    case 0x1F60D:
+    case 0x1F609:
+    case 0x1F60E:
+    case 0x1F60C:
+    case 0x1F618:
+    case 0x1F60F:
+    case 0x1F61C:
+    case 0x1F970:
+    case 0x1F917:
+        return ROBOT_EYE_MOOD_HAPPY;
+    case 0x1F614:
+    case 0x1F62D:
+    case 0x1F622:
+    case 0x1F61E:
+    case 0x1F641:
+        return ROBOT_EYE_MOOD_SAD;
+    case 0x1F620:
+    case 0x1F621:
+    case 0x1F914:
+    case 0x1F644:
+    case 0x1F62F:
+    case 0x1F631:
+        return ROBOT_EYE_MOOD_SQUINT;
+    default:
+        return ROBOT_EYE_MOOD_NONE;
+    }
+}
+
+static const char *__robot_uart_talk_cmd_for_mood(ROBOT_EYE_MOOD_E mood)
+{
+    switch (mood) {
+    case ROBOT_EYE_MOOD_HAPPY:
+        return ROBOT_UART_CMD_TALK_HAPPY;
+    case ROBOT_EYE_MOOD_SAD:
+        return ROBOT_UART_CMD_TALK_SAD;
+    case ROBOT_EYE_MOOD_SQUINT:
+        return ROBOT_UART_CMD_TALK_SQUINT;
+    default:
+        return ROBOT_UART_CMD_TALK;
+    }
+}
+
+static const char *__robot_uart_mood_cmd(ROBOT_EYE_MOOD_E mood)
+{
+    switch (mood) {
+    case ROBOT_EYE_MOOD_HAPPY:
+        return ROBOT_UART_CMD_MOOD_HAPPY;
+    case ROBOT_EYE_MOOD_SAD:
+        return ROBOT_UART_CMD_MOOD_SAD;
+    case ROBOT_EYE_MOOD_SQUINT:
+        return ROBOT_UART_CMD_MOOD_SQUINT;
+    default:
+        return NULL;
+    }
+}
+
+static void __robot_uart_voice_reset_reply_mood(void)
+{
+    s_reply_mood = ROBOT_EYE_MOOD_NONE;
+    s_nlg_mood_len = 0;
+    s_nlg_mood_buf[0] = '\0';
+}
+
+static void __robot_uart_voice_append_nlg(const char *data, uint16_t datalen)
+{
+    size_t copy_len;
+
+    if (!data || datalen == 0) {
+        return;
+    }
+
+    if (s_nlg_mood_len >= sizeof(s_nlg_mood_buf) - 1) {
+        return;
+    }
+
+    copy_len = datalen;
+    if (copy_len > sizeof(s_nlg_mood_buf) - 1 - s_nlg_mood_len) {
+        copy_len = sizeof(s_nlg_mood_buf) - 1 - s_nlg_mood_len;
+    }
+    memcpy(s_nlg_mood_buf + s_nlg_mood_len, data, copy_len);
+    s_nlg_mood_len += copy_len;
+    s_nlg_mood_buf[s_nlg_mood_len] = '\0';
+}
+
+static void __robot_uart_voice_set_reply_mood(ROBOT_EYE_MOOD_E mood, const char *source)
+{
+    if (mood == ROBOT_EYE_MOOD_NONE) {
+        return;
+    }
+
+    if (s_reply_mood != mood) {
+        PR_NOTICE("robot voice: reply mood %d from %s", (int)mood, source ? source : "?");
+    }
+    s_reply_mood = mood;
+    if (s_talking && s_applied_mood != mood) {
+        __robot_uart_voice_send_mood_only(mood);
+    }
+}
+
+static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool is_start)
+{
+    ROBOT_EYE_MOOD_E mood;
+
+    if (is_start) {
+        s_nlg_mood_len = 0;
+        s_nlg_mood_buf[0] = '\0';
+    }
+    if (!text || !text->data || text->datalen == 0) {
+        return;
+    }
+
+    __robot_uart_voice_append_nlg(text->data, text->datalen);
+    mood = __robot_uart_mood_from_text(s_nlg_mood_buf);
+    __robot_uart_voice_set_reply_mood(mood, "nlg");
+}
+
+static void __robot_uart_voice_send_mood_only(ROBOT_EYE_MOOD_E mood)
+{
+    const char *cmd = __robot_uart_mood_cmd(mood);
+
+    if (!cmd) {
+        return;
+    }
+    __robot_uart_voice_send_now(cmd);
+    s_applied_mood = mood;
+}
+
+static void __robot_uart_voice_on_emotion(const AI_NOTIFY_EMO_T *emo)
+{
+    ROBOT_EYE_MOOD_E mood;
+
+    if (!emo) {
+        return;
+    }
+
+    mood = __robot_uart_mood_from_emoji_name(emo->name);
+    if (mood == ROBOT_EYE_MOOD_NONE) {
+        mood = __robot_uart_mood_from_emoji_code(__robot_uart_parse_emoji_code(emo->emoji));
+    }
+    if (mood == ROBOT_EYE_MOOD_NONE && emo->emoji &&
+        (__robot_uart_parse_emoji_code(emo->emoji) == 0x1F636)) {
+        s_reply_mood = ROBOT_EYE_MOOD_NONE;
+        PR_NOTICE("robot voice: reply mood cleared by explicit neutral tag");
+        return;
+    }
+
+    __robot_uart_voice_set_reply_mood(mood, "emotion");
+}
+
+static void __robot_uart_voice_send_talk_with_mood(void)
+{
+    if (s_reply_mood == ROBOT_EYE_MOOD_NONE && s_applied_mood != ROBOT_EYE_MOOD_NONE) {
+        __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
+        s_applied_mood = ROBOT_EYE_MOOD_NONE;
+    }
+
+    __robot_uart_voice_send_now(__robot_uart_talk_cmd_for_mood(s_reply_mood));
+    s_applied_mood = s_reply_mood;
 }
 
 /* Longer phrases first to avoid partial false matches */
@@ -499,6 +896,13 @@ void robot_uart_voice_on_asr(const char *asr_text)
 void ai_app_on_asr_result(const char *text)
 {
     char eye_color_cmd[16] = {0};
+    ROBOT_EYE_MOOD_E mood;
+
+    if (text && text[0] != '\0') {
+        __robot_uart_voice_reset_reply_mood();
+        mood = __robot_uart_mood_from_text(text);
+        __robot_uart_voice_set_reply_mood(mood, "asr");
+    }
 
     s_eye_color_reply_pending = __robot_voice_match_eye_color_cmd(text, eye_color_cmd, sizeof(eye_color_cmd));
     s_eye_color_mcp_completed = false;
@@ -598,7 +1002,7 @@ OPERATE_RET robot_uart_voice_init(void)
 
     tal_cli_cmd_register(s_robot_uart_cli, 1);
 
-    PR_NOTICE("robot voice: ASR->UART1 enabled; record/talk cues vetL, velT, vet; CLI: robot_uart [cmd]");
+    PR_NOTICE("robot voice: ASR->UART1 enabled; record/talk cues vetL, velT/veTH/veTS/veTP, vet; CLI: robot_uart [cmd]");
     return OPRT_OK;
 }
 
