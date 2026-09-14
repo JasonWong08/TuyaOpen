@@ -153,7 +153,8 @@ typedef OPERATE_RET (*MCP_TOOL_CALLBACK)(const MCP_PROPERTY_LIST_T *properties,
 
 /**
  * MCP tool definition
- * @name: Tool name (Name is separated by dots is recommended, e.g., "device.audio.set_volume")
+ * @name: Tool name (Use only letters, digits, underscores, and hyphens for model compatibility,
+ *        e.g., "device_audio_volume_set")
  * @description: Tool description
  * @properties: Tool input properties
  * @callback: Tool execution callback

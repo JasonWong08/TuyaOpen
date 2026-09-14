@@ -1,6 +1,6 @@
 /**
  * @file ai_mcp_robot_tools.c
- * @brief your_chat_bot-only MCP tool self.robot.send_command (second UART).
+ * @brief your_chat_bot-only MCP tool self_robot_send_command (second UART).
  *
  * @copyright Copyright (c) 2021-2026 Tuya Inc. All Rights Reserved.
  *
@@ -170,7 +170,7 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
 OPERATE_RET ai_mcp_robot_tools_register(void)
 {
     return AI_MCP_TOOL_ADD(
-        "self.robot.send_command",
+        "self_robot_send_command",
         "Send robot dog body-motion or eye-color commands over UART1; this is not for LCD expressions.\n"
         "Arguments must contain command codes only, never natural-language descriptions. Prefer one command per tool call; "
         "semicolon-separated commands are accepted only as a fallback.\n"

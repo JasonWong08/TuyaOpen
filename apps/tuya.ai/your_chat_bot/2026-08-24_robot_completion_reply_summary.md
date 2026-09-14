@@ -17,7 +17,7 @@
 
 ### MCP 返回语义
 
-`self.robot.send_command` 现在最多等待 21 秒：
+`self_robot_send_command` 现在最多等待 21 秒：
 
 - 收到对应完成令牌后返回 `completed: robot completion token received`。
 - 失败或超时返回 `robot action not completed; do not claim completion`。
@@ -56,4 +56,3 @@ apps/tuya.ai/your_chat_bot/dist/your_chat_bot_1.0.0
 ```
 
 格式检查脚本因环境中没有 `clang-format` 未执行，非源代码格式错误。
-

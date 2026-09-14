@@ -28,7 +28,7 @@
 - 主要控制入口：
   - BLE HID 手柄
   - 本地 ASR 语音规则
-  - 云端 MCP `self.robot.send_command`
+  - 云端 MCP `self_robot_send_command`
   - CLI/测试串口命令
 - 机器人动作发送和仲裁主要集中在：
   - `src/quaddle_robot_bridge.c`
@@ -78,7 +78,7 @@ git diff --check
 
 - 为 ASR/MCP AI 命令增加 ticket 跟踪。
 - MCP 命中 ASR 去重时复用同一 ticket，避免重复动作但继续等待真实完成结果。
-- `self.robot.send_command` 只有收到对应机器人完成令牌后才返回完成；失败或超时不得声称动作已完成。
+- `self_robot_send_command` 只有收到对应机器人完成令牌后才返回完成；失败或超时不得声称动作已完成。
 - 工具描述和补充提示词统一为“执行中可提示，完成后才确认”。
 - ESP32-S3 `AI_BOARD` 完整构建验证通过。
 

@@ -255,7 +255,7 @@ CONFIG_ENABLE_QUADDLE_BLE_HID_CENTRAL=y
 - 不会注册 `quaddle_evt` CLI 测试命令。
 - `quaddle_robot_bridge_handle_line()` 会返回 `OPRT_NOT_SUPPORTED`，不接受手柄事件控制。
 - `quaddle_robot_bridge_gamepad_active_remaining_ms()` 固定返回 0，不会因为手柄优先级阻塞 ASR/MCP 控制。
-- 机器人 UART、语音 ASR、MCP `self.robot.send_command` 仍然可用。
+- 机器人 UART、语音 ASR、MCP `self_robot_send_command` 仍然可用。
 
 ### 本地修改后如何构建生效
 

@@ -109,7 +109,7 @@ snprintf(cmd, cmd_len, "kbk %d", steps);
 此外：
 
 - `s_voice_rules[]` 中仍有部分短语 fallback 使用 `kbk 3`。
-- MCP 工具描述仍写着 `kbk backward`，云端模型可能继续调用 `self.robot.send_command` 发送 `kbk 5`。
+- MCP 工具描述仍写着 `kbk backward`，云端模型可能继续调用 `self_robot_send_command` 发送 `kbk 5`。
 - `second_uart.c` 默认测试命令也仍是 `kbk 3`。
 
 ### 修复
@@ -151,7 +151,7 @@ if (strncmp(text, "kbk", 3) == 0 && (text[3] == '\0' || text[3] == ' ' || text[3
 语音命令可能同时走两条路径：
 
 - 本地 ASR fallback 识别后直接排队机器人动作。
-- 云端 MCP 工具随后又调用 `self.robot.send_command` 发送类似动作。
+- 云端 MCP 工具随后又调用 `self_robot_send_command` 发送类似动作。
 
 这会导致同一个意图短时间内执行两次，例如本地 ASR 发送一次后退，MCP 又发送一次后退。
 
