@@ -191,7 +191,9 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "tool for explicit robot body motions or eye-color changes, including English "
         "requests such as sit down, stand up, go forward, turn left/right, run, crawl, nod, shake head, or make the eyes "
         "purple. Do not route these robot commands to smart_home. "
-        "Reply to the user in the same language as the user's latest request. Head motion may use m0 or kwh.\n"
+        "Determine reply language only from the user's latest request, never from older turns, retrieved context, "
+        "examples, or tool results. If the latest request is English, every user-facing sentence before and after "
+        "the tool call must be English. Head motion may use m0 or kwh.\n"
         "Gait: kwkF forward, kbkF backward, ktrF run, kcrF crawl, kvtL turn left, kvtR turn right. "
         "Parameter <=200 means steps/default 3; >200 means milliseconds; turn parameter is usually degrees/default "
         "90.\n"
@@ -203,6 +205,7 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "Head/joints: kwh shake/tilt head, knd nod, m0 angle physically turns the neck/head (positive left, negative "
         "right, e.g. m0 45); m0 never controls color or hue. "
         "m<number> <angle>: head=0, left hand=8, right hand=9; negative is forward, positive is backward.\n"
-        "Examples: sit -> ksit; run -> ktrF 3; tilt head -> kwh; turn head left -> m0 45; raise left hand -> m8 -30.",
+        "Examples: sit -> ksit; run -> ktrF 3; spin/rotate/turn around -> kvtL 360; tilt head -> kwh; "
+        "turn head left -> m0 45; raise left hand -> m8 -30. A spin is a turn, never forward command kwkF.",
         __robot_send_command, NULL, MCP_PROP_STR("text", "Machine command code only; no Chinese or descriptions."));
 }

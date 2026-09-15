@@ -37,6 +37,12 @@ typedef enum {
     ROBOT_EYE_MOOD_SQUINT,
 } ROBOT_EYE_MOOD_E;
 
+typedef enum {
+    ROBOT_REPLY_LANGUAGE_UNKNOWN = 0,
+    ROBOT_REPLY_LANGUAGE_ENGLISH,
+    ROBOT_REPLY_LANGUAGE_CHINESE,
+} ROBOT_REPLY_LANGUAGE_E;
+
 static bool s_expect_vet = false;
 static bool s_talking = false;
 static ROBOT_EYE_MOOD_E s_reply_mood = ROBOT_EYE_MOOD_NONE;
@@ -47,12 +53,80 @@ static bool s_eye_color_reply_pending = false;
 static bool s_eye_color_mcp_completed = false;
 static bool s_eye_color_tts_suppressed = false;
 static char s_eye_color_pending_cmd[16] = {0};
+static ROBOT_REPLY_LANGUAGE_E s_expected_reply_language = ROBOT_REPLY_LANGUAGE_UNKNOWN;
+static bool s_language_tts_suppressed = false;
 
 static void __robot_uart_voice_reset_reply_mood(void);
 static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool is_start);
 static void __robot_uart_voice_on_emotion(const AI_NOTIFY_EMO_T *emo);
 static void __robot_uart_voice_send_talk_with_mood(void);
 static void __robot_uart_voice_send_mood_only(ROBOT_EYE_MOOD_E mood);
+
+static void __robot_voice_count_language_signals(const char *text, size_t *ascii_letters, size_t *cjk_chars)
+{
+    const uint8_t *p = (const uint8_t *)text;
+
+    *ascii_letters = 0;
+    *cjk_chars = 0;
+    if (!text) {
+        return;
+    }
+
+    while (*p != '\0') {
+        if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) {
+            (*ascii_letters)++;
+            p++;
+            continue;
+        }
+
+        /* Chinese characters U+3400..U+9FFF encoded as three-byte UTF-8. */
+        if (p[1] != '\0' && p[2] != '\0' && *p >= 0xE3 && *p <= 0xE9 &&
+            (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+            uint32_t codepoint = ((uint32_t)(*p & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) |
+                                 (uint32_t)(p[2] & 0x3F);
+            if (codepoint >= 0x3400 && codepoint <= 0x9FFF) {
+                (*cjk_chars)++;
+            }
+            p += 3;
+            continue;
+        }
+
+        p++;
+    }
+}
+
+static ROBOT_REPLY_LANGUAGE_E __robot_voice_detect_language(const char *text)
+{
+    size_t ascii_letters;
+    size_t cjk_chars;
+
+    __robot_voice_count_language_signals(text, &ascii_letters, &cjk_chars);
+    if (cjk_chars > 0 && cjk_chars >= ascii_letters) {
+        return ROBOT_REPLY_LANGUAGE_CHINESE;
+    }
+    if (ascii_letters > 0) {
+        return ROBOT_REPLY_LANGUAGE_ENGLISH;
+    }
+    return ROBOT_REPLY_LANGUAGE_UNKNOWN;
+}
+
+static bool __robot_voice_nlg_language_mismatch(const char *text)
+{
+    size_t ascii_letters;
+    size_t cjk_chars;
+
+    if (s_expected_reply_language == ROBOT_REPLY_LANGUAGE_UNKNOWN || !text || text[0] == '\0') {
+        return false;
+    }
+
+    __robot_voice_count_language_signals(text, &ascii_letters, &cjk_chars);
+
+    /* Require a clear dominance so quoted words and machine command codes do not cause false positives. */
+    if (s_expected_reply_language == ROBOT_REPLY_LANGUAGE_ENGLISH) {
+        return cjk_chars >= 2 && cjk_chars > ascii_letters * 2;
+    }
+    return ascii_letters >= 4 && ascii_letters > cjk_chars * 2;
+}
 
 static void __robot_uart_voice_send_now(const char *cmd)
 {
@@ -82,6 +156,7 @@ void ai_app_on_free_mode_exit(void)
     s_expect_vet = false;
     s_talking = false;
     s_applied_mood = ROBOT_EYE_MOOD_NONE;
+    s_language_tts_suppressed = false;
     __robot_uart_voice_reset_reply_mood();
     __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
 }
@@ -105,6 +180,7 @@ void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
         break;
     case AI_USER_EVT_CHAT_BREAK:
         s_talking = false;
+        s_language_tts_suppressed = false;
         __robot_uart_voice_reset_reply_mood();
         break;
     case AI_USER_EVT_TTS_PRE:
@@ -526,6 +602,13 @@ static void __robot_uart_voice_send_talk_with_mood(void)
 
 /* Longer phrases first to avoid partial false matches */
 static const ROBOT_VOICE_RULE_T s_voice_rules[] = {
+    {"\xE6\x97\x8B\xE8\xBD\xAC\xE4\xB8\x80\xE5\x9C\x88", "kvtL 360"},
+    {"\xE8\xBD\xAC\xE4\xB8\x80\xE5\x9C\x88", "kvtL 360"},
+    {"turn around", "kvtL 360"},
+    {"spin around", "kvtL 360"},
+    {"do a spin", "kvtL 360"},
+    {"rotate", "kvtL 360"},
+    {"spin", "kvtL 360"},
     {"\xE5\x90\x91\xE5\x90\x8E\xE9\x80\x80", "kbkF 3"},
     {"move backward", "kbkF 3"},
     {"walk backward", "kbkF 3"},
@@ -794,6 +877,13 @@ static bool __robot_voice_match_cmd(const char *asr, char *cmd, size_t cmd_len)
         return false;
     }
 
+    /* Let the cloud interpret negation and complaints such as "you're not spinning". */
+    if ((__robot_voice_contains(asr, "spin") || __robot_voice_contains(asr, "rotate")) &&
+        (__robot_voice_contains(asr, "don't") || __robot_voice_contains(asr, "do not") ||
+         __robot_voice_contains(asr, "not spin") || __robot_voice_contains(asr, "stop spin"))) {
+        return false;
+    }
+
     if (__robot_voice_match_eye_color_cmd(asr, cmd, cmd_len)) {
         return true;
     }
@@ -899,6 +989,11 @@ void ai_app_on_asr_result(const char *text)
     ROBOT_EYE_MOOD_E mood;
 
     if (text && text[0] != '\0') {
+        s_expected_reply_language = __robot_voice_detect_language(text);
+        s_language_tts_suppressed = false;
+        PR_NOTICE("robot voice: expected NLG language %s from latest ASR",
+                  s_expected_reply_language == ROBOT_REPLY_LANGUAGE_CHINESE ? "Chinese" :
+                  s_expected_reply_language == ROBOT_REPLY_LANGUAGE_ENGLISH ? "English" : "unknown");
         __robot_uart_voice_reset_reply_mood();
         mood = __robot_uart_mood_from_text(text);
         __robot_uart_voice_set_reply_mood(mood, "asr");
@@ -941,7 +1036,7 @@ void robot_uart_voice_mark_eye_color_mcp_completed(void)
 
 bool ai_app_should_suppress_tts_audio(void)
 {
-    return s_eye_color_tts_suppressed;
+    return s_eye_color_tts_suppressed || s_language_tts_suppressed;
 }
 
 void ai_app_filter_nlg_text(char *text, bool eof)
@@ -949,6 +1044,15 @@ void ai_app_filter_nlg_text(char *text, bool eof)
     static const char second_person[] = "\xE4\xBD\xA0\xE7\x9A\x84";
     static const char first_person[]  = "\xE6\x88\x91\xE7\x9A\x84";
     char             *match;
+
+    if (text && text[0] != '\0' &&
+        (s_language_tts_suppressed || __robot_voice_nlg_language_mismatch(text))) {
+        if (!s_language_tts_suppressed) {
+            PR_ERR("robot voice: suppress NLG/TTS whose language conflicts with latest ASR");
+        }
+        s_language_tts_suppressed = true;
+        text[0] = '\0';
+    }
 
     if (s_eye_color_reply_pending && text) {
         if (strstr(text, "\xE7\x9C\xBC\xE9\x83\xA8\xE7\x81\xAF\xE5\x85\x89") != NULL) {
@@ -972,6 +1076,13 @@ void ai_app_filter_nlg_text(char *text, bool eof)
         s_eye_color_mcp_completed = false;
         s_eye_color_tts_suppressed = false;
         s_eye_color_pending_cmd[0] = '\0';
+
+        if (s_language_tts_suppressed) {
+            /* A fully suppressed response does not produce a normal player
+             * completion event. Resume listening once its text stream ends. */
+            PR_NOTICE("robot voice: mismatched-language response ended; resume listening");
+            ai_user_event_notify(AI_USER_EVT_PLAY_END, NULL);
+        }
     }
 }
 
