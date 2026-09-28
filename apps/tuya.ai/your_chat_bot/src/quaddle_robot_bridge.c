@@ -29,6 +29,7 @@
 #define AI_COMMAND_QUEUE_MAX       8
 #define AI_COMMAND_TOKEN_TIMEOUT_MS 20000
 #define AI_COMMAND_ASR_MCP_DEDUPE_MS 5000
+#define AI_BODY_HOLD_TIMEOUT_MS    8000
 #define PLUS_LONG_PRESS_MS         1000
 #define ZL_LONG_PRESS_MS           1000
 #define QUADDLE_MACRO_MAX_STEPS    48
@@ -139,6 +140,8 @@ static volatile uint32_t s_ai_completed_tickets[AI_COMMAND_QUEUE_MAX + 1];
 static volatile uint32_t s_ai_failed_tickets[AI_COMMAND_QUEUE_MAX + 1];
 static uint8_t  s_ai_completed_ticket_index;
 static uint8_t  s_ai_failed_ticket_index;
+static bool     s_ai_body_hold;
+static uint32_t s_ai_body_hold_deadline_ms;
 
 static int quaddle_abs(int v)
 {
@@ -272,6 +275,35 @@ static bool ai_ticket_recorded(const volatile uint32_t *tickets, uint32_t ticket
     return false;
 }
 
+static bool ai_cmd_is_eye_color(const char *cmd)
+{
+    return cmd && cmd[0] == 'v' && cmd[1] == 'c';
+}
+
+static bool ai_queue_contains_cmd(const char *cmd)
+{
+    uint8_t i;
+
+    if (!cmd || cmd[0] == '\0') {
+        return false;
+    }
+    for (i = 0; i < s_ai_queue_count; i++) {
+        uint8_t index = (uint8_t)((s_ai_queue_head + i) % AI_COMMAND_QUEUE_MAX);
+        if (strcmp(s_ai_queue_cmd[index], cmd) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool ai_should_hold_front_command(void)
+{
+    if (!s_ai_body_hold || s_ai_queue_count == 0) {
+        return false;
+    }
+    return !ai_cmd_is_eye_color(s_ai_queue_cmd[s_ai_queue_head]);
+}
+
 static bool ai_should_drop_mcp_duplicate(const char *cmd)
 {
     uint32_t now;
@@ -310,6 +342,8 @@ static void clear_ai_command_queue(void)
     s_last_asr_cmd_head[0]   = '\0';
     s_last_asr_cmd_ms        = 0;
     s_last_asr_ticket        = 0;
+    s_ai_body_hold           = false;
+    s_ai_body_hold_deadline_ms = 0;
 }
 
 static const char *payload_after_bracket(const char *line)
@@ -1311,6 +1345,12 @@ void quaddle_robot_bridge_poll(void)
         (void)flush_pending_stick();
     }
 #endif
+    if (s_ai_body_hold && s_ai_body_hold_deadline_ms != 0 &&
+        (int32_t)(now - s_ai_body_hold_deadline_ms) >= 0) {
+        PR_WARN("robot arbitration: AI body-command hold timeout, release pending motions");
+        s_ai_body_hold = false;
+        s_ai_body_hold_deadline_ms = 0;
+    }
     if (s_ai_waiting_token && (int32_t)(now - s_ai_token_deadline_ms) >= 0) {
         PR_WARN("robot arbitration: token '%c' timeout after AI command \"%s\"", s_ai_expected_token,
                 s_pending_ai_cmd);
@@ -1326,7 +1366,8 @@ void quaddle_robot_bridge_poll(void)
         s_ai_queue_count       = 0;
         PR_WARN("robot arbitration: AI command queue cleared after token timeout");
     }
-    if (!s_pending_ai_active && !s_ai_waiting_token && s_ai_queue_count > 0) {
+    if (!s_pending_ai_active && !s_ai_waiting_token && s_ai_queue_count > 0 &&
+        !ai_should_hold_front_command()) {
         schedule_next = true;
     }
     if (schedule_next && !s_pending_ai_active && !s_ai_waiting_token && s_ai_queue_count > 0) {
@@ -1581,6 +1622,58 @@ OPERATE_RET quaddle_robot_bridge_queue_ai_command_tracked(const char *cmd, const
 OPERATE_RET quaddle_robot_bridge_queue_ai_command(const char *cmd, const char *source)
 {
     return quaddle_robot_bridge_queue_ai_command_tracked(cmd, source, NULL);
+}
+
+void quaddle_robot_bridge_hold_ai_body_commands(void)
+{
+    s_ai_body_hold = true;
+    s_ai_body_hold_deadline_ms = now_ms() + AI_BODY_HOLD_TIMEOUT_MS;
+    PR_NOTICE("robot arbitration: hold AI body commands until talk expression");
+}
+
+void quaddle_robot_bridge_release_ai_body_hold(void)
+{
+    if (!s_ai_body_hold) {
+        return;
+    }
+    s_ai_body_hold = false;
+    s_ai_body_hold_deadline_ms = 0;
+    PR_NOTICE("robot arbitration: release AI body-command hold");
+}
+
+OPERATE_RET quaddle_robot_bridge_queue_ai_command_front(const char *cmd, const char *source)
+{
+    uint8_t head;
+    const char *src = source ? source : "AI";
+
+    if (!cmd || cmd[0] == '\0') {
+        return OPRT_INVALID_PARM;
+    }
+    if (ai_queue_contains_cmd(cmd) || (ai_source_is(src, "NLG") && ai_should_drop_mcp_duplicate(cmd))) {
+        PR_NOTICE("robot arbitration: front command \"%s\" from %s skipped; already queued", cmd, src);
+        return OPRT_OK;
+    }
+    if (quaddle_robot_bridge_gamepad_active()) {
+        PR_NOTICE("robot arbitration: AI command \"%s\" from %s skipped; gamepad priority active %ums", cmd,
+                  src, quaddle_robot_bridge_gamepad_active_remaining_ms());
+        return OPRT_OK;
+    }
+    if (s_ai_queue_count >= AI_COMMAND_QUEUE_MAX) {
+        PR_WARN("robot arbitration: AI queue full, drop front \"%s\" from %s", cmd, src);
+        return OPRT_COM_ERROR;
+    }
+
+    s_ai_queue_head = (uint8_t)((s_ai_queue_head + AI_COMMAND_QUEUE_MAX - 1) % AI_COMMAND_QUEUE_MAX);
+    head = s_ai_queue_head;
+    strncpy(s_ai_queue_cmd[head], cmd, sizeof(s_ai_queue_cmd[head]) - 1);
+    s_ai_queue_cmd[head][sizeof(s_ai_queue_cmd[head]) - 1] = '\0';
+    strncpy(s_ai_queue_source[head], src, sizeof(s_ai_queue_source[head]) - 1);
+    s_ai_queue_source[head][sizeof(s_ai_queue_source[head]) - 1] = '\0';
+    s_ai_queue_ticket[head] = ai_next_ticket();
+    s_ai_queue_count++;
+    PR_NOTICE("robot arbitration: AI command queued front \"%s\" from %s depth=%u ticket=%u",
+              s_ai_queue_cmd[head], s_ai_queue_source[head], s_ai_queue_count, s_ai_queue_ticket[head]);
+    return OPRT_OK;
 }
 
 OPERATE_RET quaddle_robot_bridge_wait_ai_command(uint32_t ticket, uint32_t timeout_ms)

@@ -25,6 +25,9 @@ bool robot_uart_voice_get_pending_eye_color_command(char *cmd, size_t cmd_len);
 /** Mark that MCP confirmed the pending eye-color command completed. */
 void robot_uart_voice_mark_eye_color_mcp_completed(void);
 
+/** True unless cmd is conversational knd/kwh that firmware will apply from NLG. */
+bool robot_uart_voice_allow_mcp_head_gesture(const char *cmd);
+
 /** Map TTS start/end to second-UART listen/talk cues. */
 void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event);
 

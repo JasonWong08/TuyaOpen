@@ -171,8 +171,12 @@ mkdir -p ${CACHE_PATH}
 rm -f ${CACHE_PATH}/.env.json
 rm -f ${CACHE_PATH}/.dont_prompt_update_platform
 
-# complete
-eval "$(bash -c '_TOS_PY_COMPLETE=bash_source tos.py')"
+# complete (Click uses `complete -o nosort`, which macOS Bash 3.2 rejects)
+if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 4 ]; }; then
+    eval "$(bash -c '_TOS_PY_COMPLETE=bash_source tos.py')"
+else
+    echo "Skip tos.py shell completion (need Bash 4.4+, this is ${BASH_VERSION})"
+fi
 
 # hello tuya
 HELLO_TUYA='

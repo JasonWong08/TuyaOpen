@@ -43,10 +43,19 @@ typedef enum {
     ROBOT_REPLY_LANGUAGE_CHINESE,
 } ROBOT_REPLY_LANGUAGE_E;
 
+typedef enum {
+    ROBOT_REPLY_STANCE_NONE = 0,
+    ROBOT_REPLY_STANCE_YES,
+    ROBOT_REPLY_STANCE_NO,
+} ROBOT_REPLY_STANCE_E;
+
 static bool s_expect_vet = false;
 static bool s_talking = false;
 static ROBOT_EYE_MOOD_E s_reply_mood = ROBOT_EYE_MOOD_NONE;
 static ROBOT_EYE_MOOD_E s_applied_mood = ROBOT_EYE_MOOD_NONE;
+static ROBOT_REPLY_STANCE_E s_reply_stance = ROBOT_REPLY_STANCE_NONE;
+static bool s_stance_sent = false;
+static bool s_explicit_head_gesture = false;
 static char   s_nlg_mood_buf[ROBOT_UART_NLG_MOOD_MAX];
 static size_t s_nlg_mood_len = 0;
 static bool s_eye_color_reply_pending = false;
@@ -54,13 +63,15 @@ static bool s_eye_color_mcp_completed = false;
 static bool s_eye_color_tts_suppressed = false;
 static char s_eye_color_pending_cmd[16] = {0};
 static ROBOT_REPLY_LANGUAGE_E s_expected_reply_language = ROBOT_REPLY_LANGUAGE_UNKNOWN;
-static bool s_language_tts_suppressed = false;
 
 static void __robot_uart_voice_reset_reply_mood(void);
 static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool is_start);
 static void __robot_uart_voice_on_emotion(const AI_NOTIFY_EMO_T *emo);
 static void __robot_uart_voice_send_talk_with_mood(void);
 static void __robot_uart_voice_send_mood_only(ROBOT_EYE_MOOD_E mood);
+static void __robot_uart_voice_clear_applied_mood(void);
+static void __robot_uart_voice_queue_reply_stance(void);
+static ROBOT_REPLY_STANCE_E __robot_uart_stance_from_text(const char *text);
 
 static void __robot_voice_count_language_signals(const char *text, size_t *ascii_letters, size_t *cjk_chars)
 {
@@ -146,6 +157,11 @@ void ai_app_on_record_start(void)
     /* vetL already ends talk on the MCU. Ignore a later PLAY_END so it
      * does not send a redundant vet after listen animation has started. */
     s_expect_vet = false;
+    s_reply_stance = ROBOT_REPLY_STANCE_NONE;
+    s_stance_sent = false;
+    s_explicit_head_gesture = false;
+    quaddle_robot_bridge_hold_ai_body_commands();
+    __robot_uart_voice_clear_applied_mood();
     __robot_uart_voice_send_now(ROBOT_UART_CMD_LISTEN);
 }
 
@@ -156,8 +172,9 @@ void ai_app_on_free_mode_exit(void)
     s_expect_vet = false;
     s_talking = false;
     s_applied_mood = ROBOT_EYE_MOOD_NONE;
-    s_language_tts_suppressed = false;
+    s_stance_sent = false;
     __robot_uart_voice_reset_reply_mood();
+    quaddle_robot_bridge_release_ai_body_hold();
     __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
 }
 
@@ -180,13 +197,17 @@ void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
         break;
     case AI_USER_EVT_CHAT_BREAK:
         s_talking = false;
-        s_language_tts_suppressed = false;
+        s_stance_sent = false;
         __robot_uart_voice_reset_reply_mood();
+        __robot_uart_voice_clear_applied_mood();
+        quaddle_robot_bridge_release_ai_body_hold();
         break;
     case AI_USER_EVT_TTS_PRE:
         s_expect_vet = true;
         s_talking = true;
         __robot_uart_voice_send_talk_with_mood();
+        __robot_uart_voice_queue_reply_stance();
+        quaddle_robot_bridge_release_ai_body_hold();
         break;
     case AI_USER_EVT_TTS_ABORT:
     case AI_USER_EVT_PLAY_END:
@@ -365,6 +386,75 @@ static ROBOT_EYE_MOOD_E __robot_uart_mood_from_text(const char *text)
     return best_mood;
 }
 
+static const char *const s_nlg_stance_no[] = {
+    "cannot",
+    "can't",
+    "won't",
+    "don't",
+    "do not",
+    "no way",
+    "nope",
+    "not able",
+    "\xE4\xB8\x8D\xE5\x8F\xAF\xE4\xBB\xA5",
+    "\xE5\x81\x9A\xE4\xB8\x8D\xE5\x88\xB0",
+    "\xE6\xB2\xA1\xE6\xB3\x95",
+    "\xE4\xB8\x8D\xE8\x83\xBD",
+    "\xE4\xB8\x8D\xE8\xA1\x8C",
+    "\xE4\xB8\x8D\xE8\xA6\x81",
+    "\xE4\xB8\x8D\xE4\xBC\x9A",
+    "\xE4\xB8\x8D\xE6\x98\xAF",
+    "\xE6\x8B\x92\xE7\xBB\x9D",
+};
+
+static const char *const s_nlg_stance_yes[] = {
+    "no problem",
+    "of course",
+    "sure",
+    "yeah",
+    "yes",
+    "okay",
+    "\xE6\xB2\xA1\xE9\x94\x99",
+    "\xE5\xBD\x93\xE7\x84\xB6\xE5\x8F\xAF\xE4\xBB\xA5",
+    "\xE6\xB2\xA1\xE9\x97\xAE\xE9\xA2\x98",
+    "\xE5\x8F\xAF\xE4\xBB\xA5\xE7\x9A\x84",
+    "\xE5\xA5\xBD\xE7\x9A\x84",
+    "\xE6\x98\xAF\xE7\x9A\x84",
+    "\xE5\xAF\xB9\xE7\x9A\x84",
+    "\xE5\xAF\xB9\xE5\x95\x8A",
+    "\xE5\xA5\xBD\xE5\x95\x8A",
+    "\xE5\xA5\xBD\xE5\x91\x80",
+    "\xE5\xBD\x93\xE7\x84\xB6",
+};
+
+static ROBOT_REPLY_STANCE_E __robot_uart_stance_from_text(const char *text)
+{
+    size_t i;
+
+    if (!text || text[0] == '\0') {
+        return ROBOT_REPLY_STANCE_NONE;
+    }
+
+    /* Affirmations such as 没错 must win before any 没/不 negative prefixes. */
+    if (__robot_voice_contains(text, "\xE6\xB2\xA1\xE9\x94\x99") ||
+        __robot_voice_contains(text, "\xE6\x98\xAF\xE7\x9A\x84") ||
+        __robot_voice_contains(text, "\xE5\xAF\xB9\xE7\x9A\x84")) {
+        return ROBOT_REPLY_STANCE_YES;
+    }
+
+    for (i = 0; i < sizeof(s_nlg_stance_no) / sizeof(s_nlg_stance_no[0]); i++) {
+        if (__robot_voice_contains(text, s_nlg_stance_no[i])) {
+            return ROBOT_REPLY_STANCE_NO;
+        }
+    }
+    for (i = 0; i < sizeof(s_nlg_stance_yes) / sizeof(s_nlg_stance_yes[0]); i++) {
+        if (__robot_voice_contains(text, s_nlg_stance_yes[i])) {
+            return ROBOT_REPLY_STANCE_YES;
+        }
+    }
+
+    return ROBOT_REPLY_STANCE_NONE;
+}
+
 static ROBOT_EYE_MOOD_E __robot_uart_mood_from_emoji_name(const char *name)
 {
     if (!name || name[0] == '\0') {
@@ -501,6 +591,7 @@ static void __robot_uart_voice_reset_reply_mood(void)
     s_reply_mood = ROBOT_EYE_MOOD_NONE;
     s_nlg_mood_len = 0;
     s_nlg_mood_buf[0] = '\0';
+    s_reply_stance = ROBOT_REPLY_STANCE_NONE;
 }
 
 static void __robot_uart_voice_append_nlg(const char *data, uint16_t datalen)
@@ -546,6 +637,7 @@ static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool
     if (is_start) {
         s_nlg_mood_len = 0;
         s_nlg_mood_buf[0] = '\0';
+        s_reply_stance = ROBOT_REPLY_STANCE_NONE;
     }
     if (!text || !text->data || text->datalen == 0) {
         return;
@@ -554,6 +646,19 @@ static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool
     __robot_uart_voice_append_nlg(text->data, text->datalen);
     mood = __robot_uart_mood_from_text(s_nlg_mood_buf);
     __robot_uart_voice_set_reply_mood(mood, "nlg");
+    s_reply_stance = __robot_uart_stance_from_text(s_nlg_mood_buf);
+    if (s_talking) {
+        __robot_uart_voice_queue_reply_stance();
+    }
+}
+
+static void __robot_uart_voice_clear_applied_mood(void)
+{
+    if (s_applied_mood == ROBOT_EYE_MOOD_NONE) {
+        return;
+    }
+    __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
+    s_applied_mood = ROBOT_EYE_MOOD_NONE;
 }
 
 static void __robot_uart_voice_send_mood_only(ROBOT_EYE_MOOD_E mood)
@@ -562,6 +667,9 @@ static void __robot_uart_voice_send_mood_only(ROBOT_EYE_MOOD_E mood)
 
     if (!cmd) {
         return;
+    }
+    if (s_applied_mood != ROBOT_EYE_MOOD_NONE && s_applied_mood != mood) {
+        __robot_uart_voice_clear_applied_mood();
     }
     __robot_uart_voice_send_now(cmd);
     s_applied_mood = mood;
@@ -591,13 +699,39 @@ static void __robot_uart_voice_on_emotion(const AI_NOTIFY_EMO_T *emo)
 
 static void __robot_uart_voice_send_talk_with_mood(void)
 {
-    if (s_reply_mood == ROBOT_EYE_MOOD_NONE && s_applied_mood != ROBOT_EYE_MOOD_NONE) {
-        __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
-        s_applied_mood = ROBOT_EYE_MOOD_NONE;
+    if (s_applied_mood != ROBOT_EYE_MOOD_NONE && s_applied_mood != s_reply_mood) {
+        __robot_uart_voice_clear_applied_mood();
     }
 
     __robot_uart_voice_send_now(__robot_uart_talk_cmd_for_mood(s_reply_mood));
     s_applied_mood = s_reply_mood;
+}
+
+static void __robot_uart_voice_queue_reply_stance(void)
+{
+    const char *cmd = NULL;
+    OPERATE_RET rt;
+
+    if (s_stance_sent) {
+        return;
+    }
+    if (s_reply_stance == ROBOT_REPLY_STANCE_YES) {
+        cmd = "knd";
+    } else if (s_reply_stance == ROBOT_REPLY_STANCE_NO) {
+        cmd = "kwh";
+    } else {
+        return;
+    }
+
+    rt = quaddle_robot_bridge_queue_ai_command_front(cmd, "NLG");
+    if (rt != OPRT_OK) {
+        PR_ERR("robot voice: queue stance \"%s\" failed %d", cmd, rt);
+        return;
+    }
+
+    s_stance_sent = true;
+    PR_NOTICE("robot voice: reply stance %s -> UART \"%s\"",
+              s_reply_stance == ROBOT_REPLY_STANCE_YES ? "yes" : "no", cmd);
 }
 
 /* Longer phrases first to avoid partial false matches */
@@ -688,6 +822,8 @@ static const ROBOT_VOICE_RULE_T s_voice_rules[] = {
     {"\xE6\x91\x87\xE5\xA4\xB4", "kwh"},
     {"shake head", "kwh"},
     {"shake your head", "kwh"},
+    {"\xE8\xB7\xB3\xE6\xBB\x91", "kjumpSlide"},
+    {"jump slide", "kjumpSlide"},
 };
 
 static int __robot_voice_parse_steps(const char *asr)
@@ -974,6 +1110,10 @@ void robot_uart_voice_on_asr(const char *asr_text)
         return;
     }
 
+    if (strncmp(cmd, "knd", 3) == 0 || strncmp(cmd, "kwh", 3) == 0) {
+        s_explicit_head_gesture = true;
+    }
+
     rt = quaddle_robot_bridge_queue_ai_command(cmd, "ASR");
     if (rt != OPRT_OK) {
         PR_ERR("robot voice: queue \"%s\" failed %d", cmd, rt);
@@ -990,7 +1130,6 @@ void ai_app_on_asr_result(const char *text)
 
     if (text && text[0] != '\0') {
         s_expected_reply_language = __robot_voice_detect_language(text);
-        s_language_tts_suppressed = false;
         PR_NOTICE("robot voice: expected NLG language %s from latest ASR",
                   s_expected_reply_language == ROBOT_REPLY_LANGUAGE_CHINESE ? "Chinese" :
                   s_expected_reply_language == ROBOT_REPLY_LANGUAGE_ENGLISH ? "English" : "unknown");
@@ -1027,6 +1166,17 @@ bool robot_uart_voice_get_pending_eye_color_command(char *cmd, size_t cmd_len)
     return true;
 }
 
+bool robot_uart_voice_allow_mcp_head_gesture(const char *cmd)
+{
+    if (!cmd || cmd[0] == '\0') {
+        return true;
+    }
+    if (strncmp(cmd, "knd", 3) != 0 && strncmp(cmd, "kwh", 3) != 0) {
+        return true;
+    }
+    return s_explicit_head_gesture;
+}
+
 void robot_uart_voice_mark_eye_color_mcp_completed(void)
 {
     if (s_eye_color_reply_pending) {
@@ -1036,7 +1186,7 @@ void robot_uart_voice_mark_eye_color_mcp_completed(void)
 
 bool ai_app_should_suppress_tts_audio(void)
 {
-    return s_eye_color_tts_suppressed || s_language_tts_suppressed;
+    return s_eye_color_tts_suppressed;
 }
 
 void ai_app_filter_nlg_text(char *text, bool eof)
@@ -1045,13 +1195,8 @@ void ai_app_filter_nlg_text(char *text, bool eof)
     static const char first_person[]  = "\xE6\x88\x91\xE7\x9A\x84";
     char             *match;
 
-    if (text && text[0] != '\0' &&
-        (s_language_tts_suppressed || __robot_voice_nlg_language_mismatch(text))) {
-        if (!s_language_tts_suppressed) {
-            PR_ERR("robot voice: suppress NLG/TTS whose language conflicts with latest ASR");
-        }
-        s_language_tts_suppressed = true;
-        text[0] = '\0';
+    if (text && text[0] != '\0' && __robot_voice_nlg_language_mismatch(text)) {
+        PR_NOTICE("robot voice: NLG language differs from latest ASR; still play TTS");
     }
 
     if (s_eye_color_reply_pending && text) {
@@ -1076,13 +1221,6 @@ void ai_app_filter_nlg_text(char *text, bool eof)
         s_eye_color_mcp_completed = false;
         s_eye_color_tts_suppressed = false;
         s_eye_color_pending_cmd[0] = '\0';
-
-        if (s_language_tts_suppressed) {
-            /* A fully suppressed response does not produce a normal player
-             * completion event. Resume listening once its text stream ends. */
-            PR_NOTICE("robot voice: mismatched-language response ended; resume listening");
-            ai_user_event_notify(AI_USER_EVT_PLAY_END, NULL);
-        }
     }
 }
 

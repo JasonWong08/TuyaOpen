@@ -62,6 +62,7 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
     OPERATE_RET uart_rt    = OPRT_OK;
     char       *cursor;
     unsigned    queued_count = 0;
+    unsigned    skipped_head_count = 0;
     bool        eye_color_request = false;
 
     (void)user_data;
@@ -129,6 +130,12 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
             break;
         }
 
+        if (!robot_uart_voice_allow_mcp_head_gesture(cmd)) {
+            skipped_head_count++;
+            PR_NOTICE("MCP robot send_command skip conversational \"%s\"; firmware owns yes/no", cmd);
+            continue;
+        }
+
         uart_rt = quaddle_robot_bridge_queue_ai_command_tracked(cmd, "MCP", &ticket);
         if (uart_rt != OPRT_OK) {
             break;
@@ -146,6 +153,13 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
     }
 
     if (queued_count == 0 && uart_rt == OPRT_OK) {
+        if (skipped_head_count > 0) {
+            mcp_str_rt = ai_mcp_return_value_set_str(
+                ret_val,
+                "skipped: firmware nods (knd) or shakes (kwh) from yes/no meaning such as 没错/是的/不行. "
+                "Call knd/kwh only when the user explicitly asks to nod or shake. Do not claim you already nodded or shook.");
+            return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
+        }
         mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "empty command");
         return (mcp_str_rt != OPRT_OK) ? mcp_str_rt : OPRT_OK;
     }
@@ -187,25 +201,31 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "Use this tool only when the user explicitly asks for a physical robot body motion or an eye-color change. Do not "
         "call it for normal chat, self-introductions, ability descriptions, or question answering. Do not add default "
         "gestures or motions. Do not send eye expression tokens such as veH, veS, veP, veL, veT, velT, vetL, veTH, or ved; "
-        "firmware applies those from speech state and reply mood. Never confuse them with gait kvtL or kvtR. Always use this "
+        "firmware applies those from speech state and reply mood. Firmware also nods (knd) or shakes the head (kwh) "
+        "from yes/no meaning in the reply, after eye expressions and before other queued body motions. "
+        "Do not call this tool only to nod or shake when answering yes or no, including 没错, 是的, 对, or nope. "
+        "Call knd/kwh only when the user explicitly asks for that head motion. Never confuse them with gait kvtL or kvtR. Always use this "
         "tool for explicit robot body motions or eye-color changes, including English "
         "requests such as sit down, stand up, go forward, turn left/right, run, crawl, nod, shake head, or make the eyes "
         "purple. Do not route these robot commands to smart_home. "
         "Determine reply language only from the user's latest request, never from older turns, retrieved context, "
         "examples, or tool results. If the latest request is English, every user-facing sentence before and after "
-        "the tool call must be English. Head motion may use m0 or kwh.\n"
+        "the tool call must be English. Head motion may use m0, knd, or kwh.\n"
         "Gait: kwkF forward, kbkF backward, ktrF run, kcrF crawl, kvtL turn left, kvtR turn right. "
         "Parameter <=200 means steps/default 3; >200 means milliseconds; turn parameter is usually degrees/default "
         "90.\n"
         "Basic: khi greet, ksit sit, kgdb good, kpu push-up, kjmp jump, d rest, kup stand, kstr stretch.\n"
-        "Emotion: kang angry, khg hug, kfiv high-five, kchr cheer, knd nod, kwh shake/tilt head, kzz sleepy.\n"
-        "Skills: kbf backflip, kff frontflip, khds handstand, kmw moonwalk, krl roll, kbx boxing, kkc kick.\n"
+        "Emotion: kang angry, khg hug, kfiv high-five, kchr cheer, knd nod (yes), kwh shake head (no), kzz sleepy.\n"
+        "Skills: kbf backflip, kff frontflip, khds handstand, kmw moonwalk, krl roll, kbx boxing, kkc kick, "
+        "kjumpSlide jump slide / 跳滑.\n"
         "Interaction: kcmh come, khsk handshake, khu raise hand, ksnf sniff, kscrh scratch, kdg dig, kpee pee, kpd "
         "play dead.\n"
-        "Head/joints: kwh shake/tilt head, knd nod, m0 angle physically turns the neck/head (positive left, negative "
+        "Head/joints: knd nod means yes; kwh shake head means no, the opposite of nod. "
+        "m0 angle physically turns the neck/head (positive left, negative "
         "right, e.g. m0 45); m0 never controls color or hue. "
         "m<number> <angle>: head=0, left hand=8, right hand=9; negative is forward, positive is backward.\n"
-        "Examples: sit -> ksit; run -> ktrF 3; spin/rotate/turn around -> kvtL 360; tilt head -> kwh; "
+        "Examples: sit -> ksit; run -> ktrF 3; spin/rotate/turn around -> kvtL 360; user asks to nod -> knd; "
+        "user asks to shake head -> kwh; jump slide/跳滑 -> kjumpSlide; "
         "turn head left -> m0 45; raise left hand -> m8 -30. A spin is a turn, never forward command kwkF.",
         __robot_send_command, NULL, MCP_PROP_STR("text", "Machine command code only; no Chinese or descriptions."));
 }
