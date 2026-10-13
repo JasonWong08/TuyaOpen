@@ -56,6 +56,7 @@ static ROBOT_EYE_MOOD_E s_applied_mood = ROBOT_EYE_MOOD_NONE;
 static ROBOT_REPLY_STANCE_E s_reply_stance = ROBOT_REPLY_STANCE_NONE;
 static bool s_stance_sent = false;
 static bool s_explicit_head_gesture = false;
+static bool s_listen_pending = false;
 static char   s_nlg_mood_buf[ROBOT_UART_NLG_MOOD_MAX];
 static size_t s_nlg_mood_len = 0;
 static bool s_eye_color_reply_pending = false;
@@ -143,6 +144,14 @@ static void __robot_uart_voice_send_now(const char *cmd)
 {
     OPERATE_RET rt;
 
+    if (quaddle_robot_bridge_mouse_exclusive()) {
+        PR_NOTICE("robot voice: hold \"%s\" until mouse transform finishes", cmd);
+        if (cmd && strcmp(cmd, ROBOT_UART_CMD_LISTEN) == 0) {
+            s_listen_pending = true;
+        }
+        return;
+    }
+
     rt = second_uart_send_string_force(cmd);
     if (rt != OPRT_OK) {
         PR_ERR("robot voice: send \"%s\" failed %d", cmd, rt);
@@ -212,15 +221,30 @@ void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
     case AI_USER_EVT_TTS_ABORT:
     case AI_USER_EVT_PLAY_END:
         s_talking = false;
-        if (!s_expect_vet) {
-            break;
+        if (s_expect_vet) {
+            s_expect_vet = false;
+            if (!quaddle_robot_bridge_has_deferred_mouse_transform()) {
+                __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK_END);
+            } else {
+                PR_NOTICE("robot voice: skip vet before mouse transform");
+            }
         }
-        s_expect_vet = false;
-        __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK_END);
+        quaddle_robot_bridge_flush_deferred_mouse_transform();
         break;
     default:
         break;
     }
+}
+
+void robot_uart_voice_poll(void)
+{
+    if (!s_listen_pending || quaddle_robot_bridge_mouse_exclusive()) {
+        return;
+    }
+
+    s_listen_pending = false;
+    __robot_uart_voice_clear_applied_mood();
+    __robot_uart_voice_send_now(ROBOT_UART_CMD_LISTEN);
 }
 
 typedef struct {
@@ -824,6 +848,13 @@ static const ROBOT_VOICE_RULE_T s_voice_rules[] = {
     {"shake your head", "kwh"},
     {"\xE8\xB7\xB3\xE6\xBB\x91", "kjumpSlide"},
     {"jump slide", "kjumpSlide"},
+    {"\xE5\x8F\x98\xE6\x88\x90\xE8\x80\x81\xE9\xBC\xA0", "XO"},
+    {"\xE5\x8F\x98\xE6\x88\x90\xE9\xBC\xA0\xE6\xA0\x87", "XO"},
+    {"become a mouse", "XO"},
+    {"turn into a mouse", "XO"},
+    {"\xE5\x8F\x98\xE5\x9B\x9E\xE6\x9D\xA5", "Xo"},
+    {"\xE5\x8F\x98\xE5\x9B\x9E", "Xo"},
+    {"return to normal", "Xo"},
 };
 
 static int __robot_voice_parse_steps(const char *asr)

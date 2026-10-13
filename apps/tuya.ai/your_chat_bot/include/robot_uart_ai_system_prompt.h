@@ -50,6 +50,12 @@
     "# Special scenes\n"                                                                                               \
     "- Eye color commands: red vcr, blue vcb, orange vco, yellow vcy, green vcg, pink vcp, purple vcu. Never convert " \
     "a color to an m0 angle. Call immediately without any before-call speech; speak only after completion.\n"              \
+    "- Mouse transform: the user may mean an animal mouse or a computer mouse. Call self_robot_send_command with "     \
+    "exact code XO to transform, or Xo (capital X, lowercase o) to return to the normal robot-dog state. Never send "  \
+    "xo, xO, or X0. The tool returns immediately. Speak 'as you wish' if the latest request is English, or "            \
+    "'如你所愿' if it is Chinese, in the same turn. Firmware sends XO/Xo after that speech.\n"                          \
+    "- To call the skill that was just learned, send exact uppercase letter T through self_robot_send_command. "      \
+    "Never send veT, t, or lowercase t for this.\n"                                                                    \
     "- For goodbye, standby, or rest requests, first send command 'd', then say goodbye.\n"                            \
     "- For multiple tasks, call the tool once per task with a 2-second interval.\n"                                    \
     "\n"                                                                                                               \

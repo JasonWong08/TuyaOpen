@@ -64,6 +64,7 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
     unsigned    queued_count = 0;
     unsigned    skipped_head_count = 0;
     bool        eye_color_request = false;
+    bool        mouse_transform_request = false;
 
     (void)user_data;
 
@@ -143,6 +144,11 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
         queued_count++;
         PR_NOTICE("MCP robot send_command tracking segment %u \"%s\" ticket=%u", queued_count, cmd, ticket);
 
+        if (strcmp(cmd, "XO") == 0 || strcmp(cmd, "Xo") == 0) {
+            mouse_transform_request = true;
+            continue;
+        }
+
         uart_rt = quaddle_robot_bridge_wait_ai_command(ticket, ROBOT_COMMAND_COMPLETION_TIMEOUT_MS);
         if (uart_rt != OPRT_OK) {
             PR_WARN("MCP robot send_command completion failed segment %u \"%s\" ticket=%u rt=%d", queued_count,
@@ -175,6 +181,11 @@ static OPERATE_RET __robot_send_command(const MCP_PROPERTY_LIST_T *properties, M
             ret_val,
             "completed: the robot's eye color was changed. In the user-facing reply, speak as the robot in first "
             "person. In Chinese say '我的眼睛' or '我的眼睛颜色'; never say '你的眼睛' or '眼部灯光'.");
+    } else if (mouse_transform_request) {
+        mcp_str_rt = ai_mcp_return_value_set_str(
+            ret_val,
+            "accepted: speak 'as you wish' or '如你所愿' now in this turn. Firmware sends XO/Xo after that speech. "
+            "Do not wait for a robot token and do not delay the spoken line.");
     } else {
         mcp_str_rt = ai_mcp_return_value_set_str(ret_val, "completed: robot completion token received");
     }
@@ -195,18 +206,21 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "vcu. Never convert a color to an m0 angle. For an eye-color request, call the tool immediately without any "
         "before-call speech or progress acknowledgement. After completion, in Chinese say '已经把我的眼睛调成<颜色>啦。' "
         "Never say '眼部灯光' or '你的眼睛'.\n"
-        "This tool waits for the robot completion token. Before it returns, only say that the action is in progress. "
-        "Say the action is complete only when the tool returns 'completed'. If it reports failure or timeout, say that "
+        "This tool waits for the robot completion token, except XO/Xo which return immediately. Before a waiting call "
+        "returns, only say that the action is in progress. For mouse transform, call this tool and speak 'as you wish' "
+        "(English) or '如你所愿' (Chinese) in the same turn without waiting; firmware sends XO/Xo after that speech. "
+        "Say a waiting action is complete only when the tool returns 'completed'. If it reports failure or timeout, say that "
         "completion could not be confirmed; never claim the action completed.\n"
-        "Use this tool only when the user explicitly asks for a physical robot body motion or an eye-color change. Do not "
+        "Use this tool only when the user explicitly asks for a physical robot body motion, a mouse transform, or an eye-color change. Do not "
         "call it for normal chat, self-introductions, ability descriptions, or question answering. Do not add default "
         "gestures or motions. Do not send eye expression tokens such as veH, veS, veP, veL, veT, velT, vetL, veTH, or ved; "
         "firmware applies those from speech state and reply mood. Firmware also nods (knd) or shakes the head (kwh) "
         "from yes/no meaning in the reply, after eye expressions and before other queued body motions. "
         "Do not call this tool only to nod or shake when answering yes or no, including 没错, 是的, 对, or nope. "
         "Call knd/kwh only when the user explicitly asks for that head motion. Never confuse them with gait kvtL or kvtR. Always use this "
-        "tool for explicit robot body motions or eye-color changes, including English "
-        "requests such as sit down, stand up, go forward, turn left/right, run, crawl, nod, shake head, or make the eyes "
+        "tool for explicit robot body motions, mouse transform, or eye-color changes, including English "
+        "requests such as sit down, stand up, go forward, turn left/right, run, crawl, nod, shake head, become a mouse, "
+        "or make the eyes "
         "purple. Do not route these robot commands to smart_home. "
         "Determine reply language only from the user's latest request, never from older turns, retrieved context, "
         "examples, or tool results. If the latest request is English, every user-facing sentence before and after "
@@ -217,7 +231,14 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "Basic: khi greet, ksit sit, kgdb good, kpu push-up, kjmp jump, d rest, kup stand, kstr stretch.\n"
         "Emotion: kang angry, khg hug, kfiv high-five, kchr cheer, knd nod (yes), kwh shake head (no), kzz sleepy.\n"
         "Skills: kbf backflip, kff frontflip, khds handstand, kmw moonwalk, krl roll, kbx boxing, kkc kick, "
-        "kjumpSlide jump slide / 跳滑.\n"
+        "kjumpSlide jump slide / 跳滑. Send exact uppercase letter T to call the skill that was just learned; "
+        "never send veT, t, or lowercase t for this.\n"
+        "Transform: I can become a mouse, meaning either the animal mouse or a computer mouse. "
+        "Send exact UART code XO through this tool to transform; send exact UART code Xo (capital X, lowercase o) "
+        "to return to the normal robot-dog state. These two codes are case-sensitive and different; never send xo, xO, or X0. "
+        "When the user asks to become a mouse or to return to normal, call this tool with XO or Xo. The tool returns "
+        "immediately. Speak 'as you wish' if the latest request is English, or '如你所愿' if it is Chinese, in that same "
+        "turn. Firmware sends the UART command after that speech. Do not wait for a completion token before speaking.\n"
         "Interaction: kcmh come, khsk handshake, khu raise hand, ksnf sniff, kscrh scratch, kdg dig, kpee pee, kpd "
         "play dead.\n"
         "Head/joints: knd nod means yes; kwh shake head means no, the opposite of nod. "
@@ -226,6 +247,8 @@ OPERATE_RET ai_mcp_robot_tools_register(void)
         "m<number> <angle>: head=0, left hand=8, right hand=9; negative is forward, positive is backward.\n"
         "Examples: sit -> ksit; run -> ktrF 3; spin/rotate/turn around -> kvtL 360; user asks to nod -> knd; "
         "user asks to shake head -> kwh; jump slide/跳滑 -> kjumpSlide; "
+        "become a mouse / 变成老鼠 / 变成鼠标 -> XO; return to normal / 变回 -> Xo; "
+        "replay the learned skill / 刚才学会的技能 / 调用刚才学会的技能 -> T; "
         "turn head left -> m0 45; raise left hand -> m8 -30. A spin is a turn, never forward command kwkF.",
         __robot_send_command, NULL, MCP_PROP_STR("text", "Machine command code only; no Chinese or descriptions."));
 }

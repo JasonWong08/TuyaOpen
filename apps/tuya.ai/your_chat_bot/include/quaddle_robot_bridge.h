@@ -25,6 +25,9 @@ OPERATE_RET quaddle_robot_bridge_queue_ai_command_tracked(const char *cmd, const
 OPERATE_RET quaddle_robot_bridge_queue_ai_command_front(const char *cmd, const char *source);
 void        quaddle_robot_bridge_hold_ai_body_commands(void);
 void        quaddle_robot_bridge_release_ai_body_hold(void);
+void        quaddle_robot_bridge_flush_deferred_mouse_transform(void);
+bool        quaddle_robot_bridge_has_deferred_mouse_transform(void);
+bool        quaddle_robot_bridge_mouse_exclusive(void);
 OPERATE_RET quaddle_robot_bridge_wait_ai_command(uint32_t ticket, uint32_t timeout_ms);
 void        quaddle_robot_bridge_handle_robot_token(char token);
 BOOL_T      quaddle_robot_bridge_gamepad_active(void);

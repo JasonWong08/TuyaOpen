@@ -31,6 +31,9 @@ bool robot_uart_voice_allow_mcp_head_gesture(const char *cmd);
 /** Map TTS start/end to second-UART listen/talk cues. */
 void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event);
 
+/** Flush listen cues delayed until a mouse transform can finish. */
+void robot_uart_voice_poll(void);
+
 #endif
 
 #endif /* ROBOT_UART_VOICE_H */

@@ -12,6 +12,7 @@
 #include "tal_system.h"
 
 #include "quaddle_robot_bridge.h"
+#include "robot_uart_voice.h"
 #include "second_uart.h"
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
@@ -30,6 +31,8 @@
 #define AI_COMMAND_TOKEN_TIMEOUT_MS 20000
 #define AI_COMMAND_ASR_MCP_DEDUPE_MS 5000
 #define AI_BODY_HOLD_TIMEOUT_MS    8000
+#define AI_MOUSE_DEFER_TIMEOUT_MS  6000
+#define AI_MOUSE_EXCLUSIVE_MS      1600
 #define PLUS_LONG_PRESS_MS         1000
 #define ZL_LONG_PRESS_MS           1000
 #define QUADDLE_MACRO_MAX_STEPS    48
@@ -142,6 +145,9 @@ static uint8_t  s_ai_completed_ticket_index;
 static uint8_t  s_ai_failed_ticket_index;
 static bool     s_ai_body_hold;
 static uint32_t s_ai_body_hold_deadline_ms;
+static char     s_deferred_mouse_cmd[QUADDLE_CMD_MAX];
+static uint32_t s_deferred_mouse_deadline_ms;
+static uint32_t s_mouse_exclusive_until_ms;
 
 static int quaddle_abs(int v)
 {
@@ -280,6 +286,65 @@ static bool ai_cmd_is_eye_color(const char *cmd)
     return cmd && cmd[0] == 'v' && cmd[1] == 'c';
 }
 
+static bool ai_cmd_is_mouse_transform(const char *cmd)
+{
+    return cmd && (strcmp(cmd, "XO") == 0 || strcmp(cmd, "Xo") == 0);
+}
+
+static bool ai_mouse_exclusive_active(void)
+{
+    if (s_mouse_exclusive_until_ms == 0) {
+        return false;
+    }
+    if ((int32_t)(now_ms() - s_mouse_exclusive_until_ms) >= 0) {
+        s_mouse_exclusive_until_ms = 0;
+        return false;
+    }
+    return true;
+}
+
+static void ai_begin_mouse_exclusive(void)
+{
+    uint32_t until = now_ms() + AI_MOUSE_EXCLUSIVE_MS;
+
+    s_mouse_exclusive_until_ms = until;
+    s_ai_body_hold = true;
+    if (s_ai_body_hold_deadline_ms == 0 ||
+        (int32_t)(until - s_ai_body_hold_deadline_ms) > 0) {
+        s_ai_body_hold_deadline_ms = until;
+    }
+    if (s_pending_ai_active && !ai_cmd_is_mouse_transform(s_pending_ai_cmd) &&
+        (int32_t)(until - s_pending_ai_deadline_ms) > 0) {
+        s_pending_ai_deadline_ms = until;
+    }
+    PR_NOTICE("robot arbitration: mouse transform exclusive %ums", AI_MOUSE_EXCLUSIVE_MS);
+}
+
+static void ai_stash_mouse_transform(const char *cmd, const char *src, uint32_t ticket)
+{
+    strncpy(s_deferred_mouse_cmd, cmd, sizeof(s_deferred_mouse_cmd) - 1);
+    s_deferred_mouse_cmd[sizeof(s_deferred_mouse_cmd) - 1] = '\0';
+    s_deferred_mouse_deadline_ms = now_ms() + AI_MOUSE_DEFER_TIMEOUT_MS;
+    if (ai_source_is(src, "ASR")) {
+        ai_record_asr_command(cmd, ticket);
+    }
+    ai_complete_ticket(ticket);
+    PR_NOTICE("robot arbitration: defer mouse transform \"%s\" from %s until speech ends ticket=%u", cmd,
+              src, ticket);
+}
+
+static void flush_deferred_mouse_transform(void)
+{
+    if (s_deferred_mouse_cmd[0] == '\0') {
+        return;
+    }
+    PR_NOTICE("robot arbitration: send deferred mouse transform \"%s\"", s_deferred_mouse_cmd);
+    (void)second_uart_send_string_force(s_deferred_mouse_cmd);
+    s_deferred_mouse_cmd[0] = '\0';
+    s_deferred_mouse_deadline_ms = 0;
+    ai_begin_mouse_exclusive();
+}
+
 static bool ai_queue_contains_cmd(const char *cmd)
 {
     uint8_t i;
@@ -344,6 +409,9 @@ static void clear_ai_command_queue(void)
     s_last_asr_ticket        = 0;
     s_ai_body_hold           = false;
     s_ai_body_hold_deadline_ms = 0;
+    s_deferred_mouse_cmd[0]  = '\0';
+    s_deferred_mouse_deadline_ms = 0;
+    s_mouse_exclusive_until_ms = 0;
 }
 
 static const char *payload_after_bracket(const char *line)
@@ -1133,6 +1201,7 @@ static void poll_timer_cb(TIMER_ID timer_id, void *arg)
     (void)timer_id;
     (void)arg;
     quaddle_robot_bridge_poll();
+    robot_uart_voice_poll();
 }
 
 #if defined(ENABLE_QUADDLE_GAMEPAD) && ENABLE_QUADDLE_GAMEPAD
@@ -1345,11 +1414,20 @@ void quaddle_robot_bridge_poll(void)
         (void)flush_pending_stick();
     }
 #endif
+    if (s_deferred_mouse_cmd[0] != '\0' && s_deferred_mouse_deadline_ms != 0 &&
+        (int32_t)(now - s_deferred_mouse_deadline_ms) >= 0) {
+        PR_WARN("robot arbitration: deferred mouse transform timeout, send now");
+        flush_deferred_mouse_transform();
+    }
     if (s_ai_body_hold && s_ai_body_hold_deadline_ms != 0 &&
         (int32_t)(now - s_ai_body_hold_deadline_ms) >= 0) {
-        PR_WARN("robot arbitration: AI body-command hold timeout, release pending motions");
-        s_ai_body_hold = false;
-        s_ai_body_hold_deadline_ms = 0;
+        if (ai_mouse_exclusive_active()) {
+            s_ai_body_hold_deadline_ms = s_mouse_exclusive_until_ms;
+        } else {
+            PR_WARN("robot arbitration: AI body-command hold timeout, release pending motions");
+            s_ai_body_hold = false;
+            s_ai_body_hold_deadline_ms = 0;
+        }
     }
     if (s_ai_waiting_token && (int32_t)(now - s_ai_token_deadline_ms) >= 0) {
         PR_WARN("robot arbitration: token '%c' timeout after AI command \"%s\"", s_ai_expected_token,
@@ -1366,8 +1444,13 @@ void quaddle_robot_bridge_poll(void)
         s_ai_queue_count       = 0;
         PR_WARN("robot arbitration: AI command queue cleared after token timeout");
     }
+    if (s_pending_ai_active && ai_mouse_exclusive_active() &&
+        !ai_cmd_is_mouse_transform(s_pending_ai_cmd) &&
+        (int32_t)(s_mouse_exclusive_until_ms - s_pending_ai_deadline_ms) > 0) {
+        s_pending_ai_deadline_ms = s_mouse_exclusive_until_ms;
+    }
     if (!s_pending_ai_active && !s_ai_waiting_token && s_ai_queue_count > 0 &&
-        !ai_should_hold_front_command()) {
+        !ai_should_hold_front_command() && !ai_mouse_exclusive_active()) {
         schedule_next = true;
     }
     if (schedule_next && !s_pending_ai_active && !s_ai_waiting_token && s_ai_queue_count > 0) {
@@ -1384,7 +1467,9 @@ void quaddle_robot_bridge_poll(void)
                   s_pending_ai_source, AI_COMMAND_ARBITRATION_MS);
     }
     if (s_pending_ai_active && (int32_t)(now - s_pending_ai_deadline_ms) >= 0) {
-        if (quaddle_robot_bridge_gamepad_active()) {
+        if (ai_mouse_exclusive_active() && !ai_cmd_is_mouse_transform(s_pending_ai_cmd)) {
+            s_pending_ai_deadline_ms = s_mouse_exclusive_until_ms;
+        } else if (quaddle_robot_bridge_gamepad_active()) {
             PR_NOTICE("robot arbitration: skipped AI command \"%s\"; gamepad priority active", s_pending_ai_cmd);
             s_pending_ai_active = false;
             ai_fail_ticket(s_pending_ai_ticket);
@@ -1595,6 +1680,15 @@ OPERATE_RET quaddle_robot_bridge_queue_ai_command_tracked(const char *cmd, const
         return OPRT_OK;
     }
 
+    if (ai_cmd_is_mouse_transform(cmd)) {
+        command_ticket = ai_next_ticket();
+        if (ticket) {
+            *ticket = command_ticket;
+        }
+        ai_stash_mouse_transform(cmd, src, command_ticket);
+        return OPRT_OK;
+    }
+
     if (s_ai_queue_count >= AI_COMMAND_QUEUE_MAX) {
         PR_WARN("robot arbitration: AI queue full, drop \"%s\" from %s", cmd, src);
         return OPRT_COM_ERROR;
@@ -1636,9 +1730,28 @@ void quaddle_robot_bridge_release_ai_body_hold(void)
     if (!s_ai_body_hold) {
         return;
     }
+    if (ai_mouse_exclusive_active()) {
+        PR_NOTICE("robot arbitration: keep body hold; mouse transform exclusive");
+        return;
+    }
     s_ai_body_hold = false;
     s_ai_body_hold_deadline_ms = 0;
     PR_NOTICE("robot arbitration: release AI body-command hold");
+}
+
+void quaddle_robot_bridge_flush_deferred_mouse_transform(void)
+{
+    flush_deferred_mouse_transform();
+}
+
+bool quaddle_robot_bridge_has_deferred_mouse_transform(void)
+{
+    return s_deferred_mouse_cmd[0] != '\0';
+}
+
+bool quaddle_robot_bridge_mouse_exclusive(void)
+{
+    return ai_mouse_exclusive_active();
 }
 
 OPERATE_RET quaddle_robot_bridge_queue_ai_command_front(const char *cmd, const char *source)
