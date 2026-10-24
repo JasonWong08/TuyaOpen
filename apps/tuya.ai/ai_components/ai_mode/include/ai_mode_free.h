@@ -39,6 +39,9 @@ OPERATE_RET ai_mode_free_register(void);
 
 void ai_mode_free_request_exit(void);
 
+/** Close listen/mic so a typed `>` sentence can use text input, not STT. */
+OPERATE_RET ai_mode_free_prepare_text_inject(void);
+
 
 #ifdef __cplusplus
 }

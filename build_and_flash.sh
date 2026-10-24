@@ -30,10 +30,37 @@ PORT="/dev/${PORT_NAME}"
 cd "${APP_DIR}"
 export PYTHONUNBUFFERED=1
 
+copy_firmware_bin() {
+    local stamp src base dest
+    stamp="$(date +%Y%m%d_%H%M)"
+
+    src=""
+    if [ -d "${APP_DIR}/.build/bin" ]; then
+        src="$(find "${APP_DIR}/.build/bin" -maxdepth 1 -type f -name '*_QIO_*.bin' | head -n 1 || true)"
+    fi
+    if [ -z "${src}" ] && [ -d "${APP_DIR}/dist" ]; then
+        src="$(find "${APP_DIR}/dist" -type f -name '*_QIO_*.bin' | head -n 1 || true)"
+    fi
+    if [ -z "${src}" ]; then
+        echo "No *_QIO_*.bin found under ${APP_DIR}/.build/bin or dist" >&2
+        return 1
+    fi
+
+    base="$(basename "${src}")"
+    dest="$(printf '%s\n' "${base}" | sed -E "s/_[0-9]+(\.[0-9]+)+\.bin$/_${stamp}.bin/")"
+    if [ "${dest}" = "${base}" ]; then
+        dest="${base%.bin}_${stamp}.bin"
+    fi
+
+    cp -f "${src}" "${ROOT}/${dest}"
+    echo "Firmware copy: ${ROOT}/${dest}"
+}
+
 echo "Build in ${APP_DIR}"
 "${TOS[@]}" build
 
 echo "Flash ${PORT}"
+copy_firmware_bin
 "${TOS[@]}" flash -p "${PORT}"
 
 echo "Flash done. Press Reset (do not hold Boot) to run the app."

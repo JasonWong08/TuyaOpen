@@ -33,7 +33,7 @@
 #endif
 
 #ifndef CLI_ARGV_NUM
-#define CLI_ARGV_NUM 8
+#define CLI_ARGV_NUM 32
 #endif
 
 #ifndef CLI_CMD_TABLE_NUM
@@ -490,6 +490,9 @@ static int cli_cmd_exec(int argc, char **argv)
     cli_cmd_t *cmd;
 
     cmd = cli_cmd_find_with_name(argv[0]);
+    if (!cmd && argc > 0 && argv[0] && argv[0][0] == '>') {
+        cmd = cli_cmd_find_with_name(">");
+    }
     if (cmd) {
         cmd->func(argc, argv);
         return OPRT_OK;

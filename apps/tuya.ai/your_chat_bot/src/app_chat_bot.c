@@ -14,6 +14,12 @@
 #include "ai_chat_main.h"
 #include "ai_manage_mode.h"
 #include "app_chat_bot.h"
+#include "ai_agent.h"
+#include "ai_user_event.h"
+#include "tuya_ai_agent.h"
+#include "ai_mode_free.h"
+
+#define ASK_TEXT_MAX 256
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 #include "quaddle_ble_hid_central.h"
@@ -51,6 +57,78 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
 #endif
 }
 #endif
+
+static void __cli_ask_join(int argc, char *argv[], char *out, size_t out_len)
+{
+    size_t used = 0;
+    int    i = 1;
+
+    out[0] = '\0';
+    if (argc >= 1 && argv[0] && argv[0][0] == '>') {
+        if (argv[0][1] != '\0') {
+            argv[0] = argv[0] + 1;
+            i = 0;
+        } else {
+            i = 1;
+        }
+    }
+
+    for (; i < argc; i++) {
+        size_t n = strlen(argv[i] ? argv[i] : "");
+
+        if (n == 0) {
+            continue;
+        }
+        if (used + n + 2 >= out_len) {
+            break;
+        }
+        if (used > 0) {
+            out[used++] = ' ';
+        }
+        memcpy(out + used, argv[i], n);
+        used += n;
+        out[used] = '\0';
+    }
+}
+
+static void __cli_ask_cmd(int argc, char *argv[])
+{
+    char             text[ASK_TEXT_MAX];
+    AI_NOTIFY_TEXT_T notify;
+    OPERATE_RET      rt;
+
+    __cli_ask_join(argc, argv, text, sizeof(text));
+    if (text[0] == '\0') {
+        tal_cli_echo("> [sentence]  skip STT, send text to the LLM\r\n");
+        return;
+    }
+
+    tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
+    (void)ai_mode_free_prepare_text_inject();
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+    quaddle_robot_bridge_hold_ai_body_commands();
+#endif
+    ai_app_on_asr_result(text);
+
+    rt = ai_agent_send_text(text);
+    if (rt != OPRT_OK) {
+        PR_ERR("ask: send text failed %d \"%s\"", rt, text);
+        tal_cli_echo(">: send failed\r\n");
+        return;
+    }
+
+    notify.data      = text;
+    notify.datalen   = (uint16_t)strlen(text);
+    notify.timeindex = 0;
+    ai_user_event_notify(AI_USER_EVT_ASR_OK, &notify);
+
+    PR_NOTICE("ask: skip STT, sent to LLM \"%s\"", text);
+    tal_cli_echo(">: sent to LLM (no STT)\r\n");
+}
+
+static const cli_cmd_t s_ask_cli[] = {
+    {">", "> [sentence]  skip STT, send text to the LLM; space after > is optional", __cli_ask_cmd},
+};
 
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
 #include "tkl_wifi.h"
@@ -207,6 +285,7 @@ OPERATE_RET app_chat_bot_init(void)
 #endif
     };
     TUYA_CALL_ERR_RETURN(ai_chat_init(&ai_chat_cfg));
+    tal_cli_cmd_register(s_ask_cli, sizeof(s_ask_cli) / sizeof(s_ask_cli[0]));
 
 #if defined(ENABLE_COMP_AI_VIDEO) && (ENABLE_COMP_AI_VIDEO == 1)
     AI_VIDEO_CFG_T ai_video_cfg = {

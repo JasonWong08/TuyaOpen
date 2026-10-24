@@ -755,6 +755,38 @@ void ai_mode_free_request_exit(void)
     ai_audio_input_output_set(false);
     ai_audio_input_wakeup_set(false);
 }
+
+OPERATE_RET ai_mode_free_prepare_text_inject(void)
+{
+    uint32_t waits;
+
+    if (sg_listen_arm_timer) {
+        tal_sw_timer_stop(sg_listen_arm_timer);
+    }
+    sg_pending_vad_start = false;
+    ai_audio_input_output_set(false);
+    ai_audio_input_wakeup_set(false);
+    __ai_mode_free_stop_active_input();
+
+    /* Keep the free-talk session so PLAY_END returns to LISTEN. */
+    sg_is_wakeup = true;
+    sg_empty_asr_count = 0;
+    MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_THINK);
+
+    for (waits = 0; waits < 25 && sg_mode_cur_state != AI_MODE_STATE_THINK; waits++) {
+        tal_system_sleep(20);
+    }
+    for (waits = 0; waits < 20 && tuya_ai_input_get_state() != AI_INPUT_IDLE; waits++) {
+        tal_system_sleep(50);
+    }
+    if (tuya_ai_input_get_state() != AI_INPUT_IDLE) {
+        PR_WARN("mode free text inject: ai input not idle, state=%d", tuya_ai_input_get_state());
+        return OPRT_COM_ERROR;
+    }
+
+    PR_NOTICE("mode free prepared text inject");
+    return OPRT_OK;
+}
 #else 
 
 OPERATE_RET ai_mode_free_register(void)
@@ -764,6 +796,11 @@ OPERATE_RET ai_mode_free_register(void)
 
 void ai_mode_free_request_exit(void)
 {
+}
+
+OPERATE_RET ai_mode_free_prepare_text_inject(void)
+{
+    return OPRT_OK;
 }
 
 #endif
