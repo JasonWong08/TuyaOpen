@@ -91,16 +91,13 @@ static void __cli_ask_join(int argc, char *argv[], char *out, size_t out_len)
     }
 }
 
-static void __cli_ask_cmd(int argc, char *argv[])
+OPERATE_RET app_chat_bot_inject_user_text(const char *text)
 {
-    char             text[ASK_TEXT_MAX];
     AI_NOTIFY_TEXT_T notify;
     OPERATE_RET      rt;
 
-    __cli_ask_join(argc, argv, text, sizeof(text));
-    if (text[0] == '\0') {
-        tal_cli_echo("> [sentence]  skip STT, send text to the LLM\r\n");
-        return;
+    if (!text || text[0] == '\0') {
+        return OPRT_INVALID_PARM;
     }
 
     tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
@@ -110,19 +107,37 @@ static void __cli_ask_cmd(int argc, char *argv[])
 #endif
     ai_app_on_asr_result(text);
 
-    rt = ai_agent_send_text(text);
+    rt = ai_agent_send_text((char *)text);
     if (rt != OPRT_OK) {
         PR_ERR("ask: send text failed %d \"%s\"", rt, text);
-        tal_cli_echo(">: send failed\r\n");
-        return;
+        return rt;
     }
 
-    notify.data      = text;
+    notify.data      = (char *)text;
     notify.datalen   = (uint16_t)strlen(text);
     notify.timeindex = 0;
     ai_user_event_notify(AI_USER_EVT_ASR_OK, &notify);
 
     PR_NOTICE("ask: skip STT, sent to LLM \"%s\"", text);
+    return OPRT_OK;
+}
+
+static void __cli_ask_cmd(int argc, char *argv[])
+{
+    char        text[ASK_TEXT_MAX];
+    OPERATE_RET rt;
+
+    __cli_ask_join(argc, argv, text, sizeof(text));
+    if (text[0] == '\0') {
+        tal_cli_echo("> [sentence]  skip STT, send text to the LLM\r\n");
+        return;
+    }
+
+    rt = app_chat_bot_inject_user_text(text);
+    if (rt != OPRT_OK) {
+        tal_cli_echo(">: send failed\r\n");
+        return;
+    }
     tal_cli_echo(">: sent to LLM (no STT)\r\n");
 }
 

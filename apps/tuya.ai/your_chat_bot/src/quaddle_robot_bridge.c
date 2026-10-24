@@ -14,6 +14,9 @@
 #include "quaddle_robot_bridge.h"
 #include "robot_uart_voice.h"
 #include "second_uart.h"
+#include "app_chat_bot.h"
+#include "ai_manage_mode.h"
+#include "tuya_config.h"
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 
@@ -33,6 +36,7 @@
 #define AI_BODY_HOLD_TIMEOUT_MS    8000
 #define AI_MOUSE_DEFER_TIMEOUT_MS  6000
 #define AI_MOUSE_EXCLUSIVE_MS      1600
+#define ROBOT_USER_TEXT_MAX        256
 #define PLUS_LONG_PRESS_MS         1000
 #define ZL_LONG_PRESS_MS           1000
 #define QUADDLE_MACRO_MAX_STEPS    48
@@ -148,6 +152,10 @@ static uint32_t s_ai_body_hold_deadline_ms;
 static char     s_deferred_mouse_cmd[QUADDLE_CMD_MAX];
 static uint32_t s_deferred_mouse_deadline_ms;
 static uint32_t s_mouse_exclusive_until_ms;
+static char     s_robot_rx_line[ROBOT_USER_TEXT_MAX];
+static uint16_t s_robot_rx_line_len;
+static char     s_pending_robot_user_text[ROBOT_USER_TEXT_MAX];
+static bool     s_pending_robot_user_text_ready;
 
 static int quaddle_abs(int v)
 {
@@ -412,6 +420,10 @@ static void clear_ai_command_queue(void)
     s_deferred_mouse_cmd[0]  = '\0';
     s_deferred_mouse_deadline_ms = 0;
     s_mouse_exclusive_until_ms = 0;
+    s_robot_rx_line_len = 0;
+    s_robot_rx_line[0] = '\0';
+    s_pending_robot_user_text[0] = '\0';
+    s_pending_robot_user_text_ready = false;
 }
 
 static const char *payload_after_bracket(const char *line)
@@ -1419,6 +1431,26 @@ void quaddle_robot_bridge_poll(void)
         PR_WARN("robot arbitration: deferred mouse transform timeout, send now");
         flush_deferred_mouse_transform();
     }
+    if (s_pending_robot_user_text_ready) {
+        AI_MODE_STATE_E state = ai_mode_get_state();
+        if (state == AI_MODE_STATE_IDLE || state == AI_MODE_STATE_INIT) {
+            char text[ROBOT_USER_TEXT_MAX];
+
+            strncpy(text, s_pending_robot_user_text, sizeof(text) - 1);
+            text[sizeof(text) - 1] = '\0';
+            s_pending_robot_user_text[0] = '\0';
+            s_pending_robot_user_text_ready = false;
+            PR_NOTICE("robot uart: idle passthrough to LLM \"%s\"", text);
+            if (app_chat_bot_inject_user_text(text) != OPRT_OK) {
+                PR_WARN("robot uart: passthrough send failed \"%s\"", text);
+            }
+        } else {
+            PR_NOTICE("robot uart: drop passthrough \"%s\"; chat busy state=%s",
+                      s_pending_robot_user_text, ai_get_mode_state_str(state));
+            s_pending_robot_user_text[0] = '\0';
+            s_pending_robot_user_text_ready = false;
+        }
+    }
     if (s_ai_body_hold && s_ai_body_hold_deadline_ms != 0 &&
         (int32_t)(now - s_ai_body_hold_deadline_ms) >= 0) {
         if (ai_mouse_exclusive_active()) {
@@ -1852,6 +1884,97 @@ void quaddle_robot_bridge_handle_robot_token(char token)
     s_pending_ai_cmd[0]    = '\0';
     s_pending_ai_source[0] = '\0';
     s_pending_ai_ticket    = 0;
+}
+
+static bool robot_rx_looks_like_cmd(const char *s)
+{
+    if (!s || s[0] == '\0') {
+        return true;
+    }
+    if (s[1] == '\0') {
+        return true;
+    }
+    if (s[0] == 'k') {
+        return true;
+    }
+    if (s[0] == 'v' && (s[1] == 'e' || s[1] == 'c')) {
+        return true;
+    }
+    if (s[0] == 'm' && s[1] >= '0' && s[1] <= '9') {
+        return true;
+    }
+    if (strcmp(s, "XO") == 0 || strcmp(s, "Xo") == 0 || strcmp(s, "T") == 0 || strcmp(s, "d") == 0) {
+        return true;
+    }
+    return false;
+}
+
+static bool robot_rx_parse_user_text(const char *line, char *out, size_t out_len)
+{
+    bool prefixed = false;
+
+    if (!line || !out || out_len == 0) {
+        return false;
+    }
+    while (*line == ' ' || *line == '\t') {
+        line++;
+    }
+    if (line[0] == '>') {
+        line++;
+        while (*line == ' ' || *line == '\t') {
+            line++;
+        }
+        prefixed = true;
+    } else if (strncmp(line, "ASK:", 4) == 0 || strncmp(line, "ask:", 4) == 0) {
+        line += 4;
+        while (*line == ' ' || *line == '\t') {
+            line++;
+        }
+        prefixed = true;
+    }
+    if (line[0] == '\0') {
+        return false;
+    }
+    if (!prefixed && robot_rx_looks_like_cmd(line)) {
+        return false;
+    }
+    strncpy(out, line, out_len - 1);
+    out[out_len - 1] = '\0';
+    return out[0] != '\0';
+}
+
+void quaddle_robot_bridge_handle_robot_rx(char ch)
+{
+    quaddle_robot_bridge_handle_robot_token(ch);
+
+    if (ch == '\0' || ch == '\r') {
+        return;
+    }
+    if (ch == '\n') {
+        s_robot_rx_line[s_robot_rx_line_len] = '\0';
+        if (s_robot_rx_line_len > 0) {
+            char text[ROBOT_USER_TEXT_MAX];
+
+            if (s_robot_rx_line[0] == '?' && s_robot_rx_line[1] == '\0') {
+                PR_NOTICE("robot uart: ? firmware %s", APP_FIRMWARE_DATE);
+                (void)second_uart_send_string_force(APP_FIRMWARE_DATE);
+            } else if (robot_rx_parse_user_text(s_robot_rx_line, text, sizeof(text))) {
+                strncpy(s_pending_robot_user_text, text, sizeof(s_pending_robot_user_text) - 1);
+                s_pending_robot_user_text[sizeof(s_pending_robot_user_text) - 1] = '\0';
+                s_pending_robot_user_text_ready = true;
+            }
+        }
+        s_robot_rx_line_len = 0;
+        s_robot_rx_line[0] = '\0';
+        return;
+    }
+    if (s_robot_rx_line_len + 1 >= sizeof(s_robot_rx_line)) {
+        PR_WARN("robot uart: RX line overflow, drop");
+        s_robot_rx_line_len = 0;
+        s_robot_rx_line[0] = '\0';
+        return;
+    }
+    s_robot_rx_line[s_robot_rx_line_len++] = ch;
 }
 
 BOOL_T quaddle_robot_bridge_gamepad_active(void)

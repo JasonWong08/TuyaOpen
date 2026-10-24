@@ -28,6 +28,9 @@ extern "C" {
 ***********************************************************/
 OPERATE_RET app_chat_bot_init(void);
 
+/** Skip STT and send a typed/passthrough sentence to the cloud LLM. */
+OPERATE_RET app_chat_bot_inject_user_text(const char *text);
+
 #ifdef __cplusplus
 }
 #endif

@@ -63,6 +63,7 @@ tuya_iot_client_t ai_client;
 /* Tuya license information (uuid authkey) */
 tuya_iot_license_t license;
 
+static void cli_query_firmware(int argc, char *argv[]);
 static void cli_query_id(int argc, char *argv[]);
 static void cli_query_wifi(int argc, char *argv[]);
 
@@ -71,6 +72,11 @@ static const cli_cmd_t sg_app_cli_cmd[] = {
         .name = "kv",
         .help = "kv set/get/del/list",
         .func = tal_kv_cmd,
+    },
+    {
+        .name = "?",
+        .help = "?  print firmware date version",
+        .func = cli_query_firmware,
     },
     {
         .name = "?id",
@@ -451,6 +457,16 @@ static void __mask_secret(const char *src, char *dst, size_t dst_size, size_t ke
     dst[len] = '\0';
 }
 
+static void cli_query_firmware(int argc, char *argv[])
+{
+    char line[64];
+
+    (void)argc;
+    (void)argv;
+    snprintf(line, sizeof(line), "firmware: %s", APP_FIRMWARE_DATE);
+    tal_cli_echo(line);
+}
+
 static void cli_query_id(int argc, char *argv[])
 {
     tuya_iot_license_t lic = {0};
@@ -525,6 +541,7 @@ void user_main(void)
     PR_NOTICE("Application information:");
     PR_NOTICE("Project name:        %s", PROJECT_NAME);
     PR_NOTICE("App version:         %s", PROJECT_VERSION);
+    PR_NOTICE("Firmware date:       %s", APP_FIRMWARE_DATE);
     PR_NOTICE("Compile time:        %s", __DATE__);
     PR_NOTICE("TuyaOpen version:    %s", OPEN_VERSION);
     PR_NOTICE("TuyaOpen commit-id:  %s", OPEN_COMMIT);

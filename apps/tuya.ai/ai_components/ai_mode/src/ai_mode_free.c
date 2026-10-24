@@ -61,6 +61,7 @@ static TDL_LED_HANDLE_T sg_led_hdl = NULL;
 static AI_MODE_STATE_E sg_mode_set_state = AI_MODE_STATE_INIT;
 static AI_MODE_STATE_E sg_mode_cur_state = AI_MODE_STATE_INVALID;
 static bool            sg_is_wakeup = false;
+static bool            sg_text_inject_oneshot = false;
 static bool            sg_pending_vad_start = false;
 static bool            sg_exit_pending = false;
 static bool            sg_exit_reply_started = false;
@@ -166,6 +167,7 @@ static void __ai_mode_free_complete_exit(void)
     }
 
     sg_is_wakeup = false;
+    sg_text_inject_oneshot = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
     sg_exit_reply_started = false;
@@ -193,6 +195,7 @@ static void __ai_mode_free_begin_exit(void)
     __ai_mode_free_stop_active_input();
     ai_audio_input_wakeup_set(false);
     sg_is_wakeup = false;
+    sg_text_inject_oneshot = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
     sg_exit_reply_started = false;
@@ -211,6 +214,15 @@ static void __ai_mode_free_begin_exit(void)
 
     /* Protect against a cloud request which never produces TTS. */
     tal_sw_timer_start(sg_enter_idle_timer, sg_response_timeout_ms, TAL_TIMER_ONCE);
+}
+
+static void __ai_mode_free_finish_text_inject(void)
+{
+    PR_NOTICE("mode free text inject done, stay idle (no listen)");
+    sg_text_inject_oneshot = false;
+    sg_is_wakeup = false;
+    sg_pending_vad_start = false;
+    MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
 }
 
 static bool __ai_mode_free_is_goodbye_prefix(const AI_NOTIFY_TEXT_T *text)
@@ -277,6 +289,7 @@ static void __ai_mode_kws_wakeup(TKL_KWS_WAKEUP_WORD_E wakeup_word)
 
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
     sg_is_wakeup = true;
+    sg_text_inject_oneshot = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
     sg_exit_reply_started = false;
@@ -341,6 +354,7 @@ static void __ai_mode_enter_idle(void)
     tkl_kws_enable();
 
     sg_is_wakeup = false;
+    sg_text_inject_oneshot = false;
     sg_pending_vad_start = false;
     sg_exit_pending = false;
     sg_exit_reply_started = false;
@@ -383,7 +397,7 @@ static void __ai_mode_enter_think(void)
         __ai_mode_free_stop_active_input();
     }
     ai_audio_input_wakeup_set(false);
-    if (sg_exit_pending || sg_goodbye_pending) {
+    if (sg_exit_pending || sg_goodbye_pending || sg_text_inject_oneshot) {
         sg_is_wakeup = false;
     } else {
         sg_is_wakeup = true;
@@ -460,6 +474,11 @@ static void __ai_mode_enter_idle_time_cb(TIMER_ID timer_id, void *arg)
         uint32_t timeout_ms = (sg_mode_set_state == AI_MODE_STATE_LISTEN) ? sg_listen_timeout_ms
                                                                           : sg_response_timeout_ms;
         tal_sw_timer_start(timer_id, timeout_ms, TAL_TIMER_ONCE);
+        return;
+    }
+
+    if (sg_text_inject_oneshot) {
+        __ai_mode_free_finish_text_inject();
         return;
     }
 
@@ -605,6 +624,8 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
         case AI_USER_EVT_TTS_ERROR: {
             if (sg_goodbye_pending || sg_exit_pending) {
                 __ai_mode_free_complete_exit();
+            } else if (sg_text_inject_oneshot) {
+                __ai_mode_free_finish_text_inject();
             }
         }
         break;
@@ -616,6 +637,8 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
                 /* Ignore a stale PLAY_END while waiting for the cloud's
                  * natural reply to an explicit goodbye. */
                 PR_DEBUG("mode free ignore play end before explicit exit reply");
+            } else if (sg_text_inject_oneshot) {
+                __ai_mode_free_finish_text_inject();
             } else if (sg_is_wakeup && !sg_exit_pending) {
                 sg_empty_asr_count = 0;
                 MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
@@ -701,6 +724,7 @@ static OPERATE_RET __ai_mode_free_handle_key(TDL_BUTTON_TOUCH_EVENT_E event, voi
 
             MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_LISTEN);
             sg_is_wakeup = true;
+            sg_text_inject_oneshot = false;
             sg_exit_pending = false;
             sg_exit_reply_started = false;
             sg_goodbye_pending = false;
@@ -751,6 +775,7 @@ void ai_mode_free_request_exit(void)
     PR_NOTICE("mode free request exit after current response");
     sg_exit_pending = true;
     sg_exit_reply_started = false;
+    sg_text_inject_oneshot = false;
     sg_pending_vad_start = false;
     ai_audio_input_output_set(false);
     ai_audio_input_wakeup_set(false);
@@ -768,8 +793,9 @@ OPERATE_RET ai_mode_free_prepare_text_inject(void)
     ai_audio_input_wakeup_set(false);
     __ai_mode_free_stop_active_input();
 
-    /* Keep the free-talk session so PLAY_END returns to LISTEN. */
-    sg_is_wakeup = true;
+    /* One-shot `>` / UART text: reply then IDLE, do not arm listen. */
+    sg_is_wakeup = false;
+    sg_text_inject_oneshot = true;
     sg_empty_asr_count = 0;
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_THINK);
 

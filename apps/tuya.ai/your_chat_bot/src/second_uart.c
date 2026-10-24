@@ -41,7 +41,7 @@ static void __second_uart_rx_task(void *args)
                                              (available > (int)sizeof(data)) ? sizeof(data) : (uint32_t)available);
             if (read_len > 0) {
                 for (int i = 0; i < read_len; i++) {
-                    quaddle_robot_bridge_handle_robot_token((char)data[i]);
+                    quaddle_robot_bridge_handle_robot_rx((char)data[i]);
                 }
             }
         }

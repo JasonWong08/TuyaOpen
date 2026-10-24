@@ -26,6 +26,10 @@
 #define TUYA_PRODUCT_ID "gbq0rbhmrnn3greo"
 #endif
 
+#ifndef APP_FIRMWARE_DATE
+#define APP_FIRMWARE_DATE "20261024"
+#endif
+
 #define TUYA_OPENSDK_UUID    "uuidxxxxxxxxxxxxxxxx"             // Please change the correct uuid
 #define TUYA_OPENSDK_AUTHKEY "keyxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" // Please change the correct authkey
 

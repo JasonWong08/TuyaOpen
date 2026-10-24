@@ -30,6 +30,7 @@ bool        quaddle_robot_bridge_has_deferred_mouse_transform(void);
 bool        quaddle_robot_bridge_mouse_exclusive(void);
 OPERATE_RET quaddle_robot_bridge_wait_ai_command(uint32_t ticket, uint32_t timeout_ms);
 void        quaddle_robot_bridge_handle_robot_token(char token);
+void        quaddle_robot_bridge_handle_robot_rx(char ch);
 BOOL_T      quaddle_robot_bridge_gamepad_active(void);
 uint32_t    quaddle_robot_bridge_gamepad_active_remaining_ms(void);
 
