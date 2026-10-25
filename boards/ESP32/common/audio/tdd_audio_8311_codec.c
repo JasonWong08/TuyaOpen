@@ -66,6 +66,12 @@ static esp_codec_dev_handle_t input_dev_ = NULL;
 static ESP_I2S_8311_HANDLE_T *sg_8311_hdl = NULL;
 static bool sg_afe_ready = false;
 
+/* App may override this to play a cue as soon as the speaker can output. */
+__attribute__((weak)) void app_boot_speaker_ready_beep(uint32_t sample_rate)
+{
+    (void)sample_rate;
+}
+
 static esp_err_t __codec_dev_open(esp_codec_dev_handle_t dev, esp_codec_dev_sample_info_t *fs)
 {
     /* esp-codec-dev probes a newly-created I2S channel with disable() before
@@ -372,6 +378,11 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
 
     hdl->mic_cb = mic_cb;
     sg_8311_hdl = hdl;
+    /* Early boot opens the codec once for the ready beep. Later open only
+     * installs the microphone callback. */
+    if (hdl->thrd_hdl != NULL) {
+        return OPRT_OK;
+    }
 
     TDD_AUDIO_8311_CODEC_T *tdd_i2s_cfg = &hdl->cfg;
 
@@ -394,6 +405,9 @@ static OPERATE_RET __tdd_audio_esp_i2s_8311_open(TDD_AUDIO_HANDLE_T handle, TDL_
         PR_ERR("I2S 8311 mutex create failed");
         return OPRT_COM_ERROR;
     }
+
+    /* Beep before AFE init so the cue is not delayed by model loading. */
+    app_boot_speaker_ready_beep((uint32_t)output_sample_rate_);
 
     rt = audio_afe_processor_init();
     if (rt != OPRT_OK) {

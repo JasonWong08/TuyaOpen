@@ -44,6 +44,16 @@ extern "C" {
 int reset_netconfig_start(void);
 
 /**
+ * @brief Starts the 5-second window that clears the reset counter.
+ *
+ * Call this after the boot beep so the user has the full window once the
+ * speaker has signaled that the current reset press is already recorded.
+ *
+ * @return int Returns 0 on success, or a negative value on failure.
+ */
+int reset_netconfig_arm_window(void);
+
+/**
  * @brief Checks the status of the network configuration reset process.
  *
  * This function verifies whether the network configuration reset process

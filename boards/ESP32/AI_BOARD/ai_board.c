@@ -13,6 +13,7 @@
 #include "board_com_api.h"
 
 #include "tdd_audio_8311_codec.h"
+#include "tdl_audio_manage.h"
 
 #if defined(ENABLE_BUTTON) && (ENABLE_BUTTON == 1)
 #include "tdd_button_gpio.h"
@@ -86,6 +87,21 @@ OPERATE_RET board_register_hardware(void)
     TUYA_CALL_ERR_LOG(__board_register_audio());
 
     return rt;
+}
+
+void board_early_audio_open(void)
+{
+#if defined(AUDIO_CODEC_NAME)
+    TDL_AUDIO_HANDLE_T audio_hdl = NULL;
+
+    if (tdl_audio_find(AUDIO_CODEC_NAME, &audio_hdl) != OPRT_OK) {
+        PR_WARN("boot beep: audio codec not found");
+        return;
+    }
+    if (tdl_audio_open(audio_hdl, NULL) != OPRT_OK) {
+        PR_WARN("boot beep: audio open failed");
+    }
+#endif
 }
 
 int board_display_init(void)

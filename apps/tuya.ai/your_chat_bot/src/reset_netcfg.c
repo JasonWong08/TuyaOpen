@@ -102,6 +102,11 @@ int reset_netconfig_start(void)
     TUYA_CALL_ERR_LOG(reset_count_read(&rst_cnt));
     TUYA_CALL_ERR_LOG(reset_count_write(++rst_cnt));
 
+    return OPRT_OK;
+}
+
+int reset_netconfig_arm_window(void)
+{
     PR_DEBUG("start reset cnt clear timer!!!!!");
     TIMER_ID rst_config_timer;
     tal_sw_timer_create(reset_netconfig_timer, NULL, &rst_config_timer);

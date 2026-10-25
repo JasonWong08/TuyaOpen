@@ -48,6 +48,7 @@
 #endif
 #include "quaddle_ble_hid_central.h"
 #include "reset_netcfg.h"
+#include "tdl_audio_manage.h"
 
 #if defined(ENABLE_BATTERY) && (ENABLE_BATTERY == 1)
 #include "app_battery.h"
@@ -66,6 +67,66 @@ tuya_iot_license_t license;
 static void cli_query_firmware(int argc, char *argv[]);
 static void cli_query_id(int argc, char *argv[]);
 static void cli_query_wifi(int argc, char *argv[]);
+
+/* Other boards leave this empty. AI_BOARD opens the codec early so the beep
+ * can play before the rest of boot. */
+__attribute__((weak)) void board_early_audio_open(void)
+{
+}
+
+/* Called from the codec driver as soon as the speaker can output. */
+void app_boot_speaker_ready_beep(uint32_t sample_rate)
+{
+#if defined(AUDIO_CODEC_NAME)
+    TDL_AUDIO_HANDLE_T audio_hdl = NULL;
+    static int16_t pcm[160];
+    uint32_t half;
+    uint32_t total;
+    uint32_t phase = 0;
+    uint32_t done;
+
+    if (sample_rate < 8000) {
+        sample_rate = 16000;
+    }
+    if (tdl_audio_find(AUDIO_CODEC_NAME, &audio_hdl) != OPRT_OK) {
+        return;
+    }
+
+    half = sample_rate / 2000; /* 1 kHz */
+    if (half == 0) {
+        half = 1;
+    }
+    total = sample_rate / 5; /* 200 ms */
+
+    PR_NOTICE("boot beep: reset counted, press RESET again after this beep");
+
+    /* One silent chunk lets the DAC leave mute before the tone. */
+    memset(pcm, 0, sizeof(pcm));
+    tdl_audio_play(audio_hdl, (uint8_t *)pcm, sizeof(pcm));
+
+    for (done = 0; done < total;) {
+        uint32_t n = total - done;
+        uint32_t i;
+
+        if (n > (uint32_t)(sizeof(pcm) / sizeof(pcm[0]))) {
+            n = (uint32_t)(sizeof(pcm) / sizeof(pcm[0]));
+        }
+        for (i = 0; i < n; i++) {
+            pcm[i] = ((phase / half) & 1) ? (int16_t)-7000 : (int16_t)7000;
+            phase++;
+        }
+        if (tdl_audio_play(audio_hdl, (uint8_t *)pcm, n * (uint32_t)sizeof(pcm[0])) != OPRT_OK) {
+            break;
+        }
+        done += n;
+    }
+
+    /* Let the I2S DMA finish the tail of the beep. */
+    tal_system_sleep(80);
+#else
+    (void)sample_rate;
+#endif
+}
 
 static const cli_cmd_t sg_app_cli_cmd[] = {
     {
@@ -577,6 +638,15 @@ void user_main(void)
 
     reset_netconfig_start();
 
+    /* Record the reset count first, then beep. The beep means this press is
+     * saved and the next RESET press will be counted. */
+    ret = board_register_hardware();
+    if (ret != OPRT_OK) {
+        PR_ERR("board_register_hardware failed");
+    }
+    board_early_audio_open();
+    reset_netconfig_arm_window();
+
     if (OPRT_OK != tuya_authorize_read(&license)) {
         license.uuid    = TUYA_OPENSDK_UUID;
         license.authkey = TUYA_OPENSDK_AUTHKEY;
@@ -628,11 +698,6 @@ void user_main(void)
 #endif
 
     PR_DEBUG("tuya_iot_init success");
-
-    ret = board_register_hardware();
-    if (ret != OPRT_OK) {
-        PR_ERR("board_register_hardware failed");
-    }
 
 #if defined(ENABLE_COMP_AI_MCP) && (ENABLE_COMP_AI_MCP == 1)
     ret = ai_mcp_volume_changed_cb_set(__mcp_volume_changed_cb, NULL);
