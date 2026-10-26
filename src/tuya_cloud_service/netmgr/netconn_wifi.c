@@ -238,6 +238,12 @@ static OPERATE_RET __wifi_link_activete_cb(void *data)
     return rt;
 }
 
+__attribute__((weak)) void app_on_wifi_netcfg(const char *ssid, const char *pswd)
+{
+    (void)ssid;
+    (void)pswd;
+}
+
 OPERATE_RET __netconn_wifi_netcfg_finish(int type, netcfg_info_t *info)
 {
     netmgr_conn_wifi_t *netmgr_wifi = &s_netmgr_wifi;
@@ -262,6 +268,10 @@ OPERATE_RET __netconn_wifi_netcfg_finish(int type, netcfg_info_t *info)
     tal_event_publish(EVENT_LINK_ACTIVATE, &binding);
     // notify netcfg finished and save
     __netconn_wifi_connect();
+
+    if (info && info->s_len > 0) {
+        app_on_wifi_netcfg((const char *)info->ssid, (const char *)info->passwd);
+    }
 
     return OPRT_OK;
 }

@@ -49,6 +49,9 @@
 #include "quaddle_ble_hid_central.h"
 #include "reset_netcfg.h"
 #include "tdl_audio_manage.h"
+#if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+#include "second_uart.h"
+#endif
 
 #if defined(ENABLE_BATTERY) && (ENABLE_BATTERY == 1)
 #include "app_battery.h"
@@ -306,6 +309,38 @@ static void __schedule_network_cfg_alert(void)
         tal_sw_timer_stop(sg_network_cfg_alert_tm);
         TUYA_CALL_ERR_LOG(tal_sw_timer_start(sg_network_cfg_alert_tm, NETWORK_CFG_ALERT_DELAY_MS, TAL_TIMER_ONCE));
     }
+}
+#endif
+
+#if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1) && defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && \
+    ENABLE_CHAT_BOT_ROBOT_SECOND_UART
+void app_on_wifi_netcfg(const char *ssid, const char *pswd)
+{
+    char line[WIFI_SSID_LEN + WIFI_PASSWD_LEN + 8];
+    int  n;
+
+    if (!ssid || ssid[0] == '\0') {
+        return;
+    }
+    if (!pswd) {
+        pswd = "";
+    }
+    if (strchr(ssid, '\n') || strchr(ssid, '\r') || strchr(pswd, '\n') || strchr(pswd, '\r')) {
+        PR_WARN("wifi credential not sent: ssid or password contains a newline");
+        return;
+    }
+
+    n = snprintf(line, sizeof(line), "w%%%s%%%s", ssid, pswd);
+    if (n <= 0 || (size_t)n >= sizeof(line)) {
+        PR_WARN("wifi credential line does not fit");
+        return;
+    }
+    if (second_uart_send_string_force(line) != OPRT_OK) {
+        PR_WARN("wifi credential uart send failed");
+        return;
+    }
+    PR_NOTICE("wifi credential sent on second uart, ssid_len=%u pswd_len=%u", (unsigned)strlen(ssid),
+              (unsigned)strlen(pswd));
 }
 #endif
 

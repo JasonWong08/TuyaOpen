@@ -73,6 +73,12 @@ static void __second_uart_log_tx(const uint8_t *data, size_t length)
     if (!data || length == 0) {
         return;
     }
+    /* w%ssid%password is a credential line. Log that it was sent, not the secret. */
+    if (length >= 2 && data[0] == 'w' && data[1] == '%') {
+        PR_NOTICE("second_uart: TX UART%d GPIO%d/%d %u bytes: \"w%%<wifi credential>\"",
+                  (int)SECOND_UART_HW_PORT, (int)SECOND_UART_TX_PIN, (int)SECOND_UART_RX_PIN, (unsigned)length);
+        return;
+    }
     for (size_t i = 0; i < length && out + 1 < sizeof(escaped); i++) {
         if (data[i] == '\n') {
             if (out + 2 >= sizeof(escaped)) {
