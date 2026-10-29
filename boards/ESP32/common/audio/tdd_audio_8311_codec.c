@@ -54,6 +54,7 @@ static i2s_chan_handle_t rx_handle_ = NULL;
 static int input_sample_rate_ = 0;
 static int output_sample_rate_ = 0;
 static int output_volume_ = 0;
+static int output_boost_db_ = 0;
 static float input_gain_db_ = 40.0f;
 static gpio_num_t pa_pin_ = 0;
 static i2c_master_bus_handle_t codec_i2c_bus_ = NULL;
@@ -158,6 +159,29 @@ static void SetOutputVolume(int volume)
     ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, volume));
 }
 
+/* Stock curve maps 100 to 0 dB. Boards with no PA need the extra DAC range. */
+static void ApplyOutputBoost(void)
+{
+    int boost = output_boost_db_;
+    esp_codec_dev_vol_map_t vol_map[2];
+    esp_codec_dev_vol_curve_t curve;
+
+    if (boost <= 0) {
+        return;
+    }
+    if (boost > 24) {
+        boost = 24;
+    }
+
+    vol_map[0].vol = 0;
+    vol_map[0].db_value = -50.0;
+    vol_map[1].vol = 100;
+    vol_map[1].db_value = (float)boost;
+    curve.vol_map = vol_map;
+    curve.count = 2;
+    ESP_ERROR_CHECK(esp_codec_dev_set_vol_curve(output_dev_, &curve));
+}
+
 static void EnableOutput(bool enable)
 {
     if (enable) {
@@ -170,6 +194,7 @@ static void EnableOutput(bool enable)
             .mclk_multiple = 0,
         };
         ESP_ERROR_CHECK(__codec_dev_open(output_dev_, &fs));
+        ApplyOutputBoost();
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
         if (pa_pin_ != GPIO_NUM_NC) {
             gpio_set_level(pa_pin_, 1);
@@ -240,6 +265,7 @@ OPERATE_RET codec_8311_init(TUYA_I2S_NUM_E i2s_num, const TDD_AUDIO_8311_CODEC_T
     input_sample_rate_ = i2s_config->mic_sample_rate;
     output_sample_rate_ = i2s_config->spk_sample_rate;
     output_volume_ = i2s_config->default_volume;
+    output_boost_db_ = i2s_config->output_boost_db;
     input_gain_db_ = i2s_config->mic_gain_db > 0.0f ? i2s_config->mic_gain_db : 40.0f;
 
     // ESP_LOGI(TAG, ">>>>>>>>mclk=%d, bclk=%d, ws=%d, dout=%d, din=%d",
@@ -502,8 +528,7 @@ OPERATE_RET tdd_audio_8311_codec_register(char *name, TDD_AUDIO_8311_CODEC_T cfg
     TUYA_CHECK_NULL_RETURN(_hdl, OPRT_MALLOC_FAILED);
     memset(_hdl, 0, sizeof(ESP_I2S_8311_HANDLE_T));
 
-    // default play volume
-    _hdl->play_volume = 80;
+    _hdl->play_volume = (uint8_t)cfg.default_volume;
 
     info.sample_rate    = cfg.mic_sample_rate;
     info.sample_ch_num  = 1;

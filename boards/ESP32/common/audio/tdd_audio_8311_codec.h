@@ -37,6 +37,8 @@ typedef struct {
     uint32_t dma_frame_num;
     int default_volume;
     float mic_gain_db;
+    /* DAC dB at volume 100. 0 keeps the stock curve (100 = 0 dB). */
+    int output_boost_db;
 } TDD_AUDIO_8311_CODEC_T;
 
 /***********************************************************
