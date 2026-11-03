@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # coding=utf-8
 
+import glob
 import hashlib
 import os
+import re
 import sys
 from datetime import datetime
 import click
@@ -21,6 +23,7 @@ from tools.cli_command.cli_check import update_submodules
 from tools.cli_command.cli_config import init_using_config
 
 PETOI_TUYA_FW_DIR = "/Volumes/PetoiSpace/Quaddle/Upload_Firmwares/Firmwares/Tuya"
+PETOI_TUYA_FW_HIST_DIR = os.path.join(PETOI_TUYA_FW_DIR, "Histories")
 
 
 def env_check():
@@ -279,6 +282,16 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
+def _dated_qio_bin_name(bin_name, stamp=None):
+    if stamp is None:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    if re.search(r"_[0-9]+(?:\.[0-9]+)+\.bin$", bin_name):
+        return re.sub(r"_[0-9]+(?:\.[0-9]+)+\.bin$", f"_{stamp}.bin", bin_name)
+    if bin_name.endswith(".bin"):
+        return f"{bin_name[:-4]}_{stamp}.bin"
+    return f"{bin_name}_{stamp}"
+
+
 def publish_firmware_to_petoispace(app_bin_file, bin_name):
     logger = get_logger()
     if not bin_name.startswith("your_chat_bot_QIO_") or not bin_name.endswith(".bin"):
@@ -288,17 +301,20 @@ def publish_firmware_to_petoispace(app_bin_file, bin_name):
         logger.warning(f"PetoiSpace not mounted, skip firmware publish: {PETOI_TUYA_FW_DIR}")
         return True
 
-    dest_file = os.path.join(PETOI_TUYA_FW_DIR, bin_name)
-    hist_dir = os.path.join(PETOI_TUYA_FW_DIR, "history")
+    hist_dir = PETOI_TUYA_FW_HIST_DIR
     os.makedirs(hist_dir, exist_ok=True)
     src_digest = _sha256_file(app_bin_file)
-    if os.path.isfile(dest_file):
-        if _sha256_file(dest_file) == src_digest:
-            logger.note(f"PetoiSpace firmware unchanged: {dest_file}")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    dated_name = _dated_qio_bin_name(bin_name, stamp)
+    dest_file = os.path.join(PETOI_TUYA_FW_DIR, dated_name)
+
+    for existing in glob.glob(os.path.join(PETOI_TUYA_FW_DIR, "your_chat_bot_QIO_*.bin")):
+        if _sha256_file(existing) == src_digest:
+            logger.note(f"PetoiSpace firmware unchanged: {existing}")
             return True
-        stamp = datetime.now().strftime("%Y%m%d_%H%M")
-        hist_name = f"{bin_name[:-4]}_{stamp}.bin"
-        shutil.move(dest_file, os.path.join(hist_dir, hist_name))
+
+    for existing in glob.glob(os.path.join(PETOI_TUYA_FW_DIR, "your_chat_bot_QIO_*.bin")):
+        shutil.move(existing, os.path.join(hist_dir, os.path.basename(existing)))
         logger.note(f"Moved previous firmware to {hist_dir}/")
 
     shutil.copy2(app_bin_file, dest_file)

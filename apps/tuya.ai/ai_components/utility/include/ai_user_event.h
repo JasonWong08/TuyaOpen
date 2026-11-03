@@ -131,6 +131,18 @@ void ai_app_on_record_start(void);
  */
 void ai_app_on_free_mode_exit(void);
 
+/**
+ * Optional hook when UART/`>` text inject (passthrough) is prepared (before cloud
+ * reply). Robot apps may start the passthrough talk-eye animation.
+ */
+void ai_app_on_text_inject_prepare(void);
+
+/**
+ * Optional hook when UART/`>` text inject (passthrough) finishes and mode
+ * returns to idle without re-arming listen. Robot apps may stop talk animation.
+ */
+void ai_app_on_text_inject_done(void);
+
 #ifdef __cplusplus
 }
 #endif

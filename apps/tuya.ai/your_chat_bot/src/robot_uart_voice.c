@@ -15,12 +15,15 @@
 #include "quaddle_robot_bridge.h"
 #include "second_uart.h"
 #include "ai_mode_free.h"
+#include "ai_user_event.h"
 
 #if defined(ENABLE_CHAT_BOT_ROBOT_SECOND_UART) && ENABLE_CHAT_BOT_ROBOT_SECOND_UART
 
 #define ROBOT_UART_CMD_LISTEN     "vetL"
 #define ROBOT_UART_CMD_TALK       "velT"
-#define ROBOT_UART_CMD_TALK_END   "vet"
+#define ROBOT_UART_CMD_TALK_END        "vet"
+#define ROBOT_UART_CMD_TALK_ANIM_START "vT"
+#define ROBOT_UART_CMD_TALK_ANIM_STOP  "vt"
 #define ROBOT_UART_CMD_EFFECT_END "ved"
 #define ROBOT_UART_CMD_TALK_HAPPY "veTH"
 #define ROBOT_UART_CMD_TALK_SAD   "veTS"
@@ -51,6 +54,7 @@ typedef enum {
 
 static bool s_expect_vet = false;
 static bool s_talking = false;
+static bool s_text_inject_active = false;
 static ROBOT_EYE_MOOD_E s_reply_mood = ROBOT_EYE_MOOD_NONE;
 static ROBOT_EYE_MOOD_E s_applied_mood = ROBOT_EYE_MOOD_NONE;
 static ROBOT_REPLY_STANCE_E s_reply_stance = ROBOT_REPLY_STANCE_NONE;
@@ -187,6 +191,37 @@ void ai_app_on_free_mode_exit(void)
     __robot_uart_voice_send_now(ROBOT_UART_CMD_EFFECT_END);
 }
 
+void ai_app_on_text_inject_prepare(void)
+{
+    s_text_inject_active = true;
+}
+
+void ai_app_on_text_inject_done(void)
+{
+    const bool was_talking = s_expect_vet || s_talking;
+
+    /*
+     * Passthrough (`>` / say) skips listen re-arm. Stop the eye talk animation
+     * before PLAY_END handling so we send vt once and do not follow with vet.
+     */
+    s_text_inject_active = false;
+    if (!was_talking) {
+        return;
+    }
+
+    s_expect_vet = false;
+    s_talking = false;
+    s_stance_sent = false;
+    __robot_uart_voice_reset_reply_mood();
+    quaddle_robot_bridge_release_ai_body_hold();
+    if (!quaddle_robot_bridge_has_deferred_mouse_transform()) {
+        __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK_ANIM_STOP);
+    } else {
+        PR_NOTICE("robot voice: skip vt before mouse transform");
+    }
+    quaddle_robot_bridge_flush_deferred_mouse_transform();
+}
+
 void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
 {
     if (!event) {
@@ -205,6 +240,7 @@ void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
         __robot_uart_voice_on_emotion((const AI_NOTIFY_EMO_T *)event->data);
         break;
     case AI_USER_EVT_CHAT_BREAK:
+        s_text_inject_active = false;
         s_talking = false;
         s_stance_sent = false;
         __robot_uart_voice_reset_reply_mood();
@@ -214,8 +250,12 @@ void robot_uart_voice_on_event(const AI_NOTIFY_EVENT_T *event)
     case AI_USER_EVT_TTS_PRE:
         s_expect_vet = true;
         s_talking = true;
-        __robot_uart_voice_send_talk_with_mood();
-        __robot_uart_voice_queue_reply_stance();
+        if (s_text_inject_active) {
+            __robot_uart_voice_send_now(ROBOT_UART_CMD_TALK_ANIM_START);
+        } else {
+            __robot_uart_voice_send_talk_with_mood();
+            __robot_uart_voice_queue_reply_stance();
+        }
         quaddle_robot_bridge_release_ai_body_hold();
         break;
     case AI_USER_EVT_TTS_ABORT:
@@ -649,6 +689,9 @@ static void __robot_uart_voice_set_reply_mood(ROBOT_EYE_MOOD_E mood, const char 
         PR_NOTICE("robot voice: reply mood %d from %s", (int)mood, source ? source : "?");
     }
     s_reply_mood = mood;
+    if (s_text_inject_active) {
+        return;
+    }
     if (s_talking && s_applied_mood != mood) {
         __robot_uart_voice_send_mood_only(mood);
     }
@@ -671,7 +714,7 @@ static void __robot_uart_voice_on_text_stream(const AI_NOTIFY_TEXT_T *text, bool
     mood = __robot_uart_mood_from_text(s_nlg_mood_buf);
     __robot_uart_voice_set_reply_mood(mood, "nlg");
     s_reply_stance = __robot_uart_stance_from_text(s_nlg_mood_buf);
-    if (s_talking) {
+    if (s_talking && !s_text_inject_active) {
         __robot_uart_voice_queue_reply_stance();
     }
 }

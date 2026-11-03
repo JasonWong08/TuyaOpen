@@ -65,3 +65,11 @@ __attribute__((weak)) void ai_app_on_record_start(void)
 __attribute__((weak)) void ai_app_on_free_mode_exit(void)
 {
 }
+
+__attribute__((weak)) void ai_app_on_text_inject_prepare(void)
+{
+}
+
+__attribute__((weak)) void ai_app_on_text_inject_done(void)
+{
+}

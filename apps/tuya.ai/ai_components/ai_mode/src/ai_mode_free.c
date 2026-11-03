@@ -234,6 +234,7 @@ static void __ai_mode_free_finish_text_inject(void)
     sg_text_inject_nlg_last_timeindex = 0;
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
+    ai_app_on_text_inject_done();
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
 }
 
@@ -865,6 +866,7 @@ OPERATE_RET ai_mode_free_prepare_text_inject(void)
     }
 
     PR_NOTICE("mode free prepared text inject");
+    ai_app_on_text_inject_prepare();
     return OPRT_OK;
 }
 #else 

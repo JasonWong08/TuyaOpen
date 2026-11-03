@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="${ROOT}/apps/tuya.ai/your_chat_bot"
 PETOI_TUYA_FW_DIR="/Volumes/PetoiSpace/Quaddle/Upload_Firmwares/Firmwares/Tuya"
+PETOI_TUYA_FW_HIST_DIR="${PETOI_TUYA_FW_DIR}/Histories"
 
 # ./build_and_flash.sh starts a child shell, so this cannot nest into the
 # caller's terminal. Skip export.sh if this process already has the project venv.
@@ -50,9 +51,21 @@ firmware_bin_digest() {
     shasum -a 256 "${path}" | awk '{print $1}'
 }
 
+dated_qio_bin_name() {
+    local base="$1"
+    local stamp="$2"
+    local dest
+
+    dest="$(printf '%s\n' "${base}" | sed -E "s/_[0-9]+(\.[0-9]+)+\.bin$/_${stamp}.bin/")"
+    if [ "${dest}" = "${base}" ]; then
+        dest="${base%.bin}_${stamp}.bin"
+    fi
+    printf '%s' "${dest}"
+}
+
 copy_firmware_bin() {
     local stamp src base dest digest
-    stamp="$(date +%Y%m%d_%H%M)"
+    stamp="${1:-$(date +%Y%m%d_%H%M)}"
 
     src="$(find_firmware_bin)"
     if [ -z "${src}" ]; then
@@ -61,10 +74,7 @@ copy_firmware_bin() {
     fi
 
     base="$(basename "${src}")"
-    dest="$(printf '%s\n' "${base}" | sed -E "s/_[0-9]+(\.[0-9]+)+\.bin$/_${stamp}.bin/")"
-    if [ "${dest}" = "${base}" ]; then
-        dest="${base%.bin}_${stamp}.bin"
-    fi
+    dest="$(dated_qio_bin_name "${base}" "${stamp}")"
 
     cp -f "${src}" "${ROOT}/${dest}"
     echo "Firmware copy: ${ROOT}/${dest}"
@@ -72,7 +82,8 @@ copy_firmware_bin() {
 
 publish_firmware_to_petoispace() {
     local src="$1"
-    local base dest hist_dir stamp
+    local stamp="$2"
+    local base dated_base dest hist_dir digest existing
 
     if [ -z "${src}" ] || [ ! -f "${src}" ]; then
         return 0
@@ -91,19 +102,30 @@ publish_firmware_to_petoispace() {
             ;;
     esac
 
-    dest="${PETOI_TUYA_FW_DIR}/${base}"
-    hist_dir="${PETOI_TUYA_FW_DIR}/history"
+    stamp="${stamp:-$(date +%Y%m%d_%H%M)}"
+    dated_base="$(dated_qio_bin_name "${base}" "${stamp}")"
+    dest="${PETOI_TUYA_FW_DIR}/${dated_base}"
+    hist_dir="${PETOI_TUYA_FW_HIST_DIR}"
     mkdir -p "${hist_dir}"
+    digest="$(firmware_bin_digest "${src}")"
 
-    if [ -f "${dest}" ]; then
-        if [ "$(firmware_bin_digest "${dest}")" = "$(firmware_bin_digest "${src}")" ]; then
-            echo "PetoiSpace firmware already up to date: ${dest}"
+    for existing in "${PETOI_TUYA_FW_DIR}"/your_chat_bot_QIO_*.bin; do
+        if [ ! -f "${existing}" ]; then
+            continue
+        fi
+        if [ "$(firmware_bin_digest "${existing}")" = "${digest}" ]; then
+            echo "PetoiSpace firmware already up to date: ${existing}"
             return 0
         fi
-        stamp="$(date +%Y%m%d_%H%M)"
-        mv -f "${dest}" "${hist_dir}/${base%.bin}_${stamp}.bin"
-        echo "Moved previous firmware to ${hist_dir}/"
-    fi
+    done
+
+    for existing in "${PETOI_TUYA_FW_DIR}"/your_chat_bot_QIO_*.bin; do
+        if [ ! -f "${existing}" ]; then
+            continue
+        fi
+        mv -f "${existing}" "${hist_dir}/$(basename "${existing}")"
+        echo "Moved previous firmware to ${hist_dir}/$(basename "${existing}")"
+    done
 
     cp -f "${src}" "${dest}"
     echo "Published firmware: ${dest}"
@@ -121,8 +143,9 @@ DIGEST_AFTER="$(firmware_bin_digest "${BIN_AFTER}")"
 if [ -n "${DIGEST_BEFORE}" ] && [ "${DIGEST_BEFORE}" = "${DIGEST_AFTER}" ]; then
     echo "Firmware unchanged, skip copying a new bin to ${ROOT}"
 else
-    copy_firmware_bin
-    publish_firmware_to_petoispace "${BIN_AFTER}"
+    FIRMWARE_STAMP="$(date +%Y%m%d_%H%M)"
+    copy_firmware_bin "${FIRMWARE_STAMP}"
+    publish_firmware_to_petoispace "${BIN_AFTER}" "${FIRMWARE_STAMP}"
 fi
 
 echo "Flash ${PORT}"
