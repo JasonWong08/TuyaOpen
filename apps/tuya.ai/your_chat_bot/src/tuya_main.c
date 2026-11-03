@@ -17,6 +17,10 @@
 #include "tuya_cloud_types.h"
 
 #include <assert.h>
+#include <math.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include "cJSON.h"
 #include "tal_api.h"
 #include "tuya_config.h"
@@ -83,10 +87,13 @@ void app_boot_speaker_ready_beep(uint32_t sample_rate)
 #if defined(AUDIO_CODEC_NAME)
     TDL_AUDIO_HANDLE_T audio_hdl = NULL;
     static int16_t pcm[160];
-    uint32_t half;
-    uint32_t total;
-    uint32_t phase = 0;
+    const float duration_s = 0.32f;
+    const float f_start_hz = 520.0f;
+    const float f_end_hz = 1560.0f;
+    const float peak = 5200.0f;
+    uint32_t total_samples;
     uint32_t done;
+    float phase = 0.0f;
 
     if (sample_rate < 8000) {
         sample_rate = 16000;
@@ -95,11 +102,10 @@ void app_boot_speaker_ready_beep(uint32_t sample_rate)
         return;
     }
 
-    half = sample_rate / 2000; /* 1 kHz */
-    if (half == 0) {
-        half = 1;
+    total_samples = (uint32_t)(sample_rate * duration_s);
+    if (total_samples < sample_rate / 50) {
+        total_samples = sample_rate / 50;
     }
-    total = sample_rate / 5; /* 200 ms */
 
     PR_NOTICE("boot beep: reset counted, press RESET again after this beep");
 
@@ -107,16 +113,28 @@ void app_boot_speaker_ready_beep(uint32_t sample_rate)
     memset(pcm, 0, sizeof(pcm));
     tdl_audio_play(audio_hdl, (uint8_t *)pcm, sizeof(pcm));
 
-    for (done = 0; done < total;) {
-        uint32_t n = total - done;
+    for (done = 0; done < total_samples;) {
+        uint32_t n = total_samples - done;
         uint32_t i;
 
         if (n > (uint32_t)(sizeof(pcm) / sizeof(pcm[0]))) {
             n = (uint32_t)(sizeof(pcm) / sizeof(pcm[0]));
         }
         for (i = 0; i < n; i++) {
-            pcm[i] = ((phase / half) & 1) ? (int16_t)-7000 : (int16_t)7000;
-            phase++;
+            uint32_t idx = done + i;
+            float u = (total_samples > 1) ? ((float)idx / (float)(total_samples - 1)) : 0.0f;
+            float freq_hz = f_start_hz + (f_end_hz - f_start_hz) * u;
+            float envelope = sinf((float)M_PI * u);
+            float sample_f;
+
+            phase += (2.0f * (float)M_PI * freq_hz) / (float)sample_rate;
+            sample_f = peak * envelope * sinf(phase);
+            if (sample_f > 32767.0f) {
+                sample_f = 32767.0f;
+            } else if (sample_f < -32768.0f) {
+                sample_f = -32768.0f;
+            }
+            pcm[i] = (int16_t)sample_f;
         }
         if (tdl_audio_play(audio_hdl, (uint8_t *)pcm, n * (uint32_t)sizeof(pcm[0])) != OPRT_OK) {
             break;
@@ -124,7 +142,7 @@ void app_boot_speaker_ready_beep(uint32_t sample_rate)
         done += n;
     }
 
-    /* Let the I2S DMA finish the tail of the beep. */
+    /* Let the I2S DMA finish the tail of the cue. */
     tal_system_sleep(80);
 #else
     (void)sample_rate;

@@ -62,6 +62,10 @@ static AI_MODE_STATE_E sg_mode_set_state = AI_MODE_STATE_INIT;
 static AI_MODE_STATE_E sg_mode_cur_state = AI_MODE_STATE_INVALID;
 static bool            sg_is_wakeup = false;
 static bool            sg_text_inject_oneshot = false;
+static bool            sg_text_inject_duplicate_suppressed = false;
+static bool            sg_text_inject_nlg_time_valid = false;
+static bool            sg_text_inject_nlg_had_content = false;
+static uint32_t        sg_text_inject_nlg_last_timeindex = 0;
 static bool            sg_pending_vad_start = false;
 static bool            sg_exit_pending = false;
 static bool            sg_exit_reply_started = false;
@@ -218,8 +222,16 @@ static void __ai_mode_free_begin_exit(void)
 
 static void __ai_mode_free_finish_text_inject(void)
 {
+    if (sg_text_inject_duplicate_suppressed) {
+        tuya_ai_agent_event(AI_EVENT_CHAT_BREAK, 0);
+    }
+
     PR_NOTICE("mode free text inject done, stay idle (no listen)");
     sg_text_inject_oneshot = false;
+    sg_text_inject_duplicate_suppressed = false;
+    sg_text_inject_nlg_time_valid = false;
+    sg_text_inject_nlg_had_content = false;
+    sg_text_inject_nlg_last_timeindex = 0;
     sg_is_wakeup = false;
     sg_pending_vad_start = false;
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_IDLE);
@@ -271,6 +283,41 @@ static bool __ai_mode_free_suppress_duplicate_goodbye(const AI_NOTIFY_TEXT_T *te
     if (text->timeindex > 0) {
         sg_goodbye_nlg_last_timeindex = text->timeindex;
         sg_goodbye_nlg_time_valid = true;
+    }
+
+    return false;
+}
+
+static bool __ai_mode_free_suppress_duplicate_text_inject(const AI_NOTIFY_TEXT_T *text)
+{
+    if (!sg_text_inject_oneshot || !text || !text->data) {
+        return false;
+    }
+
+    /*
+     * UART/`>` text inject (e.g. say "…") can hit the same cloud two-phase NLG
+     * as goodbye: a full sentence first, then timeIndex resets and the same
+     * words stream again as TTS.
+     */
+    if (!sg_text_inject_duplicate_suppressed && sg_text_inject_nlg_time_valid &&
+        sg_text_inject_nlg_had_content && text->timeindex > 0 &&
+        text->timeindex < sg_text_inject_nlg_last_timeindex) {
+        PR_WARN("mode free suppress duplicate text-inject phase, timeIndex %u -> %u",
+                (unsigned int)sg_text_inject_nlg_last_timeindex, (unsigned int)text->timeindex);
+        sg_text_inject_duplicate_suppressed = true;
+        if (ai_audio_player_finish_tts_stream() != OPRT_OK) {
+            PR_WARN("mode free failed to finish buffered text-inject audio");
+            ai_audio_player_stop(AI_AUDIO_PLAYER_FG);
+        }
+        return true;
+    }
+
+    if (text->datalen > 0 && text->data[0] != '\0') {
+        sg_text_inject_nlg_had_content = true;
+    }
+    if (text->timeindex > 0) {
+        sg_text_inject_nlg_last_timeindex = text->timeindex;
+        sg_text_inject_nlg_time_valid = true;
     }
 
     return false;
@@ -613,7 +660,10 @@ static OPERATE_RET __ai_mode_free_handle_event(AI_NOTIFY_EVENT_T *event)
         break;
         case AI_USER_EVT_TEXT_STREAM_START:
         case AI_USER_EVT_TEXT_STREAM_DATA: {
-            __ai_mode_free_suppress_duplicate_goodbye((const AI_NOTIFY_TEXT_T *)event->data);
+            const AI_NOTIFY_TEXT_T *stream = (const AI_NOTIFY_TEXT_T *)event->data;
+
+            __ai_mode_free_suppress_duplicate_goodbye(stream);
+            __ai_mode_free_suppress_duplicate_text_inject(stream);
         }
         break;
         case AI_USER_EVT_EXIT: {
@@ -796,6 +846,10 @@ OPERATE_RET ai_mode_free_prepare_text_inject(void)
     /* One-shot `>` / UART text: reply then IDLE, do not arm listen. */
     sg_is_wakeup = false;
     sg_text_inject_oneshot = true;
+    sg_text_inject_duplicate_suppressed = false;
+    sg_text_inject_nlg_time_valid = false;
+    sg_text_inject_nlg_had_content = false;
+    sg_text_inject_nlg_last_timeindex = 0;
     sg_empty_asr_count = 0;
     MODE_STATE_CHANGE(sg_mode_set_state, AI_MODE_STATE_THINK);
 

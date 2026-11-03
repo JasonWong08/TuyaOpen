@@ -27,7 +27,7 @@
 #endif
 
 #ifndef APP_FIRMWARE_DATE
-#define APP_FIRMWARE_DATE "20261024"
+#define APP_FIRMWARE_DATE "20261102"
 #endif
 
 #define TUYA_OPENSDK_UUID    "uuidxxxxxxxxxxxxxxxx"             // Please change the correct uuid

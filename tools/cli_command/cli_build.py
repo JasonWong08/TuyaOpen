@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # coding=utf-8
 
+import hashlib
 import os
 import sys
+from datetime import datetime
 import click
 import shutil
 
@@ -17,6 +19,8 @@ from tools.cli_command.util_git import (
 from tools.cli_command.util_files import rm_rf
 from tools.cli_command.cli_check import update_submodules
 from tools.cli_command.cli_config import init_using_config
+
+PETOI_TUYA_FW_DIR = "/Volumes/PetoiSpace/Quaddle/Upload_Firmwares/Firmwares/Tuya"
 
 
 def env_check():
@@ -258,7 +262,51 @@ def copy_compile_commands(build_path):
         return True  # Don't fail the build if copy fails
 
 
-def check_bin_file(using_data,):
+def _qio_bin_path(using_data, params):
+    app_name = using_data.get("CONFIG_PROJECT_NAME", "")
+    app_ver = using_data.get("CONFIG_PROJECT_VERSION", "")
+    bin_name = f"{app_name}_QIO_{app_ver}.bin"
+    return os.path.join(params["app_bin_path"], bin_name), bin_name
+
+
+def _sha256_file(path):
+    if not os.path.isfile(path):
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as fp:
+        for chunk in iter(lambda: fp.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def publish_firmware_to_petoispace(app_bin_file, bin_name):
+    logger = get_logger()
+    if not bin_name.startswith("your_chat_bot_QIO_") or not bin_name.endswith(".bin"):
+        logger.debug(f"Skip PetoiSpace publish for {bin_name}")
+        return True
+    if not os.path.isdir("/Volumes/PetoiSpace") or not os.path.isdir(PETOI_TUYA_FW_DIR):
+        logger.warning(f"PetoiSpace not mounted, skip firmware publish: {PETOI_TUYA_FW_DIR}")
+        return True
+
+    dest_file = os.path.join(PETOI_TUYA_FW_DIR, bin_name)
+    hist_dir = os.path.join(PETOI_TUYA_FW_DIR, "history")
+    os.makedirs(hist_dir, exist_ok=True)
+    src_digest = _sha256_file(app_bin_file)
+    if os.path.isfile(dest_file):
+        if _sha256_file(dest_file) == src_digest:
+            logger.note(f"PetoiSpace firmware unchanged: {dest_file}")
+            return True
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        hist_name = f"{bin_name[:-4]}_{stamp}.bin"
+        shutil.move(dest_file, os.path.join(hist_dir, hist_name))
+        logger.note(f"Moved previous firmware to {hist_dir}/")
+
+    shutil.copy2(app_bin_file, dest_file)
+    logger.note(f"Published firmware: {dest_file}")
+    return True
+
+
+def check_bin_file(using_data, skip_dist_copy=False):
     '''
     check bin file exists
     and copy to dist
@@ -272,16 +320,39 @@ def check_bin_file(using_data,):
     app_name = using_data.get("CONFIG_PROJECT_NAME", "")
     app_ver = using_data.get("CONFIG_PROJECT_VERSION", "")
 
-    bin_name = f"{app_name}_QIO_{app_ver}.bin"
-    app_bin_file = os.path.join(app_bin_path, bin_name)
+    app_bin_file, bin_name = _qio_bin_path(using_data, params)
     if not os.path.exists(app_bin_file):
         logger.error(f"Not found {app_bin_file}")
         return False
 
     dist_path = os.path.join(dist_root, f"{app_name}_{app_ver}")
+    build_digest = _sha256_file(app_bin_file)
+    if skip_dist_copy and build_digest:
+        dist_bin_file = os.path.join(dist_path, bin_name)
+        if os.path.exists(dist_bin_file) and _sha256_file(dist_bin_file) == build_digest:
+            logger.note("Firmware unchanged, skip dist refresh")
+
+            platform_name = using_data.get("CONFIG_PLATFORM_CHOICE", "")
+            framework = using_data.get("CONFIG_FRAMEWORK_CHOICE", "")
+            chip_name = using_data.get("CONFIG_CHIP_CHOICE", "")
+            board_name = using_data.get("CONFIG_BOARD_CHOICE", "")
+            build_info = f'''
+====================[ BUILD SUCCESS ]===================
+ Target    : {bin_name}
+ Output    : {dist_path} (unchanged)
+ Platform  : {platform_name}
+ Chip      : {chip_name}
+ Board     : {board_name}
+ Framework : {framework}
+========================================================
+    '''
+            logger.note(f"{build_info}")
+            return True
+
     os.makedirs(dist_root, exist_ok=True)
     rm_rf(dist_path)
     shutil.copytree(app_bin_path, dist_path)
+    publish_firmware_to_petoispace(app_bin_file, bin_name)
 
     platform_name = using_data.get("CONFIG_PLATFORM_CHOICE", "")
     framework = using_data.get("CONFIG_FRAMEWORK_CHOICE", "")
@@ -347,13 +418,22 @@ def build_project(verbose=False, log_file=None, log_file_append=False):
         logger.info("Cmake configure success.")
 
         build_path = params["app_build_path"]
+        qio_bin_file, _ = _qio_bin_path(using_data, params)
+        digest_before = _sha256_file(qio_bin_file)
+
         if not ninja_build(build_path, verbose):
             logger.error("Build error.")
             return False
 
         copy_compile_commands(build_path)
 
-        if not check_bin_file(using_data,):
+        digest_after = _sha256_file(qio_bin_file)
+        firmware_unchanged = (
+            digest_before is not None
+            and digest_after is not None
+            and digest_before == digest_after
+        )
+        if not check_bin_file(using_data, skip_dist_copy=firmware_unchanged):
             return False
 
         return True
